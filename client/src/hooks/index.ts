@@ -1,1 +1,2 @@
-export * from './use-get-tips';
+// Hooks exports will be added here
+export {};

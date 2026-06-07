@@ -15,7 +15,7 @@ export const FooterBottomBarContent: React.FC = () => (
     </FooterBarColumn>
     <FooterBarColumn>
       <CaptionText variation="darkGray" size={2}>
-        Donation Demo version: 0.0.1
+        Casper Agent Network version: 0.1.0
       </CaptionText>
     </FooterBarColumn>
   </FooterBottomBar>

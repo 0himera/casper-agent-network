@@ -6,7 +6,6 @@ export * from './load-more-button';
 export * from './modal-header';
 export * from './modal-styles';
 export * from './token-amount-cell';
-export * from './no-tips';
 export * from './status-content';
 export * from './table-tile';
 export * from './section';

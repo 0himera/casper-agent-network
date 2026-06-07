@@ -1,6 +1,6 @@
 type GlobalConfig = {
-  donation_contract_package_hash: string;
-  donation_api_url: string;
+  agent_network_contract_package_hash: string;
+  agent_network_api_url: string;
   cspr_click_app_name: string;
   cspr_click_app_id: string;
   cspr_click_providers: string[];

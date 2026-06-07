@@ -1,6 +1,6 @@
 const config = {
-  donation_contract_package_hash: "$DONATION_CONTRACT_PACKAGE_HASH",
-  donation_api_url: "$DONATION_API_URL",
+  agent_network_contract_package_hash: "$AGENT_NETWORK_CONTRACT_PACKAGE_HASH",
+  agent_network_api_url: "$AGENT_NETWORK_API_URL",
   cspr_click_app_name: "$CSPR_CLICK_APP_NAME",
   cspr_click_app_id: "$CSPR_CLICK_APP_ID",
   cspr_click_providers: $CSPR_CLICK_PROVIDERS,
