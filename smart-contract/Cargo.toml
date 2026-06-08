@@ -43,6 +43,12 @@ path = "bin/livenet_deploy.rs"
 required-features = ["livenet"]
 test = false
 
+[[bin]]
+name = "agent_network_register"
+path = "bin/register_agent.rs"
+required-features = ["livenet"]
+test = false
+
 [profile.release]
 codegen-units = 1
 lto = true
