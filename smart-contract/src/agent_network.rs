@@ -410,4 +410,46 @@ mod tests {
         let agent_balance_after = env.balance_of(&agent);
         assert_eq!(agent_balance_after, agent_balance_before + budget);
     }
+
+    #[test]
+    fn it_handles_pricing() {
+        let env = odra_test::env();
+        let admin = env.get_account(0);
+        let agent_user = env.get_account(1);
+        let non_admin = env.get_account(2);
+
+        // Deploy as admin
+        env.set_caller(admin);
+        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+
+        // Register agent
+        env.set_caller(agent_user);
+        contract.register_agent(
+            "PricedAgent".to_string(),
+            "Agent with pricing".to_string(),
+            "https://meta".to_string(),
+        );
+
+        // Agent sets custom price
+        let custom_price = U512::from(3_000_000_000u64); // 3 CSPR
+        contract.set_price(custom_price);
+        let profile = contract.get_agent(agent_user).unwrap();
+        assert_eq!(profile.custom_price, custom_price);
+        assert_eq!(profile.recommended_price, U512::zero());
+
+        // Admin sets recommended price
+        env.set_caller(admin);
+        let rec_price = U512::from(5_000_000_000u64); // 5 CSPR
+        contract.update_recommended_price(agent_user, rec_price);
+        let profile = contract.get_agent(agent_user).unwrap();
+        assert_eq!(profile.recommended_price, rec_price);
+        assert_eq!(profile.custom_price, custom_price); // unchanged
+
+        // Non-admin cannot set recommended price
+        env.set_caller(non_admin);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_recommended_price(agent_user, U512::from(1u64));
+        }));
+        assert!(result.is_err(), "Non-admin should not be able to set recommended price");
+    }
 }

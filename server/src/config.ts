@@ -8,7 +8,7 @@ interface Config {
   csprCloudApiUrl: string;
   csprCloudStreamingUrl: string;
   csprCloudAccessKey: string;
-  donationContractPackageHash: string;
+  contractPackageHash: string;
   dbURI: string;
   pingCheckIntervalInMilliseconds: number;
 }
@@ -18,7 +18,7 @@ export const config: Config = {
   csprCloudApiUrl: process.env.CSPR_CLOUD_URL as string,
   csprCloudStreamingUrl: process.env.CSPR_CLOUD_STREAMING_URL as string,
   csprCloudAccessKey: process.env.CSPR_CLOUD_ACCESS_KEY as string,
-  donationContractPackageHash: process.env.DONATION_CONTRACT_PACKAGE_HASH as string,
+  contractPackageHash: process.env.CONTRACT_PACKAGE_HASH as string,
   dbURI: process.env.DB_URI as string,
   pingCheckIntervalInMilliseconds: 60000,
 };

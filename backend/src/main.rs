@@ -3,6 +3,7 @@ mod db;
 mod api;
 mod validator;
 mod orchestrator;
+mod casper;
 
 use std::net::SocketAddr;
 use axum::http::Method;

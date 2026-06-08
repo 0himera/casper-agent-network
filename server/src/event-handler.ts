@@ -23,7 +23,7 @@ async function main() {
   console.log('Database initialized successfully.');
 
   const ws = new WebSocket(
-      `${config.csprCloudStreamingUrl}/contract-events?contract_package_hash=${config.donationContractPackageHash}`,
+      `${config.csprCloudStreamingUrl}/contract-events?contract_package_hash=${config.contractPackageHash}`,
       {
         headers: {
           authorization: config.csprCloudAccessKey,
