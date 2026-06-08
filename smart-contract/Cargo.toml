@@ -1,11 +1,12 @@
 [package]
-name = "tips_demo"
+name = "agent_network"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 odra = { version = "2.4.0", features = [], default-features = false }
 odra-casper-livenet-env = { version = "2.4.0", optional = true }
+env_logger = { version = "0.10.2", optional = true }
 
 [dev-dependencies]
 odra-test = { version = "2.4.0", features = [], default-features = false }
@@ -19,20 +20,20 @@ odra-cli = { version = "2.4.0", features = [], default-features = false }
 
 [features]
 default = []
-livenet = ["odra-casper-livenet-env"]
+livenet = ["odra-casper-livenet-env", "dep:env_logger"]
 
 [[bin]]
-name = "tips_demo_build_contract"
+name = "agent_network_build_contract"
 path = "bin/build_contract.rs"
 test = false
 
 [[bin]]
-name = "tips_demo_build_schema"
+name = "agent_network_build_schema"
 path = "bin/build_schema.rs"
 test = false
 
 [[bin]]
-name = "tips_demo_cli"
+name = "agent_network_cli"
 path = "bin/cli.rs"
 test = false
 

@@ -1,5 +1,5 @@
 //! CLI tool for deploying and interacting with the AgentNetwork contract.
-use tips_demo::agent_network::AgentNetwork;
+use agent_network::agent_network::AgentNetwork;
 use odra::host::{HostEnv, HostRef, NoArgs};
 use odra_cli::{
     deploy::DeployScript,

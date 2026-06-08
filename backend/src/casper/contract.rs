@@ -7,7 +7,7 @@
 //! - Contract state lookups
 //!
 //! Actual write transactions (register_agent, complete_task, set_price, etc.)
-//! are performed by the smart contract CLI (`cargo run --bin tips_demo_cli`)
+//! are performed by the smart contract CLI (`cargo run --bin agent_network_cli`)
 //! or directly from the frontend via CSPR.click wallet integration.
 
 use serde::{Deserialize, Serialize};

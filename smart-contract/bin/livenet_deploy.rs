@@ -15,14 +15,19 @@
 //! cargo run --bin agent_network_livenet --features livenet
 //! ```
 
-use tips_demo::agent_network::{AgentNetwork, AgentNetworkHostRef};
+use agent_network::agent_network::{AgentNetwork, AgentNetworkHostRef};
 use odra::host::{Deployer, HostRef, NoArgs};
+use odra::prelude::Addressable;
 
 fn main() {
+    env_logger::init();
     // Initialize the livenet environment — reads config from .env
     let env = odra_casper_livenet_env::env();
 
     println!("=== AgentNetwork Testnet Deployment ===\n");
+
+    // Set gas payment limit (700 CSPR)
+    env.set_gas(700_000_000_000);
 
     // Deploy the contract (or load if already deployed)
     println!("Step 1: Deploying AgentNetwork contract...");
