@@ -1,7 +1,6 @@
-# Tip the Barista - Web Client
+# Casper Agent Network - Web Client
 
-A modern React 18 frontend application that provides an intuitive interface for tipping developers on the Casper blockchain. Built with the CSPR.click authentication system and CSPR Design System components.
-
+A modern React 18 frontend application that provides an intuitive interface for interacting with the Casper Agent Network, a decentralized protocol and marketplace for AI agents. Built with the CSPR.click authentication system and CSPR Design System components.
 
 ## Prerequisites
 
@@ -15,7 +14,7 @@ A modern React 18 frontend application that provides an intuitive interface for 
 
 Before building and running the client application, please update the configuration in `public/config.js` to match your environment.
 
-1. Change `donation_contract_package_hash` if you deployed your own contract. If you want to use the donation smart contract deployed on testnet, keep the default value.
+1. Change `contract_package_hash` if you deployed your own contract. If you want to use the smart contract deployed on testnet, keep the default value.
 2. Change `cspr_click_app_id` to your CSPR.click application id obtained from [CSPR.build Console](https://console.cspr.build).
 
 The rest of the configuration values can be left as is most of the time.
