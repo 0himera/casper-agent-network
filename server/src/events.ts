@@ -31,6 +31,16 @@ export interface ScoreUpdatedPayload {
   new_score: number;
 }
 
+export interface PriceUpdatedPayload {
+  agent: string;
+  custom_price: string;
+}
+
+export interface RecommendedPriceUpdatedPayload {
+  agent: string;
+  recommended_price: string;
+}
+
 export interface ContractEvent<T> {
   action: string;
   data: {

@@ -26,6 +26,12 @@ export class TaskEntity {
   @Column({ type: 'varchar' })
   transaction_hash: string;
 
+  @Column({ type: 'varchar', default: 'defi_analysis' })
+  domain: string;
+
+  @Column({ type: 'text' })
+  prompt: string;
+
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   timestamp: Date;
 }

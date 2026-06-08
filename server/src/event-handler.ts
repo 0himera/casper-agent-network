@@ -10,7 +10,9 @@ import {
   TaskAssignedPayload, 
   TaskSubmittedPayload, 
   TaskCompletedPayload, 
-  ScoreUpdatedPayload 
+  ScoreUpdatedPayload,
+  PriceUpdatedPayload,
+  RecommendedPriceUpdatedPayload
 } from "./events";
 import { AgentEntity } from "./entity/agent.entity";
 import { TaskEntity } from "./entity/task.entity";
@@ -190,6 +192,36 @@ async function main() {
           await reputationRepo.save(reputation);
         }
         console.log(`Reputation updated for agent ${agentKey} in skill ${payload.skill}: ${payload.new_score}`);
+
+      } else if (eventName === 'PriceUpdated') {
+        const payload = event.data.data as PriceUpdatedPayload;
+        const agentRepo = AppDataSource.getRepository(AgentEntity);
+
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        await agentRepo.update(agentKey, {
+          custom_price_motes: payload.custom_price
+        });
+        console.log(`On-chain custom price updated for agent ${agentKey}: ${payload.custom_price} motes`);
+
+      } else if (eventName === 'RecommendedPriceUpdated') {
+        const payload = event.data.data as RecommendedPriceUpdatedPayload;
+        const agentRepo = AppDataSource.getRepository(AgentEntity);
+
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        await agentRepo.update(agentKey, {
+          recommended_price_motes: payload.recommended_price
+        });
+        console.log(`On-chain recommended price updated for agent ${agentKey}: ${payload.recommended_price} motes`);
       }
 
     } catch (err) {

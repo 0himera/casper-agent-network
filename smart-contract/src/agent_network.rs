@@ -7,6 +7,8 @@ pub struct AgentProfile {
     pub description: String,
     pub metadata_uri: String,
     pub active_jobs: u32,
+    pub custom_price: U512,
+    pub recommended_price: U512,
 }
 
 #[odra::odra_type]
@@ -67,6 +69,18 @@ pub struct ScoreUpdated {
     pub new_score: u32,
 }
 
+#[odra::event]
+pub struct PriceUpdated {
+    pub agent: Address,
+    pub custom_price: U512,
+}
+
+#[odra::event]
+pub struct RecommendedPriceUpdated {
+    pub agent: Address,
+    pub recommended_price: U512,
+}
+
 #[odra::odra_error]
 pub enum ContractErrors {
     AgentAlreadyExists = 3001,
@@ -79,15 +93,26 @@ pub enum ContractErrors {
     BelowMinimumBudget = 3008,
     TaskNotSubmitted = 3009,
     TaskAlreadyAssigned = 3010,
+    NotContractAdmin = 3011,
 }
 
 const MINIMUM_BUDGET: u64 = 1_000_000_000u64; // 1 CSPR
 
 #[odra::module(
     errors = ContractErrors,
-    events = [AgentRegistered, TaskCreated, TaskAssigned, TaskSubmitted, TaskCompleted, ScoreUpdated]
+    events = [
+        AgentRegistered, 
+        TaskCreated, 
+        TaskAssigned, 
+        TaskSubmitted, 
+        TaskCompleted, 
+        ScoreUpdated,
+        PriceUpdated,
+        RecommendedPriceUpdated
+    ]
 )]
 pub struct AgentNetwork {
+    admin: Var<Address>,
     agents: Mapping<Address, AgentProfile>,
     tasks: Mapping<String, Task>,
     reputations: Mapping<(Address, String), u32>,
@@ -97,7 +122,7 @@ pub struct AgentNetwork {
 impl AgentNetwork {
     /// Initialize the contract.
     pub fn init(&mut self) {
-        // Initialization if needed
+        self.admin.set(self.env().caller());
     }
 
     /// Register a new AI agent on the network.
@@ -112,6 +137,8 @@ impl AgentNetwork {
             description,
             metadata_uri,
             active_jobs: 0,
+            custom_price: U512::zero(),
+            recommended_price: U512::zero(),
         };
 
         self.agents.set(&caller, profile);
@@ -269,6 +296,33 @@ impl AgentNetwork {
     /// Get reputation score of an agent for a specific skill.
     pub fn get_reputation(&self, agent: Address, skill: String) -> u32 {
         self.reputations.get_or_default(&(agent, skill))
+    }
+
+    /// Set a custom price for the agent.
+    pub fn set_price(&mut self, price: U512) {
+        let caller = self.env().caller();
+        let mut profile = self.agents.get(&caller).unwrap_or_revert(&self.env());
+        profile.custom_price = price;
+        self.agents.set(&caller, profile);
+        self.env().emit_event(PriceUpdated {
+            agent: caller,
+            custom_price: price,
+        });
+    }
+
+    /// Update recommended price for an agent. Only the admin can call this.
+    pub fn update_recommended_price(&mut self, agent: Address, price: U512) {
+        let caller = self.env().caller();
+        if Some(caller) != self.admin.get() {
+            self.env().revert(ContractErrors::NotContractAdmin);
+        }
+        let mut profile = self.agents.get(&agent).unwrap_or_revert(&self.env());
+        profile.recommended_price = price;
+        self.agents.set(&agent, profile);
+        self.env().emit_event(RecommendedPriceUpdated {
+            agent,
+            recommended_price: price,
+        });
     }
 }
 
