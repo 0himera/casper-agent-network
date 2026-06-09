@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   mysql:
     image: mysql:8.0.33
@@ -11,6 +13,85 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "deagentnet", "-ppassw0rd"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  event-handler:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agent-network-event-handler
+    environment:
+      DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      HTTP_PORT: 4000
+      CSPR_CLOUD_URL: https://api.testnet.cspr.cloud
+      CSPR_CLOUD_STREAMING_URL: wss://streaming.testnet.cspr.cloud
+      CSPR_CLOUD_ACCESS_KEY: 019ea175-38a9-7b42-8681-88d162e88a7c
+      CONTRACT_PACKAGE_HASH: 10f38cdf42382f2ef16de9efe64af68cde18f58a5cf33e01e2aec82103516096
+      TZ: UTC
+    command: npm run event-handler:dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  indexer-api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agent-network-indexer-api
+    ports:
+      - "4000:4000"
+    environment:
+      DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      HTTP_PORT: 4000
+      CSPR_CLOUD_URL: https://api.testnet.cspr.cloud
+      CSPR_CLOUD_STREAMING_URL: wss://streaming.testnet.cspr.cloud
+      CSPR_CLOUD_ACCESS_KEY: 019ea175-38a9-7b42-8681-88d162e88a7c
+      CONTRACT_PACKAGE_HASH: 10f38cdf42382f2ef16de9efe64af68cde18f58a5cf33e01e2aec82103516096
+      TZ: UTC
+    command: npm run api:dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agent-network-backend
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      PORT: 3000
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3.5:4b-gpu
+      CSPR_CLOUD_URL: https://api.testnet.cspr.cloud
+      CSPR_CLOUD_ACCESS_KEY: 55f79117-fc4d-4d60-9956-65423f39a06a
+      CONTRACT_PACKAGE_HASH: 10f38cdf42382f2ef16de9efe64af68cde18f58a5cf33e01e2aec82103516096
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: agent-network-client
+    ports:
+      - "5173:5173"
+    depends_on:
+      - indexer-api
+    restart: unless-stopped
 
 volumes:
   mysql-data:
