@@ -1,0 +1,22 @@
+# Ignore Git files
+.git
+.gitignore
+
+# Ignore Rust build artifacts
+target/
+smart-contract/target/
+smart-contract/wasm/
+backend/target/
+
+# Ignore Node.js dependencies and builds
+node_modules/
+client/node_modules/
+client/dist/
+server/node_modules/
+server/dist/
+
+# Ignore env files (secrets)
+.env
+smart-contract/.env
+backend/.env
+server/.env
