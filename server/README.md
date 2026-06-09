@@ -1,4 +1,4 @@
-# Tip the Barista - Server
+# Casper Agent Network - Server
 
 The server consists of two Node.js applications that work together to provide backend functionality:
 
@@ -26,12 +26,12 @@ You can run MySQL locally or use Docker:
 
 **Option A: Docker (Recommended for Development)**
 ```bash
-docker compose -f ../infra/local/docker-compose.yaml up -d mysql
+docker compose -f ../docker-compose.yaml up -d mysql
 ```
 
 **Option B: Local MySQL Installation**
 - Install MySQL 8.0+
-- Create a database (e.g., `tip_barista`)
+- Create a database (e.g., `deagentnet`)
 - Note your connection credentials
 
 ## Configuration
@@ -50,7 +50,7 @@ Edit `.env` and update these essential settings:
 **Smart Contract Configuration:**
 ```env
 # Use the default testnet contract or your own deployed contract
-DONATION_CONTRACT_PACKAGE_HASH=c447e9d334a710bc3e0a47cbea854c269e41637d7b9aa9d37a745596f651ed7a
+CONTRACT_PACKAGE_HASH=c447e9d334a710bc3e0a47cbea854c269e41637d7b9aa9d37a745596f651ed7a
 ```
 
 **CSPR.cloud API Access:**
@@ -62,7 +62,7 @@ CSPR_CLOUD_ACCESS_KEY=your_access_key_here
 **Database Connection:**
 ```env
 # Default value for Docker setup
-DB_URI="mysql://root:password@localhost:3306/donation"
+DB_URI="mysql://deagentnet:passw0rd@localhost:3306/deagentnet"
 ```
 
 
@@ -105,12 +105,19 @@ Expected output:
 
 Once running, the REST API provides these endpoints:
 
-### Get All Tips
+### Get All Tasks
 ```http
-GET /api/donations
+GET /api/tasks
 ```
 
-Returns aggregated statistics.
+Returns list of tasks.
+
+### Get All Agents
+```http
+GET /api/agents
+```
+
+Returns list of registered agents.
 
 ### Health Check
 ```http
@@ -126,7 +133,7 @@ Returns server status and database connectivity.
 **Problem**: `Error: connect ECONNREFUSED 127.0.0.1:3306`
 
 **Solution**:
-- Ensure MySQL is running: `docker compose ps` or `systemctl status mysql`
+- Ensure MySQL is running: `docker ps` or `systemctl status mysql`
 - Verify credentials in `.env` match your database setup
 - Check firewall isn't blocking port 3306
 
@@ -144,7 +151,7 @@ Returns server status and database connectivity.
 **Problem**: No events being processed
 
 **Solution**:
-- Verify `DONATION_CONTRACT_PACKAGE_HASH` matches deployed contract
+- Verify `CONTRACT_PACKAGE_HASH` matches deployed contract
 - Check contract has emitted events (view on [Testnet Explorer](https://testnet.cspr.live))
 - Review logs for connection errors: `npm run event-handler:dev`
 
@@ -161,13 +168,16 @@ Returns server status and database connectivity.
 ### Watch Database Changes
 ```bash
 # Connect to MySQL
-docker exec -it tip-barista-mysql mysql -u root -p
+docker exec -it agent-network-mysql mysql -u deagentnet -p
 
 # Use database
-USE tip_barista;
+USE deagentnet;
 
-# View tips
-SELECT * FROM tips ORDER BY created_at DESC LIMIT 10;
+# View agents
+SELECT * FROM agent_entity ORDER BY created_at DESC LIMIT 10;
+
+# View tasks
+SELECT * FROM task_entity ORDER BY created_at DESC LIMIT 10;
 ```
 
 ### Test API Endpoints

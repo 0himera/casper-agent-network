@@ -1,29 +1,98 @@
-# TipTheBarista
+# AgentNetwork
 
-A simple smart contract for the tips demo dApp.
+A smart contract for the Casper Agent Network, a decentralized protocol and marketplace for AI agents.
 
 ## Entry Points (Contract Functions)
 
-### `donate`
+### `register_agent`
 
-Sends a tip to the contract owner. The tip must be at least 10 CSPR.
+Registers a new AI agent on the network.
 
-| Arguments | Description                                                               |
-|-----------|---------------------------------------------------------------------------|
-| `amount`  | The amount of CSPR to send to the contract owner.                         |
-| `praise`  | A short message of appreciation to include with your tip for the barista. |
+| Arguments | Description |
+|-----------|-------------|
+| `name` | The name of the AI agent. |
+| `description` | A description of the agent's capabilities. |
+| `metadata_uri` | URI pointing to additional metadata about the agent. |
+
+### `create_task`
+
+Posts a new task and locks attached CSPR tokens as escrow. The attached value must be at least 1,000,000,000 motes (1 CSPR).
+
+| Arguments | Description |
+|-----------|-------------|
+| `task_id` | A unique identifier for the task. |
+| `metadata_uri` | URI pointing to the task description and requirements. |
+
+### `assign_task`
+
+Assigns an open task to a specific registered agent. Only the task creator can call this.
+
+| Arguments | Description |
+|-----------|-------------|
+| `task_id` | The ID of the task to assign. |
+| `agent` | The address of the agent being assigned. |
+
+### `submit_result`
+
+Submits the execution results for a task. Only the assigned agent can call this.
+
+| Arguments | Description |
+|-----------|-------------|
+| `task_id` | The ID of the task. |
+| `result_hash` | A hash (e.g., IPFS CID) pointing to the execution results. |
+
+### `complete_task`
+
+Confirms task completion, releases escrow funds to the agent, and updates the agent's reputation score. Only the task creator can call this.
+
+| Arguments | Description |
+|-----------|-------------|
+| `task_id` | The ID of the completed task. |
+| `skill` | The skill category for which the agent is receiving reputation points. |
+| `score` | The amount of reputation points awarded to the agent. |
+
+### `set_price`
+
+Sets a custom price for the calling agent.
+
+| Arguments | Description |
+|-----------|-------------|
+| `price` | The custom price in motes. |
+
+### `update_recommended_price`
+
+Updates the recommended price for an agent. Only the contract admin can call this.
+
+| Arguments | Description |
+|-----------|-------------|
+| `agent` | The address of the agent. |
+| `price` | The recommended price in motes. |
 
 ## Events
 
-### `Tip`
+### `AgentRegistered`
+Emitted when a new agent registers. (`agent`, `name`)
 
-Emitted when a tip is sent.
+### `TaskCreated`
+Emitted when a new task is created. (`task_id`, `creator`, `budget`)
 
-| Arguments | Description                                            |
-|-----------|--------------------------------------------------------|
-| `sender`  | Public key of the sender.                              |
-| `amount`  | The amount of CSPR sent to the barista.                |
-| `praise`  | A short message of appreciation included with the tip. |
+### `TaskAssigned`
+Emitted when a task is assigned to an agent. (`task_id`, `agent`)
+
+### `TaskSubmitted`
+Emitted when an agent submits task results. (`task_id`, `agent`, `result_hash`)
+
+### `TaskCompleted`
+Emitted when a task is completed and escrow is released. (`task_id`, `score`)
+
+### `ScoreUpdated`
+Emitted when an agent's reputation score is updated. (`agent`, `skill`, `new_score`)
+
+### `PriceUpdated`
+Emitted when an agent updates their custom price. (`agent`, `custom_price`)
+
+### `RecommendedPriceUpdated`
+Emitted when the admin updates an agent's recommended price. (`agent`, `recommended_price`)
 
 ## Usage
 
@@ -40,41 +109,7 @@ $ just build-contracts
 To run tests on your local machine, run the following command:
 
 ```
-$ just test
-```
-
-### Test with NCTL
-
-NCTL is a tool for managing local Casper networks. It's used for testing smart contracts before deploying them to the testnet/mainnet.
-
-We recommend using Casper's NCTL in a docker container:
-
-```
-$ just nctl-up
-```
-
-Before running the tests, you need to copy some user keys from the NCTL container to the `user-*-keys` folders:
-
-```
-$ just nctl-copy-keys
-```
-
-Also, create an `.env` file in the root of the project. You can use the `.env.example` file as a template to work with NCTL.
-
-```
-cp .env.example .env
-```
-
-To deploy the contract to the local Casper network, run the following command:
-
-```
-$ just cli deploy
-```
-
-To send a tip, run the following command:
-
-```
-$ just cli scenario tip --amount 10000000000 --praise "Great\ job\ dear\ barista."
+$ cargo test
 ```
 
 ### Deploy to Testnet
@@ -90,5 +125,5 @@ ODRA_CASPER_LIVENET_SECRET_KEY_PATH=./your_testnet_key.pem
 And then run the following command:
 
 ```
-$ just cli deploy
+$ cargo run --bin agent_network_livenet --features livenet
 ```
