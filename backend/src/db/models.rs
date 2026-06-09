@@ -29,6 +29,8 @@ pub struct Task {
     pub transaction_hash: String,
     pub domain: String,
     pub prompt: String,
+    pub deadline: u64,
+    pub result_signature: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 

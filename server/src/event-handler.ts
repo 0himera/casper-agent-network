@@ -12,7 +12,8 @@ import {
   TaskCompletedPayload, 
   ScoreUpdatedPayload,
   PriceUpdatedPayload,
-  RecommendedPriceUpdatedPayload
+  RecommendedPriceUpdatedPayload,
+  TaskCancelledPayload
 } from "./events";
 import { AgentEntity } from "./entity/agent.entity";
 import { TaskEntity } from "./entity/task.entity";
@@ -111,6 +112,8 @@ async function main() {
           creatorKey = account.data.public_key || payload.creator;
         } catch (e) {}
 
+        const deadlineVal = payload.deadline ? payload.deadline.toString() : '0';
+
         let task = await taskRepo.findOne({ where: { id: payload.task_id } });
         if (!task) {
           task = taskRepo.create({
@@ -121,21 +124,23 @@ async function main() {
             transaction_hash: deployHash,
             domain: 'defi_analysis',
             prompt: '',
+            deadline: deadlineVal,
             timestamp: new Date(timestamp)
           });
           await taskRepo.save(task);
-          console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes`);
+          console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes, deadline ${deadlineVal}`);
         } else {
-          // If the task already exists (created by REST API), we do NOT overwrite prompt and domain!
-          // We can update the transaction_hash and creator_public_key if they are empty/null.
           if (!task.transaction_hash) {
             task.transaction_hash = deployHash;
           }
           if (!task.creator_public_key) {
             task.creator_public_key = creatorKey;
           }
+          if (deadlineVal !== '0') {
+            task.deadline = deadlineVal;
+          }
           await taskRepo.save(task);
-          console.log(`Task ${payload.task_id} already exists, updated transaction hash/creator`);
+          console.log(`Task ${payload.task_id} already exists, updated transaction hash/creator/deadline`);
         }
 
       } else if (eventName === 'TaskAssigned') {
@@ -163,6 +168,15 @@ async function main() {
         }
 
         console.log(`Task ${payload.task_id} assigned to agent ${agentKey}`);
+
+        // Trigger backend execution
+        const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+        console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
+        fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+          method: 'POST'
+        }).catch(err => {
+          console.log('Error triggering execution on backend:', err.message || err);
+        });
 
       } else if (eventName === 'TaskSubmitted') {
         const payload = event.data.data as TaskSubmittedPayload;
@@ -251,6 +265,26 @@ async function main() {
           recommended_price_motes: payload.recommended_price
         });
         console.log(`On-chain recommended price updated for agent ${agentKey}: ${payload.recommended_price} motes`);
+
+      } else if (eventName === 'TaskCancelled') {
+        const payload = event.data.data as TaskCancelledPayload;
+        const taskRepo = AppDataSource.getRepository(TaskEntity);
+        const agentRepo = AppDataSource.getRepository(AgentEntity);
+
+        const task = await taskRepo.findOneBy({ id: payload.task_id });
+        if (task) {
+          task.status = 'Cancelled';
+          await taskRepo.save(task);
+
+          if (task.assigned_agent_public_key) {
+            const agent = await agentRepo.findOneBy({ public_key: task.assigned_agent_public_key });
+            if (agent && agent.active_jobs > 0) {
+              agent.active_jobs -= 1;
+              await agentRepo.save(agent);
+            }
+          }
+          console.log(`Task ${payload.task_id} marked as cancelled in DB`);
+        }
       }
 
     } catch (err) {

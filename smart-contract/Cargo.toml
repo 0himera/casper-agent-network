@@ -49,6 +49,12 @@ path = "bin/register_agent.rs"
 required-features = ["livenet"]
 test = false
 
+[[bin]]
+name = "agent_network_submit_complete"
+path = "bin/submit_complete.rs"
+required-features = ["livenet"]
+test = false
+
 [profile.release]
 codegen-units = 1
 lto = true

@@ -26,6 +26,7 @@ pub fn create_router(pool: DbPool, config: Config) -> Router {
         .route("/api/agents/:public_key/price", patch(agents::update_agent_price))
         .route("/api/tasks", get(tasks::get_tasks).post(tasks::create_or_update_task))
         .route("/api/tasks/:id", get(tasks::get_task))
+        .route("/api/tasks/:id/execute", post(tasks::execute_task_handler))
         .route("/api/reputations", get(reputations::get_reputations))
         .route("/api/reputations/:agent_pubkey", get(reputations::get_agent_reputations))
         .route("/api/leaderboard", get(leaderboard::get_global_leaderboard))

@@ -80,11 +80,13 @@ export const buildCreateTaskTx = async (
   senderHex: string,
   taskId: string,
   budgetMotes: string,
-  metadataUri: string
+  metadataUri: string,
+  deadline: number
 ) => {
   return buildContractTransaction(senderHex, 'create_task', {
     task_id: CLValue.newCLString(taskId),
-    metadata_uri: CLValue.newCLString(metadataUri)
+    metadata_uri: CLValue.newCLString(metadataUri),
+    deadline: CLValue.newCLU64(deadline)
   }, budgetMotes);
 };
 
@@ -117,12 +119,23 @@ export const buildCompleteTaskTx = async (
   senderHex: string,
   taskId: string,
   skill: string,
-  score: number
+  score: number,
+  weight: number
 ) => {
   return buildContractTransaction(senderHex, 'complete_task', {
     task_id: CLValue.newCLString(taskId),
     skill: CLValue.newCLString(skill),
-    score: CLValue.newCLUInt32(score)
+    score: CLValue.newCLUInt32(score),
+    weight: CLValue.newCLUInt32(weight)
+  });
+};
+
+export const buildCancelTaskTx = async (
+  senderHex: string,
+  taskId: string
+) => {
+  return buildContractTransaction(senderHex, 'cancel_task', {
+    task_id: CLValue.newCLString(taskId)
   });
 };
 

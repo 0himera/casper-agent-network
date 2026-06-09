@@ -9,17 +9,17 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /usr/src/app
 
-COPY Cargo.toml Cargo.lock ./
+# Copy projects
+COPY backend ./backend
+COPY smart-contract ./smart-contract
 
-# Create dummy main.rs to build dependencies first (for caching)
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+# Build backend
+WORKDIR /usr/src/app/backend
 RUN cargo build --release
-RUN rm -rf src
 
-# Copy real source code and rebuild
-COPY src ./src
-RUN touch src/main.rs
-RUN cargo build --release
+# Build smart contract CLI submit_complete
+WORKDIR /usr/src/app/smart-contract
+RUN cargo build --release --bin agent_network_submit_complete --features livenet
 
 # Final runtime stage
 FROM debian:bookworm-slim
@@ -30,7 +30,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /usr/local/bin
 
-COPY --from=builder /usr/src/app/target/release/backend /usr/local/bin/backend
+# Copy compiled binaries
+COPY --from=builder /usr/src/app/backend/target/release/backend /usr/local/bin/backend
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
 
 EXPOSE 3000
 

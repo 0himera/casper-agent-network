@@ -28,6 +28,15 @@ pub struct Task {
     pub status: TaskStatus,
     pub result_hash: String,
     pub metadata_uri: String,
+    pub deadline: u64,
+}
+
+#[odra::odra_type]
+#[derive(Default)]
+pub struct ReputationState {
+    pub weighted_sum: u64,
+    pub total_weight: u64,
+    pub tasks_completed: u32,
 }
 
 #[odra::event]
@@ -41,6 +50,7 @@ pub struct TaskCreated {
     pub task_id: String,
     pub creator: Address,
     pub budget: U512,
+    pub deadline: u64,
 }
 
 #[odra::event]
@@ -81,6 +91,11 @@ pub struct RecommendedPriceUpdated {
     pub recommended_price: U512,
 }
 
+#[odra::event]
+pub struct TaskCancelled {
+    pub task_id: String,
+}
+
 #[odra::odra_error]
 pub enum ContractErrors {
     AgentAlreadyExists = 3001,
@@ -94,6 +109,11 @@ pub enum ContractErrors {
     TaskNotSubmitted = 3009,
     TaskAlreadyAssigned = 3010,
     NotContractAdmin = 3011,
+    TaskAlreadyExists = 3012,
+    DeadlinePassed = 3013,
+    DeadlineNotPassed = 3014,
+    InvalidScore = 3015,
+    InvalidWeight = 3016,
 }
 
 const MINIMUM_BUDGET: u64 = 1_000_000_000u64; // 1 CSPR
@@ -108,14 +128,15 @@ const MINIMUM_BUDGET: u64 = 1_000_000_000u64; // 1 CSPR
         TaskCompleted, 
         ScoreUpdated,
         PriceUpdated,
-        RecommendedPriceUpdated
+        RecommendedPriceUpdated,
+        TaskCancelled
     ]
 )]
 pub struct AgentNetwork {
     admin: Var<Address>,
     agents: Mapping<Address, AgentProfile>,
     tasks: Mapping<String, Task>,
-    reputations: Mapping<(Address, String), u32>,
+    reputations: Mapping<(Address, String), ReputationState>,
 }
 
 #[odra::module]
@@ -150,7 +171,7 @@ impl AgentNetwork {
 
     /// Post a new task and lock CSPR as escrow.
     #[odra(payable)]
-    pub fn create_task(&mut self, task_id: String, metadata_uri: String) {
+    pub fn create_task(&mut self, task_id: String, metadata_uri: String, deadline: u64) {
         let caller = self.env().caller();
         let attached_value = self.env().attached_value();
 
@@ -159,8 +180,7 @@ impl AgentNetwork {
         }
 
         if self.tasks.get(&task_id).is_some() {
-            // Task ID must be unique
-            self.env().revert(ContractErrors::BelowMinimumBudget); // Re-use or define new error
+            self.env().revert(ContractErrors::TaskAlreadyExists);
         }
 
         let task = Task {
@@ -170,6 +190,7 @@ impl AgentNetwork {
             status: TaskStatus::Open,
             result_hash: String::new(),
             metadata_uri,
+            deadline,
         };
 
         self.tasks.set(&task_id, task);
@@ -177,7 +198,55 @@ impl AgentNetwork {
             task_id,
             creator: caller,
             budget: attached_value,
+            deadline,
         });
+    }
+
+    /// Cancel a task and refund escrow.
+    pub fn cancel_task(&mut self, task_id: String) {
+        let caller = self.env().caller();
+        let mut task = self.tasks.get(&task_id).unwrap_or_revert(&self.env());
+        
+        if task.creator != caller {
+            self.env().revert(ContractErrors::NotTaskCreator);
+        }
+
+        let current_time = self.env().get_block_time();
+        
+        let can_cancel = match task.status {
+            TaskStatus::Open => true,
+            TaskStatus::InProgress => {
+                current_time >= task.deadline && task.result_hash.is_empty()
+            },
+            _ => false,
+        };
+
+        if !can_cancel {
+            if task.status == TaskStatus::InProgress && current_time < task.deadline {
+                self.env().revert(ContractErrors::DeadlineNotPassed);
+            } else {
+                self.env().revert(ContractErrors::TaskNotOpen);
+            }
+        }
+
+        let budget = task.budget;
+        let assigned_agent = task.assigned_agent;
+        
+        task.status = TaskStatus::Cancelled;
+        self.tasks.set(&task_id, task);
+
+        if let Some(agent) = assigned_agent {
+            if let Some(mut agent_profile) = self.agents.get(&agent) {
+                if agent_profile.active_jobs > 0 {
+                    agent_profile.active_jobs -= 1;
+                    self.agents.set(&agent, agent_profile);
+                }
+            }
+        }
+
+        self.env().transfer_tokens(&caller, &budget);
+
+        self.env().emit_event(TaskCancelled { task_id });
     }
 
     /// Assign a task to a registered agent. Only the task creator can do this.
@@ -208,12 +277,12 @@ impl AgentNetwork {
         });
     }
 
-    /// Submit execution results. Only the assigned agent can call this.
+    /// Submit execution results. Only the assigned agent or admin can call this.
     pub fn submit_result(&mut self, task_id: String, result_hash: String) {
         let caller = self.env().caller();
         
         let mut task = self.tasks.get(&task_id).unwrap_or_revert(&self.env());
-        if task.assigned_agent != Some(caller) {
+        if task.assigned_agent != Some(caller) && Some(caller) != self.admin.get() {
             self.env().revert(ContractErrors::NotAssignedAgent);
         }
 
@@ -221,24 +290,33 @@ impl AgentNetwork {
             self.env().revert(ContractErrors::TaskNotAssigned);
         }
 
+        let assigned_agent = task.assigned_agent.unwrap();
         task.result_hash = result_hash.clone();
         self.tasks.set(&task_id, task);
 
         self.env().emit_event(TaskSubmitted {
             task_id,
-            agent: caller,
+            agent: assigned_agent,
             result_hash,
         });
     }
 
-    /// Complete task execution, release escrow, and update agent's reputation for a given skill.
-    pub fn complete_task(&mut self, task_id: String, skill: String, score: u32) {
+    /// Complete task execution, release escrow, and update agent's reputation. Only Admin can call this.
+    pub fn complete_task(&mut self, task_id: String, skill: String, score: u32, weight: u32) {
         let caller = self.env().caller();
+        if Some(caller) != self.admin.get() {
+            self.env().revert(ContractErrors::NotContractAdmin);
+        }
+
+        if score > 100 {
+            self.env().revert(ContractErrors::InvalidScore);
+        }
+
+        if weight == 0 {
+            self.env().revert(ContractErrors::InvalidWeight);
+        }
 
         let mut task = self.tasks.get(&task_id).unwrap_or_revert(&self.env());
-        if task.creator != caller {
-            self.env().revert(ContractErrors::NotTaskCreator);
-        }
 
         if task.status != TaskStatus::InProgress {
             self.env().revert(ContractErrors::TaskNotAssigned);
@@ -266,9 +344,13 @@ impl AgentNetwork {
         self.env().transfer_tokens(&agent, &budget);
 
         // Update reputation score for the skill
-        let current_score = self.reputations.get_or_default(&(agent, skill.clone()));
-        let new_score = current_score + score;
-        self.reputations.set(&(agent, skill.clone()), new_score);
+        let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
+        rep_state.weighted_sum += (score as u64) * (weight as u64);
+        rep_state.total_weight += weight as u64;
+        rep_state.tasks_completed += 1;
+
+        let new_score = (rep_state.weighted_sum / rep_state.total_weight) as u32;
+        self.reputations.set(&(agent, skill.clone()), rep_state);
 
         // Emit events
         self.env().emit_event(TaskCompleted {
@@ -295,7 +377,12 @@ impl AgentNetwork {
 
     /// Get reputation score of an agent for a specific skill.
     pub fn get_reputation(&self, agent: Address, skill: String) -> u32 {
-        self.reputations.get_or_default(&(agent, skill))
+        let rep_state = self.reputations.get_or_default(&(agent, skill));
+        if rep_state.total_weight == 0 {
+            0
+        } else {
+            (rep_state.weighted_sum / rep_state.total_weight) as u32
+        }
     }
 
     /// Set a custom price for the agent.
@@ -329,7 +416,7 @@ impl AgentNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use odra::host::{Deployer, HostRef, NoArgs};
+    use odra::host::{Deployer, HostRef, NoArgs, HostRefLoader};
 
     #[test]
     fn it_registers_agents() {
@@ -355,7 +442,7 @@ mod tests {
     #[test]
     fn it_handles_task_lifecycle() {
         let env = odra_test::env();
-        let client = env.get_account(0);
+        let client = env.get_account(0); // client is deployer (admin)
         let agent = env.get_account(1);
 
         env.set_caller(client);
@@ -369,14 +456,19 @@ mod tests {
             "https://meta".to_string(),
         );
 
-        // Client creates a task with 5 CSPR budget
+        // Client creates a task with 5 CSPR budget and 1 hour deadline (3600000 ms)
         env.set_caller(client);
         let budget = U512::from(5_000_000_000u64);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://task_meta".to_string());
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://task_meta".to_string(),
+            3600000,
+        );
 
         let task = contract.get_task("task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Open);
         assert_eq!(task.budget, budget);
+        assert_eq!(task.deadline, 3600000);
 
         // Assign task to agent
         contract.assign_task("task_01".to_string(), agent);
@@ -393,16 +485,16 @@ mod tests {
         let task = contract.get_task("task_01".to_string()).unwrap();
         assert_eq!(task.result_hash, "ipfs_hash_result");
 
-        // Client completes task, rewarding agent with reputation
+        // Client (which is contract admin) completes task, rewarding agent with reputation
         let agent_balance_before = env.balance_of(&agent);
         env.set_caller(client);
-        contract.complete_task("task_01".to_string(), "DeFi".to_string(), 10);
+        contract.complete_task("task_01".to_string(), "DeFi".to_string(), 90, 10);
 
         let task = contract.get_task("task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Completed);
 
         // Check reputation and payment
-        assert_eq!(contract.get_reputation(agent, "DeFi".to_string()), 10);
+        assert_eq!(contract.get_reputation(agent, "DeFi".to_string()), 90);
         
         let agent_profile = contract.get_agent(agent).unwrap();
         assert_eq!(agent_profile.active_jobs, 0);
@@ -451,5 +543,172 @@ mod tests {
             contract.update_recommended_price(agent_user, U512::from(1u64));
         }));
         assert!(result.is_err(), "Non-admin should not be able to set recommended price");
+    }
+
+    #[test]
+    fn it_cancels_open_tasks() {
+        let env = odra_test::env();
+        let client = env.get_account(0);
+
+        env.set_caller(client);
+        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+
+        let budget = U512::from(5_000_000_000u64);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://task_meta".to_string(),
+            3600000,
+        );
+
+        let balance_before = env.balance_of(&client);
+        
+        // Cancel task (as creator)
+        contract.cancel_task("task_01".to_string());
+        
+        let task = contract.get_task("task_01".to_string()).unwrap();
+        assert!(matches!(task.status, TaskStatus::Cancelled));
+
+        let balance_after = env.balance_of(&client);
+        assert_eq!(balance_after, balance_before + budget);
+    }
+
+    #[test]
+    fn it_cancels_expired_in_progress_tasks() {
+        let env = odra_test::env();
+        let client = env.get_account(0);
+        let agent = env.get_account(1);
+
+        env.set_caller(client);
+        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+
+        // Register agent
+        env.set_caller(agent);
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic Agent".to_string(),
+            "https://meta".to_string(),
+        );
+
+        // Client creates task with budget 5 CSPR and deadline +3600000 (1 hour)
+        env.set_caller(client);
+        let budget = U512::from(5_000_000_000u64);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://task_meta".to_string(),
+            3600000,
+        );
+
+        // Assign task to agent
+        contract.assign_task("task_01".to_string(), agent);
+
+        // Try to cancel immediately (should fail)
+        let contract_address = contract.address();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.cancel_task("task_01".to_string());
+        }));
+        assert!(result.is_err(), "Should not be able to cancel in-progress task before deadline");
+
+        // Advance time past deadline
+        env.advance_block_time(3600001);
+
+        // Now cancel task
+        let balance_before = env.balance_of(&client);
+        contract.cancel_task("task_01".to_string());
+
+        let task = contract.get_task("task_01".to_string()).unwrap();
+        assert!(matches!(task.status, TaskStatus::Cancelled));
+
+        let balance_after = env.balance_of(&client);
+        assert_eq!(balance_after, balance_before + budget);
+
+        // Verify agent active_jobs decremented
+        let agent_profile = contract.get_agent(agent).unwrap();
+        assert_eq!(agent_profile.active_jobs, 0);
+    }
+
+    #[test]
+    fn it_prevents_unauthorized_complete_task() {
+        let env = odra_test::env();
+        let admin = env.get_account(0);
+        let non_admin = env.get_account(1);
+        let agent = env.get_account(2);
+
+        env.set_caller(admin);
+        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+
+        // Register agent
+        env.set_caller(agent);
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic Agent".to_string(),
+            "https://meta".to_string(),
+        );
+
+        // Admin creates task
+        env.set_caller(admin);
+        let budget = U512::from(5_000_000_000u64);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://task_meta".to_string(),
+            3600000,
+        );
+        contract.assign_task("task_01".to_string(), agent);
+
+        // Agent submits
+        env.set_caller(agent);
+        contract.submit_result("task_01".to_string(), "hash".to_string());
+
+        // Try to complete as non-admin (should fail)
+        env.set_caller(non_admin);
+        let contract_address = contract.address();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.complete_task("task_01".to_string(), "DeFi".to_string(), 90, 10);
+        }));
+        assert!(result.is_err(), "Non-admin must not complete task");
+    }
+
+    #[test]
+    fn it_calculates_weighted_reputation() {
+        let env = odra_test::env();
+        let admin = env.get_account(0);
+        let agent = env.get_account(1);
+
+        env.set_caller(admin);
+        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+
+        // Register agent
+        env.set_caller(agent);
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic Agent".to_string(),
+            "https://meta".to_string(),
+        );
+
+        // Create, assign, submit and complete task 1: score=90, weight=2
+        env.set_caller(admin);
+        let budget = U512::from(5_000_000_000u64);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), 0);
+        contract.assign_task("task_01".to_string(), agent);
+        env.set_caller(agent);
+        contract.submit_result("task_01".to_string(), "hash".to_string());
+        env.set_caller(admin);
+        contract.complete_task("task_01".to_string(), "DeFi".to_string(), 90, 2);
+
+        assert_eq!(contract.get_reputation(agent, "DeFi".to_string()), 90);
+
+        // Create, assign, submit and complete task 2: score=85, weight=5
+        contract.with_tokens(budget).create_task("task_02".to_string(), "https://meta".to_string(), 0);
+        contract.assign_task("task_02".to_string(), agent);
+        env.set_caller(agent);
+        contract.submit_result("task_02".to_string(), "hash".to_string());
+        env.set_caller(admin);
+        contract.complete_task("task_02".to_string(), "DeFi".to_string(), 85, 5);
+
+        // Expected weighted sum = 90*2 + 85*5 = 180 + 425 = 605
+        // Expected total weight = 2 + 5 = 7
+        // Expected average = 605 / 7 = 86
+        assert_eq!(contract.get_reputation(agent, "DeFi".to_string()), 86);
     }
 }

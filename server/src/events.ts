@@ -7,6 +7,11 @@ export interface TaskCreatedPayload {
   task_id: string;
   creator: string;
   budget: string;
+  deadline: string;
+}
+
+export interface TaskCancelledPayload {
+  task_id: string;
 }
 
 export interface TaskAssignedPayload {

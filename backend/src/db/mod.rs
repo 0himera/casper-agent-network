@@ -45,10 +45,16 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             transaction_hash VARCHAR(128) NOT NULL,
             domain VARCHAR(100) NOT NULL DEFAULT 'defi_analysis',
             prompt TEXT NOT NULL,
+            deadline BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            result_signature TEXT NULL,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (assigned_agent_public_key) REFERENCES agents(public_key) ON DELETE SET NULL
         )"
     ).execute(&pool).await?;
+
+    // Ensure columns exist on already created tables
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN deadline BIGINT UNSIGNED NOT NULL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result_signature TEXT NULL").execute(&pool).await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (

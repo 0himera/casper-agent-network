@@ -12,7 +12,8 @@ import {
   buildSubmitResultTx,
   buildCompleteTaskTx,
   buildSetPriceTx,
-  buildUpdateRecommendedPriceTx
+  buildUpdateRecommendedPriceTx,
+  buildCancelTaskTx
 } from '@/utils';
 import { ClickTopBar, Container, HeroSection, PageFooter, Section } from '@/components';
 
@@ -387,11 +388,11 @@ const App = () => {
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const budgetMotes = (Number(taskForm.budget) * 1_000_000_000).toString();
+    const deadlineMs = Date.now() + 24 * 60 * 60 * 1000; // 24 hours in the future
     
     await handleTransactionSend(
-      async (sender) => buildCreateTaskTx(sender, taskForm.id, budgetMotes, taskForm.metadataUri),
+      async (sender) => buildCreateTaskTx(sender, taskForm.id, budgetMotes, taskForm.metadataUri, deadlineMs),
       async (deployHash) => {
-        // Post details to backend API so it records the prompt & domain immediately
         const configApiUrl = (window as any).config?.agent_network_api_url || 'http://localhost:4000';
         const backendUrl = configApiUrl.replace(':4000', ':3000');
         
@@ -404,7 +405,8 @@ const App = () => {
             budget_motes: Number(budgetMotes),
             transaction_hash: deployHash,
             domain: taskForm.domain,
-            prompt: taskForm.prompt
+            prompt: taskForm.prompt,
+            deadline: deadlineMs
           })
         });
         
@@ -440,10 +442,15 @@ const App = () => {
     await handleTransactionSend(async (sender) => buildSubmitResultTx(sender, submitForm.taskId, submitForm.resultHash));
   };
 
-  // 7. Complete Task
+  // 7. Complete Task (Admin test fallback)
   const handleCompleteTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    await handleTransactionSend(async (sender) => buildCompleteTaskTx(sender, completeForm.taskId, completeForm.skill, Number(completeForm.score)));
+    await handleTransactionSend(async (sender) => buildCompleteTaskTx(sender, completeForm.taskId, completeForm.skill, Number(completeForm.score), 100));
+  };
+
+  // 8. Cancel Task
+  const handleCancelTask = async (taskId: string) => {
+    await handleTransactionSend(async (sender) => buildCancelTaskTx(sender, taskId));
   };
 
   return (
@@ -587,10 +594,30 @@ const App = () => {
                               <strong>Assigned Agent:</strong> {task.assigned_agent_public_key}
                             </div>
                           )}
+                          {task.deadline && Number(task.deadline) > 0 && (
+                            <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+                              <strong>Deadline:</strong> {new Date(Number(task.deadline)).toLocaleString()}
+                            </div>
+                          )}
                           {task.result_hash && (
                             <div style={{ fontSize: '0.8rem', color: '#2ecc71', wordBreak: 'break-all' }}>
-                              <strong>Result:</strong> {task.result_hash}
+                              <strong>Result Hash:</strong> {task.result_hash}
                             </div>
+                          )}
+                          {task.result_signature && (
+                            <div style={{ fontSize: '0.75rem', color: '#9b59b6', wordBreak: 'break-all' }}>
+                              <strong>Signature:</strong> {task.result_signature}
+                            </div>
+                          )}
+                          {task.creator_public_key === connectedAccount?.public_key && 
+                           (task.status === 'Open' || 
+                            (task.status === 'InProgress' && Date.now() >= Number(task.deadline) && !task.result_hash)) && (
+                              <Button 
+                                onClick={() => handleCancelTask(task.id)}
+                                style={{ marginTop: '10px', backgroundColor: '#e74c3c', borderColor: '#e74c3c', padding: '6px 12px', fontSize: '0.8rem' }}
+                              >
+                                Cancel & Refund Escrow
+                              </Button>
                           )}
                         </Card>
                       ))

@@ -32,6 +32,12 @@ export class TaskEntity {
   @Column({ type: 'text' })
   prompt: string;
 
+  @Column({ type: 'bigint', unsigned: true, default: 0 })
+  deadline: string;
+
+  @Column({ type: 'text', nullable: true })
+  result_signature?: string;
+
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   timestamp: Date;
 }
