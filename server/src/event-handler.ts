@@ -77,16 +77,29 @@ async function main() {
           console.log('Could not resolve account via CSPR.cloud, using raw address');
         }
 
-        const agent = agentRepo.create({
-          public_key: publicKey,
-          name: payload.name,
-          description: '',
-          metadata_uri: '',
-          active_jobs: 0,
-          timestamp: new Date(timestamp)
-        });
-        await agentRepo.save(agent);
-        console.log(`Agent registered: ${payload.name} (${publicKey})`);
+        let agent = await agentRepo.findOne({ where: { public_key: publicKey } });
+        if (!agent) {
+          agent = agentRepo.create({
+            public_key: publicKey,
+            name: payload.name,
+            description: '',
+            metadata_uri: '',
+            active_jobs: 0,
+            timestamp: new Date(timestamp)
+          });
+          await agentRepo.save(agent);
+          console.log(`Agent registered: ${payload.name} (${publicKey})`);
+        } else {
+          // If the agent already exists, we do NOT overwrite status, endpoint_url, api_key, system_prompt.
+          // We only update name, metadata_uri (if empty), and timestamp.
+          agent.name = payload.name;
+          if (!agent.metadata_uri) {
+            agent.metadata_uri = '';
+          }
+          agent.timestamp = new Date(timestamp);
+          await agentRepo.save(agent);
+          console.log(`Agent already exists, updated metadata: ${payload.name} (${publicKey})`);
+        }
 
       } else if (eventName === 'TaskCreated') {
         const payload = event.data.data as TaskCreatedPayload;
@@ -98,16 +111,32 @@ async function main() {
           creatorKey = account.data.public_key || payload.creator;
         } catch (e) {}
 
-        const task = taskRepo.create({
-          id: payload.task_id,
-          creator_public_key: creatorKey,
-          budget_motes: payload.budget,
-          status: 'Open',
-          transaction_hash: deployHash,
-          timestamp: new Date(timestamp)
-        });
-        await taskRepo.save(task);
-        console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes`);
+        let task = await taskRepo.findOne({ where: { id: payload.task_id } });
+        if (!task) {
+          task = taskRepo.create({
+            id: payload.task_id,
+            creator_public_key: creatorKey,
+            budget_motes: payload.budget,
+            status: 'Open',
+            transaction_hash: deployHash,
+            domain: 'defi_analysis',
+            prompt: '',
+            timestamp: new Date(timestamp)
+          });
+          await taskRepo.save(task);
+          console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes`);
+        } else {
+          // If the task already exists (created by REST API), we do NOT overwrite prompt and domain!
+          // We can update the transaction_hash and creator_public_key if they are empty/null.
+          if (!task.transaction_hash) {
+            task.transaction_hash = deployHash;
+          }
+          if (!task.creator_public_key) {
+            task.creator_public_key = creatorKey;
+          }
+          await taskRepo.save(task);
+          console.log(`Task ${payload.task_id} already exists, updated transaction hash/creator`);
+        }
 
       } else if (eventName === 'TaskAssigned') {
         const payload = event.data.data as TaskAssignedPayload;

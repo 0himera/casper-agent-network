@@ -27,7 +27,32 @@ pub async fn execute_agent(
         // Hosted agent: platform executes the LLM directly using system prompt
         let sys_prompt = system_prompt.unwrap_or("You are a helpful AI assistant.");
         
-        if let Some(ref key) = config.openai_api_key {
+        if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+            let client = reqwest::Client::new();
+            let payload = json!({
+                "messages": [
+                    { "role": "system", "content": sys_prompt },
+                    { "role": "user", "content": prompt }
+                ]
+            });
+
+            let url = format!(
+                "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/moonshotai/kimi-k2.6",
+                account_id
+            );
+
+            let res = client.post(&url)
+                .bearer_auth(api_token)
+                .json(&payload)
+                .send()
+                .await?;
+
+            let res_json: serde_json::Value = res.json().await?;
+            res_json["result"]["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("Error generating response")
+                .to_string()
+        } else if let Some(ref key) = config.openai_api_key {
             let client = reqwest::Client::new();
             let payload = json!({
                 "model": "gpt-4o-mini",

@@ -83,7 +83,45 @@ Return JSON format exactly matching:
         task_prompt, agent_result
     );
 
-    let (total, scores, reasoning) = if let Some(ref api_key) = config.openai_api_key {
+    let (total, scores, reasoning) = if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+        // 0. Cloudflare Workers AI Integration (Moonshot Kimi k2.6)
+        let client = reqwest::Client::new();
+        let payload = serde_json::json!({
+            "messages": [
+                { "role": "system", "content": rubric_prompt },
+                { "role": "user", "content": user_content }
+            ]
+        });
+
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/moonshotai/kimi-k2.6",
+            account_id
+        );
+
+        let res = client.post(&url)
+            .bearer_auth(api_token)
+            .json(&payload)
+            .send()
+            .await?;
+
+        let res_json: serde_json::Value = res.json().await?;
+        let text_content = res_json["result"]["choices"][0]["message"]["content"]
+            .as_str()
+            .ok_or("Invalid Cloudflare AI response format")?;
+
+        // Extract JSON block if wrapped in markdown code fence or text
+        let json_start = text_content.find('{').ok_or("No JSON object found in Cloudflare AI response")?;
+        let json_end = text_content.rfind('}').ok_or("No JSON object found in Cloudflare AI response")? + 1;
+        let json_str = &text_content[json_start..json_end];
+
+        let parsed: serde_json::Value = serde_json::from_str(json_str)?;
+        let scores: RubricScores = serde_json::from_value(parsed["scores"].clone())?;
+        let total = parsed["total"].as_u64().unwrap_or(0) as u32;
+        let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
+
+        (total, scores, reasoning)
+
+    } else if let Some(ref api_key) = config.openai_api_key {
         // 1. OpenAI Integration
         let client = reqwest::Client::new();
         let payload = serde_json::json!({

@@ -8,6 +8,8 @@ pub struct Config {
     pub claude_api_key: Option<String>,
     pub ollama_url: Option<String>,
     pub ollama_model: Option<String>,
+    pub cloudflare_account_id: Option<String>,
+    pub cloudflare_api_token: Option<String>,
 }
 
 impl Config {
@@ -26,6 +28,8 @@ impl Config {
         let claude_api_key = env::var("CLAUDE_API_KEY").ok();
         let ollama_url = env::var("OLLAMA_URL").ok();
         let ollama_model = env::var("OLLAMA_MODEL").ok();
+        let cloudflare_account_id = env::var("CLOUDFLARE_ACCOUNT_ID").ok();
+        let cloudflare_api_token = env::var("CLOUDFLARE_API_TOKEN").ok();
 
         Config {
             database_url,
@@ -34,6 +38,8 @@ impl Config {
             claude_api_key,
             ollama_url,
             ollama_model,
+            cloudflare_account_id,
+            cloudflare_api_token,
         }
     }
 }

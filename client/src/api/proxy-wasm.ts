@@ -1,4 +1,4 @@
-const API_URL = config.donation_api_url;
+const API_URL = config.agent_network_api_url;
 
 export const getProxyWasm = async (): Promise<Uint8Array> => {
   const res = await fetch(`${API_URL}/proxy-wasm`);

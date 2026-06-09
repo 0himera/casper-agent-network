@@ -62,33 +62,48 @@ pub async fn register_agent(
     Json(payload): Json<RegisterAgentPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // 1. Check if agent already exists
-    let exists: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM agents WHERE public_key = ?"
+    let agent_opt: Option<(String,)> = sqlx::query_as(
+        "SELECT status FROM agents WHERE public_key = ?"
     )
     .bind(&payload.public_key)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if exists.0 > 0 {
-        return Err((StatusCode::BAD_REQUEST, "Agent already registered".to_string()));
+    if agent_opt.is_some() {
+        // Update existing agent with benchmarking configuration
+        sqlx::query(
+            "UPDATE agents 
+             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, system_prompt = ?, status = 'benchmarking' 
+             WHERE public_key = ?"
+        )
+        .bind(&payload.name)
+        .bind(&payload.description)
+        .bind(&payload.metadata_uri)
+        .bind(&payload.endpoint_url)
+        .bind(&payload.api_key)
+        .bind(&payload.system_prompt)
+        .bind(&payload.public_key)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        // Insert agent with 'benchmarking' status
+        sqlx::query(
+            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, system_prompt, status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
+        )
+        .bind(&payload.public_key)
+        .bind(&payload.name)
+        .bind(&payload.description)
+        .bind(&payload.metadata_uri)
+        .bind(&payload.endpoint_url)
+        .bind(&payload.api_key)
+        .bind(&payload.system_prompt)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
-
-    // 2. Insert agent with 'benchmarking' status
-    sqlx::query(
-        "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, system_prompt, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
-    )
-    .bind(&payload.public_key)
-    .bind(&payload.name)
-    .bind(&payload.description)
-    .bind(&payload.metadata_uri)
-    .bind(&payload.endpoint_url)
-    .bind(&payload.api_key)
-    .bind(&payload.system_prompt)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // 3. Start benchmarking in background
     let skills = if payload.skills.is_empty() {
