@@ -125,6 +125,7 @@ pub async fn execute_task_handler(
             &task.prompt,
             agent.endpoint_url.as_deref(),
             agent.api_key.as_deref(),
+            agent.model.as_deref(),
             agent.system_prompt.as_deref(),
             &state.config,
         ).await {

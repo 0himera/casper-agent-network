@@ -24,6 +24,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             metadata_uri VARCHAR(255) NULL,
             endpoint_url VARCHAR(255) NULL,
             api_key VARCHAR(255) NULL,
+            model VARCHAR(255) NULL,
             active_jobs INT NOT NULL DEFAULT 0,
             status VARCHAR(50) NOT NULL DEFAULT 'active',
             recommended_price_motes BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -53,6 +54,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     ).execute(&pool).await?;
 
     // Ensure columns exist on already created tables
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN model VARCHAR(255) NULL").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN deadline BIGINT UNSIGNED NOT NULL DEFAULT 0").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result_signature TEXT NULL").execute(&pool).await;
 

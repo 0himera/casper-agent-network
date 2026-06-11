@@ -9,6 +9,7 @@ pub struct Agent {
     pub metadata_uri: Option<String>,
     pub endpoint_url: Option<String>,
     pub api_key: Option<String>,
+    pub model: Option<String>,
     pub active_jobs: i32,
     pub status: String,
     pub recommended_price_motes: u64,

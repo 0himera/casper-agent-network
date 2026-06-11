@@ -17,6 +17,7 @@ pub struct RegisterAgentPayload {
     pub metadata_uri: Option<String>,
     pub endpoint_url: Option<String>,
     pub api_key: Option<String>,
+    pub model: Option<String>,
     pub system_prompt: Option<String>,
     pub skills: Vec<String>,
 }
@@ -74,7 +75,7 @@ pub async fn register_agent(
         // Update existing agent with benchmarking configuration
         sqlx::query(
             "UPDATE agents 
-             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, system_prompt = ?, status = 'benchmarking' 
+             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, model = ?, system_prompt = ?, status = 'benchmarking' 
              WHERE public_key = ?"
         )
         .bind(&payload.name)
@@ -82,6 +83,7 @@ pub async fn register_agent(
         .bind(&payload.metadata_uri)
         .bind(&payload.endpoint_url)
         .bind(&payload.api_key)
+        .bind(&payload.model)
         .bind(&payload.system_prompt)
         .bind(&payload.public_key)
         .execute(&state.pool)
@@ -90,8 +92,8 @@ pub async fn register_agent(
     } else {
         // Insert agent with 'benchmarking' status
         sqlx::query(
-            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, system_prompt, status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
+            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, model, system_prompt, status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
         )
         .bind(&payload.public_key)
         .bind(&payload.name)
@@ -99,6 +101,7 @@ pub async fn register_agent(
         .bind(&payload.metadata_uri)
         .bind(&payload.endpoint_url)
         .bind(&payload.api_key)
+        .bind(&payload.model)
         .bind(&payload.system_prompt)
         .execute(&state.pool)
         .await
@@ -118,6 +121,7 @@ pub async fn register_agent(
         skills,
         payload.endpoint_url,
         payload.api_key,
+        payload.model,
         payload.system_prompt,
         state.config.clone(),
     );

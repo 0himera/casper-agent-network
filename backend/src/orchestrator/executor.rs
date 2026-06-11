@@ -12,6 +12,7 @@ pub async fn execute_agent(
     prompt: &str,
     endpoint_url: Option<&str>,
     api_key: Option<&str>,
+    model: Option<&str>,
     system_prompt: Option<&str>,
     config: &Config,
 ) -> Result<ExecutionResult, Box<dyn std::error::Error + Send + Sync>> {
@@ -141,14 +142,9 @@ pub async fn execute_agent(
             )
         }
     } else {
-        // External agent: POST call to user-hosted API endpoint
+        // External agent: POST call to user-provided API endpoint
         let client = reqwest::Client::new();
-        let mut request = client.post(endpoint_url.unwrap())
-            .json(&json!({
-                "task_id": format!("task-{}", start.elapsed().as_nanos()),
-                "domain": domain,
-                "prompt": prompt
-            }));
+        let mut request = client.post(endpoint_url.unwrap());
 
         if let Some(key) = api_key {
             if !key.is_empty() {
@@ -156,14 +152,37 @@ pub async fn execute_agent(
             }
         }
 
-        let res = request.send().await?;
+        let has_model = model.is_some() && !model.unwrap().is_empty();
+        let res = if has_model {
+            let sys_prompt = system_prompt.unwrap_or("You are a helpful AI assistant.");
+            let payload = json!({
+                "model": model.unwrap(),
+                "messages": [
+                    { "role": "system", "content": sys_prompt },
+                    { "role": "user", "content": prompt }
+                ]
+            });
+            request.json(&payload).send().await?
+        } else {
+            let payload = json!({
+                "task_id": format!("task-{}", start.elapsed().as_nanos()),
+                "domain": domain,
+                "prompt": prompt
+            });
+            request.json(&payload).send().await?
+        };
+
         let res_json: serde_json::Value = res.json().await?;
         
-        res_json["result"]
-            .as_str()
-            .or_else(|| res_json["output"].as_str())
-            .ok_or("Invalid agent response format: must return 'result' or 'output' field")?
-            .to_string()
+        if let Some(content) = res_json["choices"][0]["message"]["content"].as_str() {
+            content.to_string()
+        } else if let Some(result) = res_json["result"].as_str() {
+            result.to_string()
+        } else if let Some(output) = res_json["output"].as_str() {
+            output.to_string()
+        } else {
+            return Err("Invalid external agent response format: must return OpenAI structure or 'result' / 'output'".into());
+        }
     };
 
     let processing_time_ms = start.elapsed().as_millis() as u64;

@@ -86,7 +86,7 @@ export const buildCreateTaskTx = async (
   return buildContractTransaction(senderHex, 'create_task', {
     task_id: CLValue.newCLString(taskId),
     metadata_uri: CLValue.newCLString(metadataUri),
-    deadline: CLValue.newCLU64(deadline)
+    deadline: CLValue.newCLUint64(deadline)
   }, budgetMotes);
 };
 

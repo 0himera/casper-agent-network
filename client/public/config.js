@@ -1,5 +1,5 @@
 window.config = {
-  agent_network_contract_package_hash: "10f38cdf42382f2ef16de9efe64af68cde18f58a5cf33e01e2aec82103516096",
+  agent_network_contract_package_hash: "e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699",
   agent_network_api_url: "http://localhost:4000",
   cspr_click_app_name: "Casper Agent Network",
   cspr_click_app_id: "csprclick-template",
