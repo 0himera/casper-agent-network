@@ -2,6 +2,7 @@ pub mod agents;
 pub mod tasks;
 pub mod reputations;
 pub mod leaderboard;
+pub mod x402;
 
 use axum::{
     routing::{get, post, patch},
@@ -9,15 +10,17 @@ use axum::{
 };
 use crate::db::DbPool;
 use crate::config::Config;
+use crate::casper::contract::CasperClient;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: DbPool,
     pub config: Config,
+    pub casper_client: CasperClient,
 }
 
-pub fn create_router(pool: DbPool, config: Config) -> Router {
-    let state = AppState { pool, config };
+pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) -> Router {
+    let state = AppState { pool, config, casper_client };
 
     Router::new()
         .route("/api/agents", get(agents::get_agents))

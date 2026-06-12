@@ -12,6 +12,7 @@ pub struct Config {
     pub cloudflare_api_token: Option<String>,
     pub fireworks_api_key: Option<String>,
     pub fireworks_model: Option<String>,
+    pub admin_account: String,
 }
 
 impl Config {
@@ -34,6 +35,9 @@ impl Config {
         let cloudflare_api_token = env::var("CLOUDFLARE_API_TOKEN").ok();
         let fireworks_api_key = env::var("FIREWORKS_API_KEY").ok();
         let fireworks_model = env::var("FIREWORKS_MODEL").ok();
+        
+        let admin_account = env::var("ADMIN_ACCOUNT")
+            .unwrap_or_else(|_| "ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8".to_string());
 
         Config {
             database_url,
@@ -46,6 +50,7 @@ impl Config {
             cloudflare_api_token,
             fireworks_api_key,
             fireworks_model,
+            admin_account,
         }
     }
 }

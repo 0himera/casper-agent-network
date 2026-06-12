@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
     response::IntoResponse,
     Json,
 };
@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::api::AppState;
 use crate::db::models::Agent;
 use crate::orchestrator::benchmark::start_benchmark_background;
+use crate::api::x402::verify_payment;
 
 #[derive(Deserialize)]
 pub struct RegisterAgentPayload {
@@ -60,8 +61,21 @@ pub async fn get_agent(
 
 pub async fn register_agent(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<RegisterAgentPayload>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.1 CSPR = 100,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        100_000_000,
+        &state.config.admin_account,
+    )
+    .await {
+        return Err(e);
+    }
+
     // 1. Check if agent already exists
     let agent_opt: Option<(String,)> = sqlx::query_as(
         "SELECT status FROM agents WHERE public_key = ?"
@@ -69,7 +83,7 @@ pub async fn register_agent(
     .bind(&payload.public_key)
     .fetch_optional(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
     if agent_opt.is_some() {
         // Update existing agent with benchmarking configuration
@@ -88,7 +102,7 @@ pub async fn register_agent(
         .bind(&payload.public_key)
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
     } else {
         // Insert agent with 'benchmarking' status
         sqlx::query(
@@ -105,7 +119,7 @@ pub async fn register_agent(
         .bind(&payload.system_prompt)
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
     }
 
     // 3. Start benchmarking in background

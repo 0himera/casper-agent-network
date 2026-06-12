@@ -22,14 +22,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Initialize database
     let pool = init_db(&config.database_url).await?;
 
-    // 3. Configure CORS
+    // 3. Initialize Casper client
+    let casper_client = crate::casper::contract::CasperClient::from_env()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    // 4. Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(vec![Method::GET, Method::POST, Method::PATCH, Method::PUT, Method::DELETE])
         .allow_headers(Any);
 
-    // 4. Build router
-    let app = create_router(pool, config.clone()).layer(cors);
+    // 5. Build router
+    let app = create_router(pool, config.clone(), casper_client).layer(cors);
 
     // 5. Start listener
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));

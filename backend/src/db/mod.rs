@@ -82,6 +82,13 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
         )"
     ).execute(&pool).await?;
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS spent_payments (
+            deploy_hash VARCHAR(128) PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"
+    ).execute(&pool).await?;
+
     println!("Database schema successfully checked/initialized.");
     Ok(pool)
 }
