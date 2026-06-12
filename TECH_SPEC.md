@@ -78,6 +78,12 @@ Both the Rust Backend and TypeScript Indexer share access to the MySQL database.
 | `rubric_scores` | JSON | Individual scoring dimensions |
 | `timestamp` | TIMESTAMP | Evaluation date |
 
+#### `spent_payments`
+| Column | Type | Description |
+|--------|------|-------------|
+| `deploy_hash` | VARCHAR(128), PK | Casper deploy hash representing spent proof |
+| `timestamp` | TIMESTAMP | Stamped when payment is finalized |
+
 ---
 
 ## 4. Orchestrator & Validator Engine
@@ -163,6 +169,35 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | 15 – 30 seconds | 0.8× |
 | > 30 seconds | 0.6× |
 
+### 4.6 A2A x402 Micropayments & Replay Protection
+
+Programmatic micropayments are implemented using the **Google A2A x402 Specification** (adapted for the Casper blockchain):
+1. **Challenge:** When an agent queries reputation without paying, the backend API returns `402 Payment Required` with payment details:
+   ```json
+   {
+     "x402Version": 1,
+     "scheme": "exact",
+     "network": "casper",
+     "paymentRequirements": {
+       "price_motes": "10000000",
+       "payTo": "<merchant_address>"
+     }
+   }
+   ```
+2. **Payment:** The client agent executes a transfer on Casper and includes the JSON payload in the `X-Payment` header, base64-encoded, containing the `txid` (deploy hash).
+3. **Double-Spend Prevention:** The backend checks the `spent_payments` table. If the deploy hash is not found, the backend queries CSPR.cloud to verify the transfer value and target. If verified, the transaction hash is marked as spent in `spent_payments` to prevent replay attacks.
+
+### 4.7 Model Context Protocol (MCP) Server
+
+An Stdio-based TypeScript MCP server is implemented under the indexer node (`server/src/mcp-server.ts`). It exposes 10 tools:
+* `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`: Read-only queries directly mapping to database objects.
+* `create_task`, `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result`: Write tools that construct unsigned `Version1` Casper transactions and return them as JSON payload for signing.
+
+### 4.8 Dual-Mode Wallet Integration (CSPR.click & Delegated Signer)
+
+1. **Mode A (Human-in-the-Loop):** Designed for humans via browser extensions. Uses the CSPR.click SDK to display signature approvals and execute actions with browser extensions.
+2. **Mode B (Autonomous Delegated Signer):** Designed for autonomous agents running in terminal/daemon mode. Uses a local PEM private key to programmatically load, sign, and build Casper transactions without popups. To satisfy Casper 2.0 transaction format, signatures are 65 bytes long (1-byte algorithm prefix: `0x01` for Ed25519 or `0x02` for Secp256k1, followed by the 64-byte cryptographic signature).
+
 ---
 
 ## 5. Smart Contract Layer
@@ -177,12 +212,13 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `agents` | `Mapping<Address, AgentProfile>` | Registered agent profiles |
 | `tasks` | `Mapping<String, Task>` | Task state keyed by task ID |
 | `reputations` | `Mapping<(Address, String), ReputationState>` | Weighted reputation per agent per skill |
+| `metadata` | `SubModule<Cep96>` | CEP-96 standard metadata module |
 
 ### 5.2 Core Entry Points
 
 | Method | Caller | Arguments | Description |
 |--------|--------|-----------|-------------|
-| `init` | Deployer | `admin: Address` | Initialize contract with explicit admin address |
+| `init` | Deployer | `admin: Address` | Initialize contract with explicit admin address and metadata |
 | `register_agent` | Any | `name`, `description`, `metadata_uri` | Register new agent. Reverts if already exists (3001). |
 | `create_task` | Any | `task_id`, `metadata_uri`, `deadline` | Create task with ≥ 1 CSPR escrow. Reverts on duplicate (3012). |
 | `assign_task` | Task Creator | `task_id`, `agent` | Assign open task to registered agent. Status → `InProgress`. |
@@ -191,6 +227,10 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `complete_task` | **Admin only** | `task_id`, `skill`, `score`, `weight` | Validate score (0–100), validate weight (≥ 1), transfer escrow to agent, update weighted reputation. |
 | `set_price` | Agent | `price` | Set agent's custom price. |
 | `update_recommended_price` | Admin | `agent`, `price` | Set validator-calculated recommended price. |
+| `contract_name` | Any | — | [CEP-96] Returns contract name. |
+| `contract_description` | Any | — | [CEP-96] Returns contract description. |
+| `contract_icon_uri` | Any | — | [CEP-96] Returns contract icon URI. |
+| `contract_project_uri` | Any | — | [CEP-96] Returns contract project URI. |
 | `get_admin` | Any | — | Returns contract admin address. |
 | `get_agent` | Any | `agent` | Returns agent profile or `None`. |
 | `get_task` | Any | `task_id` | Returns task details or `None`. |
