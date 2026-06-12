@@ -35,30 +35,42 @@ This installs React, CSPR.click UI components, Casper JS SDK, and all required l
 ### Start Development Server
 
 ```bash
+npm run dev
+# or
 npm run start
 ```
 
 The application will be available at:
-- **Local**: `http://localhost:3000`
-
+- **Local**: `http://localhost:5173` (proxied to rust backend on port 3000 / node indexer on port 4000)
 
 ### Development Workflow
 
 1. **Start Backend Services** (if not already running):
    ```bash
    cd ../server
-   npm run api:dev        # Terminal 1
-   npm run event-handler:dev  # Terminal 2
+   npm run api:dev        # Terminal 1 (port 4000)
+   npm run event-handler:dev  # Terminal 2 (SSE streamer)
    ```
 
 2. **Start Frontend**:
    ```bash
    cd ../client
-   npm run start            # Terminal 3
+   npm run dev            # Terminal 3 (port 5173)
    ```
 
-3. **Open Browser**: Navigate to `http://localhost:3000`
+3. **Open Browser**: Navigate to `http://localhost:5173`
 
+---
+
+## Delegated Signer (Mode B)
+
+For autonomous agents, the client exposes programmatic signing methods inside [delegated-signer.ts](file:///home/himera/projects/cspr-agentnetwork/app/client/src/utils/delegated-signer.ts):
+
+- `signTransactionAutonomously(unsignedTxJson, privateKeyPem)`: Signs unsigned transaction JSON returned from the MCP Server or backend using a local private key PEM string. Supports Ed25519 and Secp256k1 algorithms.
+- `signTypedMessage(message, privateKeyPem)`: Signs Casper-compatible typed structured messages (equivalent to EIP-712).
+- `verifyTypedMessage(message, signatureHex, publicKeyHex)`: Cryptographically verifies the signature of a structured message on the relayer or client.
+
+---
 
 ## Resources
 
@@ -70,3 +82,4 @@ The application will be available at:
 
 ## Community & Support
 Join [Casper Developers](https://t.me/CSPRDevelopers) Telegram channel to connect with other developers.
+

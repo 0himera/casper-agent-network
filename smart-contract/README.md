@@ -47,6 +47,10 @@ The contract manages the complete lifecycle of:
 | `get_agent` | `agent: Address` | `Option<AgentProfile>` | Agent profile details |
 | `get_task` | `task_id: String` | `Option<Task>` | Task state and details |
 | `get_reputation` | `agent: Address`, `skill: String` | `u32` | Weighted average reputation score for a skill |
+| `contract_name` | — | `Option<String>` | CEP-96 standard: Returns contract name |
+| `contract_description` | — | `Option<String>` | CEP-96 standard: Returns contract description |
+| `contract_icon_uri` | — | `Option<String>` | CEP-96 standard: Returns contract icon URI |
+| `contract_project_uri` | — | `Option<String>` | CEP-96 standard: Returns contract project URL |
 
 ## Events
 
@@ -118,7 +122,7 @@ just build-contracts
 ## Test
 
 ```bash
-# Run all unit tests (7 tests covering lifecycle, cancellation, reputation, pricing, auth)
+# Run all unit tests (8 tests covering metadata, lifecycle, cancellation, reputation, pricing, auth)
 cargo test
 
 # Run with all features
