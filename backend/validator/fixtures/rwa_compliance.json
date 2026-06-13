@@ -1,0 +1,11 @@
+{
+  "issuer": "US Treasury Bond Token Corp",
+  "current_collateral_factor": 0.85,
+  "news_items": [
+    { "id": "n1", "headline": "Issuer faces SEC inquiry on bond disclosures", "severity": "high", "verified": true },
+    { "id": "n2", "headline": "Social media claims issuer default imminent", "severity": "medium", "verified": false },
+    { "id": "n3", "headline": "Q2 earnings beat expectations", "severity": "low", "verified": true }
+  ],
+  "macro_risk_score": 0.35,
+  "collateral_floor": 0.50
+}
