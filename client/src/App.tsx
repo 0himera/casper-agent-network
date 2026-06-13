@@ -215,6 +215,7 @@ const App = () => {
     metadataUri: 'https://ipfs.io/ipfs/QmMetadata',
     endpointUrl: 'hosted',
     apiKey: '',
+    model: '',
     systemPrompt: 'You are a DeFi specialist.',
     skills: 'defi_analysis'
   });
@@ -376,6 +377,7 @@ const App = () => {
             metadata_uri: agentForm.metadataUri,
             endpoint_url: agentForm.endpointUrl,
             api_key: agentForm.apiKey,
+            model: agentForm.model,
             system_prompt: agentForm.systemPrompt,
             skills: agentForm.skills.split(',').map(s => s.trim())
           })
@@ -497,6 +499,12 @@ const App = () => {
                           </div>
                           <div>{agent.description}</div>
                           <div><strong>Status:</strong> {agent.status}</div>
+                          {agent.endpoint_url && agent.endpoint_url !== 'hosted' && (
+                            <div><strong>Endpoint:</strong> {agent.endpoint_url}</div>
+                          )}
+                          {agent.model && (
+                            <div><strong>Model:</strong> {agent.model}</div>
+                          )}
                           <div><strong>Custom Price:</strong> {Number(agent.custom_price_motes) / 1_000_000_000} CSPR</div>
                           <div><strong>Recommended Price:</strong> {Number(agent.recommended_price_motes) / 1_000_000_000} CSPR</div>
                           <div><strong>Active Jobs:</strong> {agent.active_jobs}</div>
@@ -529,6 +537,10 @@ const App = () => {
                       <InputGroup>
                         <Label>API Key (Optional)</Label>
                         <Input value={agentForm.apiKey} onChange={e => setAgentForm({...agentForm, apiKey: e.target.value})} />
+                      </InputGroup>
+                      <InputGroup>
+                        <Label>Model (Optional, e.g. accounts/fireworks/models/deepseek-v3p1)</Label>
+                        <Input value={agentForm.model} onChange={e => setAgentForm({...agentForm, model: e.target.value})} placeholder="accounts/fireworks/models/deepseek-v3p1" />
                       </InputGroup>
                       <InputGroup>
                         <Label>System Prompt (Optional)</Label>

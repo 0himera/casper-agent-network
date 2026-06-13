@@ -17,9 +17,10 @@ impl DeployScript for AgentNetworkDeployScript {
         env: &HostEnv,
         container: &mut DeployedContractsContainer
     ) -> Result<(), odra_cli::deploy::Error> {
+        let admin = env.get_account(0);
         AgentNetwork::load_or_deploy(
             &env,
-            NoArgs,
+            agent_network::agent_network::AgentNetworkInitArgs { admin },
             container,
             350_000_000_000 // Gas limit
         )?;

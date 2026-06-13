@@ -1,23 +1,37 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
     response::IntoResponse,
     Json,
 };
 use crate::api::AppState;
 use crate::db::models::Reputation;
+use crate::api::x402::verify_payment;
 
 pub async fn get_reputations(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.01 CSPR = 10,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        10_000_000,
+        &state.config.admin_account,
+    )
+    .await {
+        return Err(e);
+    }
+
     let reputations = sqlx::query_as::<_, Reputation>(
         "SELECT * FROM reputations ORDER BY timestamp DESC"
     )
     .fetch_all(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(reputations))
+    Ok(Json(serde_json::json!(reputations)))
 }
 
 pub async fn get_agent_reputations(

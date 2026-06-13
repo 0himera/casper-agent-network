@@ -15,8 +15,8 @@
 //! cargo run --bin agent_network_livenet --features livenet
 //! ```
 
-use agent_network::agent_network::{AgentNetwork, AgentNetworkHostRef};
-use odra::host::{Deployer, HostRef, NoArgs};
+use agent_network::agent_network::{AgentNetwork, AgentNetworkInitArgs};
+use odra::host::Deployer;
 use odra::prelude::Addressable;
 
 fn main() {
@@ -31,7 +31,8 @@ fn main() {
 
     // Deploy the contract (or load if already deployed)
     println!("Step 1: Deploying AgentNetwork contract...");
-    let mut contract = AgentNetwork::deploy(&env, NoArgs);
+    let admin_address = env.get_account(0);
+    let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: admin_address });
     println!("✅ Contract deployed successfully!");
     println!("   Contract address: {:?}", contract.address());
 

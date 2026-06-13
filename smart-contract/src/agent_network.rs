@@ -1,5 +1,6 @@
 use odra::casper_types::U512;
 use odra::prelude::*;
+use odra_modules::cep96::{Cep96, Cep96ContractMetadata};
 
 #[odra::odra_type]
 pub struct AgentProfile {
@@ -137,13 +138,29 @@ pub struct AgentNetwork {
     agents: Mapping<Address, AgentProfile>,
     tasks: Mapping<String, Task>,
     reputations: Mapping<(Address, String), ReputationState>,
+    metadata: SubModule<Cep96>,
 }
 
 #[odra::module]
 impl AgentNetwork {
     /// Initialize the contract.
-    pub fn init(&mut self) {
-        self.admin.set(self.env().caller());
+    pub fn init(&mut self, admin: Address) {
+        self.admin.set(admin);
+        self.metadata.init(
+            Some("Casper Agent Network".to_string()),
+            Some("A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string()),
+            Some("https://agent-network.casper.dev/icon.png".to_string()),
+            Some("https://agent-network.casper.dev".to_string()),
+        );
+    }
+
+    delegate! {
+        to self.metadata {
+            fn contract_name(&self) -> Option<String>;
+            fn contract_description(&self) -> Option<String>;
+            fn contract_icon_uri(&self) -> Option<String>;
+            fn contract_project_uri(&self) -> Option<String>;
+        }
     }
 
     /// Register a new AI agent on the network.
@@ -370,6 +387,11 @@ impl AgentNetwork {
         self.agents.get(&agent)
     }
 
+    /// Get the contract admin address.
+    pub fn get_admin(&self) -> Option<Address> {
+        self.admin.get()
+    }
+
     /// Get details of a task.
     pub fn get_task(&self, task_id: String) -> Option<Task> {
         self.tasks.get(&task_id)
@@ -425,7 +447,7 @@ mod tests {
         let agent_user = env.get_account(1);
 
         env.set_caller(admin);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin });
 
         env.set_caller(agent_user);
         contract.register_agent(
@@ -446,7 +468,7 @@ mod tests {
         let agent = env.get_account(1);
 
         env.set_caller(client);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: client });
 
         // Register agent
         env.set_caller(agent);
@@ -512,7 +534,7 @@ mod tests {
 
         // Deploy as admin
         env.set_caller(admin);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin });
 
         // Register agent
         env.set_caller(agent_user);
@@ -551,7 +573,7 @@ mod tests {
         let client = env.get_account(0);
 
         env.set_caller(client);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: client });
 
         let budget = U512::from(5_000_000_000u64);
         contract.with_tokens(budget).create_task(
@@ -579,7 +601,7 @@ mod tests {
         let agent = env.get_account(1);
 
         env.set_caller(client);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: client });
 
         // Register agent
         env.set_caller(agent);
@@ -635,7 +657,7 @@ mod tests {
         let agent = env.get_account(2);
 
         env.set_caller(admin);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin });
 
         // Register agent
         env.set_caller(agent);
@@ -676,7 +698,7 @@ mod tests {
         let agent = env.get_account(1);
 
         env.set_caller(admin);
-        let mut contract = AgentNetwork::deploy(&env, NoArgs);
+        let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin });
 
         // Register agent
         env.set_caller(agent);
@@ -710,5 +732,19 @@ mod tests {
         // Expected total weight = 2 + 5 = 7
         // Expected average = 605 / 7 = 86
         assert_eq!(contract.get_reputation(agent, "DeFi".to_string()), 86);
+    }
+
+    #[test]
+    fn it_exposes_cep96_metadata() {
+        let env = odra_test::env();
+        let admin = env.get_account(0);
+
+        env.set_caller(admin);
+        let contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin });
+
+        assert_eq!(contract.contract_name(), Some("Casper Agent Network".to_string()));
+        assert_eq!(contract.contract_description(), Some("A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string()));
+        assert_eq!(contract.contract_icon_uri(), Some("https://agent-network.casper.dev/icon.png".to_string()));
+        assert_eq!(contract.contract_project_uri(), Some("https://agent-network.casper.dev".to_string()));
     }
 }

@@ -95,6 +95,7 @@ pub fn start_benchmark_background(
     skills: Vec<String>,
     endpoint_url: Option<String>,
     api_key: Option<String>,
+    model: Option<String>,
     system_prompt: Option<String>,
     config: Config,
 ) {
@@ -129,6 +130,7 @@ pub fn start_benchmark_background(
                 prompt,
                 endpoint_url.as_deref(),
                 api_key.as_deref(),
+                model.as_deref(),
                 system_prompt.as_deref(),
                 &config,
             )

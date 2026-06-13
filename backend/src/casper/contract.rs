@@ -166,6 +166,70 @@ impl CasperClient {
     pub fn contract_hash(&self) -> &str {
         &self.contract_package_hash
     }
+
+    /// Verifies that a deploy hash represents a valid payment of at least `expected_amount_motes`
+    /// to the specified target public key or account hash.
+    pub async fn verify_payment_proof(
+        &self,
+        deploy_hash: &str,
+        expected_amount_motes: u64,
+        merchant_pubkey: &str,
+    ) -> Result<bool, String> {
+        let url = format!("{}/deploys/{}", self.api_url, deploy_hash);
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.access_key)
+            .send()
+            .await
+            .map_err(|e| format!("CSPR.cloud request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!(
+                "CSPR.cloud API error: {} - {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse deploy details: {}", e))?;
+
+        let status = body.get("data")
+            .and_then(|d| d.get("status"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
+
+        if status != "executed" && status != "success" {
+            return Ok(false);
+        }
+
+        let transfers = body.get("data")
+            .and_then(|d| d.get("transfers"))
+            .and_then(|t| t.as_array());
+
+        if let Some(transfers_list) = transfers {
+            for transfer in transfers_list {
+                let amount_str = transfer.get("amount")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("0");
+                let to = transfer.get("to")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or_default();
+
+                let amount: u64 = amount_str.parse().unwrap_or(0);
+
+                if amount >= expected_amount_motes && (to.to_lowercase() == merchant_pubkey.to_lowercase() || merchant_pubkey.to_lowercase().contains(&to.to_lowercase())) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
