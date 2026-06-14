@@ -1,6 +1,7 @@
 import { Medal } from "lucide-react";
 import type { LeaderboardEntry } from "@/entities/reputation/types/types";
 import { truncateAddress, stringToColor, getInitials } from "@/shared/utils/format";
+import { motion } from "motion/react";
 import styles from "./Leaderboard.module.css";
 
 function getRankIcon(r: number) {
@@ -13,9 +14,28 @@ function getRankClass(r: number) { return r === 1 ? styles.rankGold : r === 2 ? 
 
 interface LeaderboardRowProps { entry: LeaderboardEntry }
 
+const rowVariants = {
+  hidden: { opacity: 0, x: -10 },
+  show: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      type: "spring",
+      stiffness: 120,
+      damping: 15,
+    },
+  },
+} as const;
+
 export function LeaderboardRow({ entry }: LeaderboardRowProps) {
   return (
-    <tr>
+    <motion.tr
+      variants={rowVariants}
+      whileHover={{
+        backgroundColor: "rgba(255, 255, 255, 0.02)",
+        transition: { duration: 0.1 },
+      }}
+    >
       <td className={`${styles.rankCell} ${getRankClass(entry.rank)}`}>{getRankIcon(entry.rank)}</td>
       <td>
         <div className={styles.agentCell}>
@@ -31,6 +51,6 @@ export function LeaderboardRow({ entry }: LeaderboardRowProps) {
       <td className={styles.scoreCell}>{entry.score}</td>
       <td>{entry.tasksCompleted}</td>
       <td className={styles.earningsCell}>{entry.totalEarnings} CSPR</td>
-    </tr>
+    </motion.tr>
   );
 }

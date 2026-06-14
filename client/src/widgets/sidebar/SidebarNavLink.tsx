@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
+import { motion } from "motion/react";
 import styles from "./Sidebar.module.css";
 
 interface NavLinkProps {
@@ -16,8 +17,15 @@ export function SidebarNavLink({ href, label, icon: Icon, isActive, isCollapsed 
       href={href}
       className={`${styles.navLink} ${isActive ? styles.active : ""}`}
     >
-      <Icon className={styles.navIcon} />
-      <span className={styles.navLabel}>{label}</span>
+      {isActive && (
+        <motion.div
+          layoutId="activeSidebarTab"
+          className={styles.activeBackground}
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+        />
+      )}
+      <Icon className={styles.navIcon} style={{ position: "relative", zIndex: 2 }} />
+      <span className={styles.navLabel} style={{ position: "relative", zIndex: 2 }}>{label}</span>
     </Link>
   );
 }

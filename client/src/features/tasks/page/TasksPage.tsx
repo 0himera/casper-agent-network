@@ -7,7 +7,18 @@ import { useTasksQuery } from "@/features/tasks/api/queries";
 import type { TaskStatus } from "@/entities/task/types/types";
 import { StatusTabs } from "@/features/tasks/ui/StatusTabs";
 import { TaskCard } from "@/features/tasks/ui/TaskCard";
+import { motion } from "motion/react";
 import styles from "@/features/tasks/ui/Tasks.module.css";
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05,
+    },
+  },
+};
 
 export default function TasksPage() {
   const [filter, setFilter] = useState<TaskStatus | "all">("all");
@@ -36,9 +47,15 @@ export default function TasksPage() {
       {isLoading ? (
         <div className={styles.loading}>Loading tasks...</div>
       ) : filtered.length > 0 ? (
-        <div className={styles.tasksGrid}>
+        <motion.div
+          className={styles.tasksGrid}
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          key={filter}
+        >
           {filtered.map((t) => <TaskCard key={t.id} task={t} />)}
-        </div>
+        </motion.div>
       ) : (
         <div className={styles.emptyState}>
           <ListTodo className={styles.emptyIcon} />

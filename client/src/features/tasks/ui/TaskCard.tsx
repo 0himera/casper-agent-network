@@ -3,16 +3,44 @@ import { Coins, Clock, User, Bot } from "lucide-react";
 import type { TaskEntity } from "@/entities/task/types/types";
 import { TaskStatusBadge } from "@/entities/task/ui/TaskStatusBadge";
 import { truncateAddress, formatDeadline } from "@/shared/utils/format";
+import { motion } from "motion/react";
 import styles from "./Tasks.module.css";
 
 interface TaskCardProps { task: TaskEntity }
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 12, scale: 0.98 },
+  show: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: "spring",
+      stiffness: 100,
+      damping: 15,
+    },
+  },
+} as const;
+
+const MotionLink = motion.create(Link);
 
 export function TaskCard({ task }: TaskCardProps) {
   const deadline = formatDeadline(task.deadline);
   const isExpired = deadline === "Expired";
 
   return (
-    <Link href={`/tasks/${task.id}`} className={styles.taskCard}>
+    <MotionLink
+      href={`/tasks/${task.id}`}
+      className={styles.taskCard}
+      variants={itemVariants}
+      whileHover={{
+        y: -3,
+        scale: 1.01,
+        borderColor: "rgba(143, 174, 139, 0.4)",
+        boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
+      }}
+      transition={{ duration: 0.2 }}
+    >
       <div className={styles.taskCardHeader}>
         <span className={styles.taskId}>{task.id}</span>
         <TaskStatusBadge status={task.status} />
@@ -34,6 +62,6 @@ export function TaskCard({ task }: TaskCardProps) {
           <Clock className={styles.taskMetaIcon} />{deadline}
         </span>
       </div>
-    </Link>
+    </MotionLink>
   );
 }

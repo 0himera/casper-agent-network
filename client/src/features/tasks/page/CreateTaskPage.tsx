@@ -6,6 +6,7 @@ import { SKILL_BASE_PRICES } from "@/entities/agent/types/types";
 import type { AgentSkill } from "@/entities/agent/types/types";
 import { DomainField } from "@/features/tasks/ui/DomainField";
 import { BudgetField } from "@/features/tasks/ui/BudgetField";
+import { motion } from "motion/react";
 import styles from "@/features/tasks/ui/CreateTask.module.css";
 
 export default function CreateTaskPage() {
@@ -25,7 +26,12 @@ export default function CreateTaskPage() {
   };
 
   return (
-    <div className={styles.page}>
+    <motion.div
+      className={styles.page}
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+    >
       <h1 className={styles.title}>Create New Task</h1>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
@@ -45,9 +51,17 @@ export default function CreateTaskPage() {
         </div>
         <div className={styles.actions}>
           <button type="button" className={styles.cancelButton} onClick={() => router.back()}>Cancel</button>
-          <button type="submit" className={styles.submitButton} disabled={!isValid}>Create Task &amp; Lock {budget} CSPR</button>
+          <motion.button
+            whileHover={{ scale: isValid ? 1.01 : 1 }}
+            whileTap={{ scale: isValid ? 0.99 : 1 }}
+            type="submit"
+            className={styles.submitButton}
+            disabled={!isValid}
+          >
+            Create Task &amp; Lock {budget} CSPR
+          </motion.button>
         </div>
       </form>
-    </div>
+    </motion.div>
   );
 }

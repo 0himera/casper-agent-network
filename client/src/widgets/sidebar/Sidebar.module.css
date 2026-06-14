@@ -122,18 +122,18 @@
 
 .navLink.active {
   color: var(--text-primary);
-  background: var(--accent-primary-muted);
 }
 
-.navLink.active::before {
-  content: "";
+.activeBackground {
   position: absolute;
+  top: 0;
   left: 0;
-  top: 20%;
-  bottom: 20%;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent-primary);
+  right: 0;
+  bottom: 0;
+  background: var(--accent-primary-muted);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-primary);
+  z-index: 1;
 }
 
 .navIcon {

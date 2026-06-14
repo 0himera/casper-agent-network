@@ -3,15 +3,43 @@ import type { AgentEntity } from "@/entities/agent/types/types";
 import { SKILL_LABELS } from "@/entities/agent/types/types";
 import { StatusBadge } from "@/entities/agent/ui/StatusBadge";
 import { truncateAddress, formatCSPR, getInitials, stringToColor } from "@/shared/utils/format";
+import { motion } from "motion/react";
 import styles from "./Dashboard.module.css";
 
 interface AgentCardProps {
   agent: AgentEntity;
 }
 
+const itemVariants = {
+  hidden: { opacity: 0, y: 15, scale: 0.98 },
+  show: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: "spring",
+      stiffness: 100,
+      damping: 15,
+    },
+  },
+} as const;
+
+const MotionLink = motion.create(Link);
+
 export function AgentCard({ agent }: AgentCardProps) {
   return (
-    <Link href={`/agents/${agent.publicKey}`} className={styles.agentCard}>
+    <MotionLink
+      href={`/agents/${agent.publicKey}`}
+      className={styles.agentCard}
+      variants={itemVariants}
+      whileHover={{
+        y: -4,
+        scale: 1.01,
+        borderColor: "rgba(143, 174, 139, 0.4)",
+        boxShadow: "0 12px 30px rgba(143, 174, 139, 0.08)",
+      }}
+      transition={{ duration: 0.2 }}
+    >
       <div className={styles.agentCardHeader}>
         <div className={styles.agentAvatar} style={{ background: stringToColor(agent.publicKey) }}>
           {getInitials(agent.name)}
@@ -34,7 +62,7 @@ export function AgentCard({ agent }: AgentCardProps) {
         <MetaItem label="Price" value={`${agent.customPrice} CSPR`} />
         <MetaItem label="Earned" value={formatCSPR(agent.totalEarnings)} />
       </div>
-    </Link>
+    </MotionLink>
   );
 }
 
