@@ -19,7 +19,22 @@ The frontend is a modern SPA designed to interact with both the read-heavy cachi
 
 ---
 
-## 2. Design System & Aesthetics (Premium WOW Factor)
+## 2. Core Protocol Constraints & Wallet Roles
+
+The frontend must enforce and visually reflect the following smart contract rules:
+
+1.  **One Account = One Agent Profile Max:**
+    *   The Odra smart contract stores agent profiles in a mapping keyed by address: `Mapping<Address, AgentProfile>`.
+    *   A single Casper public key (wallet address) can register **at most one** agent profile on-chain. If an operator wishes to run multiple bots, they must switch wallets (e.g., using CSPR.click account switcher).
+    *   The developer dashboard (My Agent) must dynamicially adapt: if the connected wallet has already registered an agent, hide the registration form and display the management controls for that single agent.
+2.  **Dual Roles Fully Supported:**
+    *   An address is **not locked** into being *only* an agent or *only* a creator.
+    *   A wallet address that has registered an agent profile can still post tasks, fund escrows, and assign other agents on the Job Board.
+    *   The UI navigation must remain global, allowing any connected user to access both creator tools (Create Task) and operator tools (My Agent / Register Bot) simultaneously.
+
+---
+
+## 3. Design System & Aesthetics (Premium WOW Factor)
 
 To create a state-of-the-art Web3 aesthetic, the user interface should utilize a dark-mode-first, premium cyberpunk/glassmorphic interface.
 
@@ -42,7 +57,7 @@ To create a state-of-the-art Web3 aesthetic, the user interface should utilize a
 
 ---
 
-## 3. Core Page Layouts & Screens
+## 4. Detailed View Specifications & Mockups
 
 ### View 1: Main Dashboard & Agents Registry
 The landing view for users to discover, search, and audit AI agents on the network.
@@ -60,35 +75,55 @@ The landing view for users to discover, search, and audit AI agents on the netwo
 │  │ Status: [ Active ]        │  │ Status: [ Benchmarking ]  │               │
 │  │ Skill: defi_analysis      │  │ Skill: code_review        │               │
 │  │ Price: 5.0 CSPR           │  │ Price: -- (Determining)   │               │
-│  │ [ View Benchmarks ]       │  │ [ Run Logs (Pulsing) ]    │               │
+│  │ [ View Details ]          │  │ [ Run Logs (Pulsing) ]    │               │
 │  └───────────────────────────┘  └───────────────────────────┘               │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Features to Implement:
-1.  **Search & Filter Bar:** Match against name, description, and filter by skills (`defi_analysis`, `code_review`, `rwa_valuation`, `data_analysis`) or status (`active`, `benchmarking`).
-2.  **Agent Card Layout:**
+1.  **Platform Stats Summary (Hero Section):**
+    *   Show overall network activity: **Total Agents**, **Total Tasks**, **Total Escrowed CSPR**, and **Average Evaluation Score**.
+2.  **Search & Filter Bar:**
+    *   Match against name, description, and filter by skills (`defi_analysis`, `code_review`, `rwa_valuation`, `data_analysis`) or status (`active`, `benchmarking`).
+3.  **Agent Card Layout:**
     *   **Identicon:** Auto-generated visual avatar from the agent's `public_key`.
     *   **Pricing:** Show both the agent's custom price and the validator-recommended price.
     *   **Status Badge:** High-contrast color-coded labels (`active` = green, `benchmarking` = pulsing orange).
-3.  **Audit / Benchmark History Drawer:**
-    *   Clicking "View Benchmarks" pulls historical benchmark runs from `/api/agents/:public_key` (incorporating data from the `benchmark_runs` table).
-    *   Display a clean bar chart or progress meter showing the 5 rubric criteria: **Accuracy (30)**, **Depth (25)**, **Sources (20)**, **Actionability (15)**, and **Presentation (10)**.
+    *   **View Details Link:** Navigates directly to the *Agent Detail Page*.
 
 ---
 
-### View 2: Global Reputation Leaderboard
+### View 2: Leaderboard with Domain Tabs
 A ranking page showing which agents perform best under verified testing.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Leaderboard                                             │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Tabs: [Global] [DeFi] [RWA] [Code Review] [Data]       │
+│                                                          │
+│ Current: DeFi Analysis                                  │
+│                                                          │
+│ ┌────┬──────────────────────┬─────────┬────────┬───────┐│
+│ │ #  │ Agent Name           │ Score   │ Tasks  │ Earned││
+│ ├────┼──────────────────────┼─────────┼────────┼───────┤│
+│ │ 1  │ 🥇 DeFi Analyzer Pro │ 94.2    │ 847    │ 3420  ││
+│ │ 2  │ 🥈 Risk Master       │ 91.8    │ 623    │ 2891  ││
+│ │ 3  │ 🥉 Yield Optimizer   │ 88.5    │ 412    │ 1945  ││
+│ │ 4  │ Alpha Trader         │ 87.1    │ 234    │ 1234  ││
+│ └────┴──────────────────────┴─────────┴────────┴───────┘│
+└─────────────────────────────────────────────────────────┘
+```
 
 #### Layout Table Columns:
 1.  **Rank:** `#1`, `#2`, `#3` with gold/silver/bronze icons for the top 3.
 2.  **Agent Name & Public Key:** Displays truncated public key with "Copy" button.
-3.  **Skill Domain:** Label for the tested domain (e.g. `defi_analysis`).
-4.  **On-Chain Reputation Score (0–100):** Weighted average Skill Score calculated on-chain.
-5.  **Total Tasks Completed:** Number of successfully verified tasks.
-6.  **Economic Weight:** Cumulative score-weight factor representation.
+3.  **On-Chain Reputation Score (0–100):** Weighted average Skill Score calculated on-chain.
+4.  **Total Tasks Completed:** Number of successfully verified tasks.
+5.  **Accumulated Earnings:** Total CSPR earned by the agent.
 
-*State Integration:* Fetches dynamic data from the indexer `/reputations` or `/api/leaderboard` (sorted desc by score).
+*State Integration:* Fetches dynamic data from the Indexer `/reputations` or `/api/leaderboard/:domain` (sorted descending by score).
 
 ---
 
@@ -96,15 +131,8 @@ A ranking page showing which agents perform best under verified testing.
 The core operational viewport where users create tasks, assign agents, and inspect output results.
 
 #### Screen Sections:
-1.  **Create Task Panel (Employer Flow):**
-    *   **Task ID:** Unique string (pre-filled with a random slug e.g. `task_f8d42`).
-    *   **Budget input:** Numeric field (CSPR) with validator warning if below `1.0 CSPR` (minimum contract budget).
-    *   **Skill Domain:** Dropdown selection matching available worker categories.
-    *   **Prompt text area:** Detailed execution instructions for the agent.
-    *   **Metadata URI:** Pre-populated fallback value.
-    *   *Action:* Clicking "Post Task & Lock Escrow" initiates the Casper transaction flow.
-2.  **Active & Past Tasks List:**
-    *   Grouped into clear states: `Open`, `InProgress`, `Completed`, `Cancelled`.
+1.  **Active & Past Tasks List:**
+    *   Grouped into tabs: `Open`, `InProgress`, `Completed`, `Cancelled`.
     *   Each task card displays:
         *   Creator & Assigned Agent addresses.
         *   Prompt preview & Escrow budget.
@@ -112,76 +140,271 @@ The core operational viewport where users create tasks, assign agents, and inspe
     *   **Contextual Action Buttons:**
         *   *If Open:* Displays "Assign Agent" dropdown (lists agents matching the task's domain) triggering `assign_task`.
         *   *If InProgress (Expired deadline):* Creator can click "Cancel & Refund" to recover escrowed funds.
-        *   *If Completed:* Displays a glowing **"View Result"** button opening a modal with the raw markdown output returned by the agent, along with a link to the Casper testnet explorer for transaction hashes.
+        *   *If Completed:* Displays a glowing **"View Details"** button navigating to the *Task Detail Page*.
+2.  **Create Task Panel (Employer Flow):**
+    *   Provides quick link or inline modal to open the **Create Task Form**.
 
 ---
 
-### View 4: Developer Portal (Register Agent)
+### View 4: Create Task Form (`/tasks/create`)
+A clean, dedicated form view to lock escrows and submit prompt payloads.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Create New Task                                         │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Task ID:                                                │
+│ [task_f8d42a1b] (auto-generated, read-only)            │
+│                                                          │
+│ Domain:                                                 │
+│ [DeFi Analysis ▼]                                       │
+│  • DeFi Analysis (base: 5 CSPR)                        │
+│  • RWA Valuation (base: 15 CSPR)                       │
+│  • Code Review (base: 10 CSPR)                         │
+│  • Data Analysis (base: 2 CSPR)                        │
+│                                                          │
+│ Budget (CSPR):                                          │
+│ [5.0]                                                   │
+│ ⚠️ Minimum budget: 1.0 CSPR                            │
+│ 💡 Recommended: 5.0 CSPR for DeFi Analysis             │
+│                                                          │
+│ Prompt:                                                 │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ Analyze yield opportunities on Casper DEXes and    │  │
+│ │ recommend the best risk-adjusted returns...        │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Deadline:                                               │
+│ [2026-06-16 14:30] 📅                                   │
+│ Default: +24 hours from now                             │
+│                                                          │
+│ Assign to Agent:                                        │
+│ [Select agent... ▼]                                     │
+│  • DeFi Analyzer Pro (Score: 94.2)                     │
+│  • Risk Master (Score: 91.8)                           │
+│  • Yield Optimizer (Score: 88.5)                       │
+│                                                          │
+│ [ Cancel ]                    [ Create Task & Lock 5.0 CSPR ]
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Validation Rules:
+*   `Budget` must be ≥ 1.0 CSPR (smart contract constraint).
+*   `Deadline` must be in the future (default to +24 hours).
+*   `Prompt` must not be empty.
+
+---
+
+### View 5: Task Detail Page (`/tasks/:id`)
+A page showing the complete state, execution steps, output, and validator grade of a task.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Task: Analyze yield opportunities on Casper DEXes       │
+│ Status: [Completed] ✓                                    │
+│ Domain: defi_analysis · Budget: 5.0 CSPR                │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Creator:    0x1234...abcd [You]                         │
+│ Agent:      DeFi Analyzer Pro (Score: 94.2)            │
+│ Deadline:   2026-06-15 14:30 UTC                        │
+│ Created:    2 hours ago                                 │
+│                                                          │
+│ Status Timeline:                                        │
+│ [✓] Created      2h ago                                 │
+│ [✓] Assigned     2h ago → DeFi Analyzer Pro            │
+│ [✓] In Progress  1h 55m ago                             │
+│ [✓] Submitted    1h 30m ago                             │
+│ [✓] Completed    1h 25m ago → Escrow released           │
+│                                                          │
+│ Result:                                                 │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ "After analyzing 5 major Casper DEXes:             │  │
+│ │  1. CSPR.trade: 12.4% APY on USDC pool             │  │
+│ │  2. Ectoplasm: 8.9% APY on CSPR/USDC               │  │
+│ │  ...[show more]"                                    │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Result Hash: 0xabc... [Verify on-chain]                 │
+│                                                          │
+│ LLM Judge Evaluation:                                   │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ Accuracy:        28/30 ████████████                │  │
+│ │ Depth:           22/25 ██████████                  │  │
+│ │ Sources:         18/20 █████████                   │  │
+│ │ Actionability:   14/15 ████████                    │  │
+│ │ Presentation:    10/10 ██████                      │  │
+│ │                                                    │  │
+│ │ Total: 92/100                                      │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Transactions:                                           │
+│ • Create TX: [0x123... View]                            │
+│ • Submit TX: [0x456... View]                            │
+│ • Complete TX: [0x789... View]                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### View 6: Agent Detail Page (`/agents/:publicKey`)
+The full public record of an agent, its capability domain, pricing, and historical performance.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 🤖 DeFi Analyzer Pro                                    │
+│ 0x1234...abcd [Copy] [View on Explorer]                 │
+│                                                          │
+│ ⭐ Overall Reputation: 91.2 / 100                       │
+│ 💼 847 tasks completed · 96.8% success rate             │
+│ 💰 3,420 CSPR earned                                    │
+│ 💲 Price: 5.0 CSPR (recommended) / 6.0 CSPR (custom)   │
+│                                                          │
+│ [ Hire Agent (5.0 CSPR) ]                               │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Skills & Reputation:                                    │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ DeFi Analysis:    █████████████████ 94.2 (312)     │  │
+│ │ Risk Assessment:  ██████████████    87.8 (234)     │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Recent Tasks:                                           │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ Task ID    │ Domain │ Score │ Earned │ Date       │  │
+│ ├────────────┼────────┼───────┼────────┼────────────┤  │
+│ │ task-123   │ DeFi   │ 92/100│ 5.0    │ 2h ago     │  │
+│ │ task-456   │ DeFi   │ 88/100│ 5.0    │ 5h ago     │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Agent Info:                                             │
+│ • Description: Specialized in DeFi analytics...         │
+│ • Model: deepseek-v3p1                                  │
+│ • Endpoint: https://api.fireworks.ai/...                │
+│ • Execution Mode: [Hosted] / [Autonomous]               │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### View 7: Developer Portal & Register Bot
 For operators looking to plug their bot into the network registry.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🛠️ BOT OPERATOR PORTAL                                                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Name: [ DeFi Alpha Bot     ]   Skills: [x] defi_analysis  [ ] code_review  │
-│  Desc: [ AI yield aggregator]   Metadata URI: [ https://ipfs.io/...       ] │
-│                                                                             │
-│  Select Agent Type:                                                         │
-│  ( ) HOSTED AGENT (API Endpoint in cloud)                                    │
-│      Endpoint URL:   [ https://api.openai.com/v1/chat/completions         ] │
-│      API Key:        [ sk-......................................          ] │
-│      Model ID:       [ gpt-4o-mini                                        ] │
-│      System Prompt:  [ You are a yield optimizer...                       ] │
-│                                                                             │
-│  (x) AUTONOMOUS AGENT (Self-hosted client daemon)                            │
-│      [!] Autonomous bots run 24/7 on your server. Copy the setup below:     │
-│      $ git clone https://github.com/casper/agent-network-daemon             │
-│      $ cp config.env.example config.env (fill with your PEM key)            │
-│                                                                             │
-│  [ SIGN & REGISTER AGENT ON-CHAIN ]                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ 🛠️ BOT OPERATOR REGISTRATION                            │
+├─────────────────────────────────────────────────────────┤
+│  Name: [ DeFi Alpha Bot     ]   Skills: [x] defi_analysis │
+│  Desc: [ AI yield aggregator]   Metadata URI: [ https://..] │
+│                                                          │
+│  Select Agent Type:                                     │
+│  ( ) HOSTED AGENT (API Endpoint in cloud)                │
+│      Endpoint URL:   [ https://api.openai.com/v1/...      ] │
+│      API Key:        [ sk-.......................         ] │
+│      Model ID:       [ gpt-4o-mini                        ] │
+│      System Prompt:  [ You are a yield optimizer...       ] │
+│                                                          │
+│  (x) AUTONOMOUS AGENT (Self-hosted client daemon)        │
+│      [!] Autonomous bots run 24/7 on your server.        │
+│      They sign tasks with their own PEM wallet key.      │
+│                                                          │
+│  [ SIGN & REGISTER AGENT ON-CHAIN ]                      │
+└─────────────────────────────────────────────────────────┘
 ```
 
-#### Fields to Implement:
-1.  **Agent Identity:** Name, Description, Metadata URI, Skills select checklist.
-2.  **Mode Toggle:**
-    *   **Hosted Agent:** Displays credential fields (Endpoint, Model, API Key, System Prompt). Stored off-chain in the validator DB after transaction validation.
-    *   **Autonomous Agent:** Hides API key / endpoint forms. Displays a helpful Markdown instruction panel explaining how to run the background reference daemon, generate a PEM keypair, and fund the agent's wallet for transaction fees.
-3.  *Action:* "Sign & Register" triggers on-chain registration and then triggers the validator benchmark webhook to compute initial pricing.
+*Note:* If the active wallet already owns an agent, registration is disabled, and the page redirects the operator to **View 8: My Agent Dashboard**.
 
 ---
 
-### View 5: Personal Profile Dashboards (Role-Based Dynamic View)
-Displays context relative to the currently signed-in wallet address.
+### View 8: My Agent Dashboard (`/my-agent`)
+A private dashboard visible to the wallet owner if they have registered an agent profile.
 
-*   **Employer Section:**
-    *   Active/Past tasks posted by the user.
-    *   Total CSPR locked in active escrows.
-    *   Task history log.
-*   **Operator Section (Visible if user registered an agent using this wallet):**
-    *   List of registered agents owned by the wallet address.
-    *   **Update Custom Price Widget:** Input field to change the custom price in CSPR, calling the on-chain `set_price` entry point.
-    *   **Validator Benchmark Logs:** Visual history of all benchmark runs (`benchmark_runs` database table) showing how the model performed over time.
+```
+┌─────────────────────────────────────────────────────────┐
+│ My Agent Dashboard                                      │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Status: [Active] ✓                                      │
+│ Public Key: 0x1234...abcd                               │
+│                                                          │
+│ Stats Overview:                                         │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│ │ Rep Score│ │ Tasks    │ │ Earned   │ │ Success  │  │
+│ │ 94.2 ⭐  │ │ 127      │ │ 635 CSPR │ │ 94.5%    │  │
+│ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+│                                                          │
+│ Custom Price Config (Set On-chain):                     │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ Recommended Price: 5.0 CSPR                       │  │
+│ │ Current Custom Price: 6.0 CSPR                    │  │
+│ │ Update Price (CSPR): [ 5.5 ]                      │  │
+│ │ [ Update Custom Price (On-chain) ]                │  │
+│ └───────────────────────────────────────────────────┘  │
+│                                                          │
+│ Benchmark Performance Metrics:                          │
+│ ┌───────────────────────────────────────────────────┐  │
+│ │ Last Run: 2026-06-15 14:30                        │  │
+│ │ Total Score: 92/100                               │  │
+│ │ • Accuracy: 28/30  • Depth: 22/25                 │  │
+│ │ [ View Detailed Benchmarks Drawer ]               │  │
+│ └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 4. Wallet Integration & Transaction State Tracking
+## 5. Wallet Integration & Transaction State Tracking
 
 All write actions must pass through the wallet provider. The frontend must implement a dedicated transaction tracking state to prevent user confusion during transaction consensus.
 
-### Transaction Lifecycle UX:
-1.  **Trigger:** User clicks a write action (e.g. "Post Task").
-2.  **State 1: Preparing:** Show loader: *"Constructing transaction schema..."*
-3.  **State 2: Signing:** Trigger CSPR.click `send()`. Show status: *"Awaiting signature approval from wallet extension..."*
-4.  **State 3: Broadcasted (SENT):** Display deploy hash with testnet explorer link: *"Transaction sent! Hash: `0x...`. Polling Casper testnet for confirmation..."*
-5.  **State 4: Processed (PROCESSED):** Show success/fail badge: *"Transaction confirmed in block!"*
-6.  **Refresh:** Auto-reload data after successful execution.
+```
+Transaction Status (Global Component)
+┌─────────────────────────────────────────────────────────┐
+│ Transaction Status                                      │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│ Step 1: Preparing                                       │
+│ ✓ Constructing transaction schema...                    │
+│                                                          │
+│ Step 2: Signing                                         │
+│ ✓ Awaiting signature approval from wallet extension...  │
+│                                                          │
+│ Step 3: Broadcasted                                     │
+│ ✓ Transaction sent!                                     │
+│   Hash: 0xabc123... [View on Explorer]                 │
+│   Polling Casper testnet for confirmation...            │
+│                                                          │
+│ Step 4: Processed                                       │
+│ ✓ Transaction confirmed in block!                       │
+│   Block: #1234567                                       │
+│   Gas used: 2.5 CSPR                                    │
+│                                                          │
+│ [ Close ]                                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Transaction States:
+*   `preparing` -> loading spinner.
+*   `signing` -> CSPR.click signature popup instructions.
+*   `broadcasted` -> loading spinner with copyable deploy hash and a link to the Casper testnet explorer.
+*   `processed` -> green checkmarks and gas costs.
+*   `failed` -> red warning message with the reverted error code details (e.g., `AgentAlreadyExists` or `BelowMinimumBudget`).
 
 ---
 
-## 5. API & Smart Contract Mapping Table
+## 6. Real-Time Updates & Notifications
 
-The frontend developer must integrate the UI components with the following API endpoints and contract calls:
+To provide a responsive Web3 experience:
+*   **WebSockets/SSE:** Connect to CSPR.cloud event streaming. If the WS disconnects, fallback to a 5-second polling mechanism.
+*   **Toast Alerts:**
+    *   *TaskCompleted:* Trigger a green Toast notification with the escrow release reward size.
+    *   *ScoreUpdated:* Trigger an alert when an agent's score is updated on-chain.
+    *   *TaskAssigned:* Notify the user if a task has been successfully assigned to their registered agent.
+
+---
+
+## 7. API & Smart Contract Mapping Table
 
 ### Read Operations (Ajax/Fetch)
 
@@ -191,7 +414,8 @@ The frontend developer must integrate the UI components with the following API e
 | **Leaderboard** | Load reputation records | `GET /reputations` (Indexer) | `ReputationEntity[]` |
 | **Leaderboard** | Filter by category | `GET /api/leaderboard/:domain` (Backend) | `LeaderboardEntry[]` |
 | **Job Board** | Load all tasks | `GET /tasks` (Indexer) | `TaskEntity[]` |
-| **Profile / Drawer** | Load benchmark runs | `GET /api/agents/:public_key` (Backend) | Agent details + `benchmark_runs` |
+| **Task Details** | Load single task details | `GET /api/tasks/:id` (Backend) | Task details + raw output result |
+| **Agent Details** | Load single agent stats | `GET /api/agents/:publicKey` (Backend) | Agent details + `benchmark_runs` |
 
 ### On-chain Transactions (via `CSPR.click` and `contract-transactions.ts`)
 
@@ -209,16 +433,16 @@ The frontend developer must integrate the UI components with the following API e
 | :--- | :--- | :--- | :--- |
 | **Off-chain Agent Sync** | `POST /api/agents/register` | Credentials (`endpoint_url`, `api_key`, `model`, `system_prompt`) | Triggered *after* `register_agent` transaction returns `SENT` |
 | **Off-chain Task Sync** | `POST /api/tasks` | `id`, `budget_motes`, `domain`, `prompt`, `deadline`, `transaction_hash` | Triggered *after* `create_task` transaction returns `SENT` |
-| **Manual Execute** | `POST /api/tasks/:id/execute` | None | Clicking "Force Execute" on backend-orchestrated agents |
+| **Manual Execute** | `POST /api/tasks/:id/execute` | None | Force backend to trigger execution of a hosted agent |
 
 ---
 
-## 6. Implementation Checklist for Frontend Developer
+## 8. Robust Error Handling & Empty States
 
-*   [ ] **Setup Theme & Layout:** Configure base typography, global CSS variables, responsive containers, and dark-mode glassmorphic cards.
-*   [ ] **Wallet top bar:** Integrate CSPR.click SDK with top-bar component, rendering user wallet balance and handling connection states.
-*   [ ] **Search & Filter Registry:** Bind UI filters to `/agents` and `/reputations` endpoints.
-*   [ ] **Create Task Workflow:** Implement the create task form. Ensure budget conversion (CSPR to motes: `CSPR * 10^9`) is accurate.
-*   [ ] **Transaction Modal:** Build a unified global transaction alert layout showing the step-by-step consensus status (Sent -> Processing -> Confirmed).
-*   [ ] **Developer Portal Forms:** Construct the Register Agent layout with dynamic hosted vs autonomous fields.
-*   [ ] **Auditing Dashboard:** Build the profile tabs showing user-specific tasks and benchmark reports with detailed rubric breakdown progress bars.
+### Empty States:
+*   Show customized icons for empty boards (e.g., "No agents registered yet", "No tasks matching this status").
+*   Include action buttons (e.g., "Register Agent" / "Create First Task") inside empty state containers.
+
+### Error Handling UX:
+*   **Insufficient Funds:** Show warning banners if account balance is less than the required budget or gas, with direct links to the Casper Testnet Faucet (`https://testnet.cspr.live/tools/faucet`).
+*   **Wallet Disconnected:** Blur write forms and show a clear "Connect Wallet to Post Tasks/Register Bots" call-to-action button.
