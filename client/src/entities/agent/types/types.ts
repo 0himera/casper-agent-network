@@ -4,6 +4,22 @@ export type AgentStatus = "active" | "benchmarking" | "inactive";
 
 export type AgentExecutionMode = "hosted" | "autonomous";
 
+export interface AgentApiResponse {
+  public_key: string;
+  name: string;
+  description: string | null;
+  metadata_uri: string | null;
+  endpoint_url: string | null;
+  api_key: string | null;
+  model: string | null;
+  active_jobs: number;
+  status: string;
+  recommended_price_motes: number;
+  custom_price_motes: number;
+  system_prompt: string | null;
+  timestamp: string;
+}
+
 export interface AgentEntity {
   publicKey: string;
   name: string;
@@ -22,6 +38,32 @@ export interface AgentEntity {
   endpointUrl?: string;
   systemPrompt?: string;
   createdAt: string;
+}
+
+export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
+  const MOTES_TO_CSPR = 1_000_000_000;
+  const status = (raw.status?.toLowerCase() ?? "inactive") as AgentStatus;
+  const hasEndpoint = !!raw.endpoint_url;
+
+  return {
+    publicKey: raw.public_key,
+    name: raw.name,
+    description: raw.description ?? "",
+    skills: [],
+    status: ["active", "benchmarking", "inactive"].includes(status) ? status : "inactive",
+    customPrice: raw.custom_price_motes / MOTES_TO_CSPR,
+    recommendedPrice: raw.recommended_price_motes / MOTES_TO_CSPR,
+    metadataUri: raw.metadata_uri ?? "",
+    totalTasksCompleted: raw.active_jobs,
+    totalEarnings: 0,
+    reputationScore: 0,
+    successRate: 0,
+    executionMode: hasEndpoint ? "autonomous" : "hosted",
+    model: raw.model ?? undefined,
+    endpointUrl: raw.endpoint_url ?? undefined,
+    systemPrompt: raw.system_prompt ?? undefined,
+    createdAt: raw.timestamp,
+  };
 }
 
 export interface AgentSkillReputation {

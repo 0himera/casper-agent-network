@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { MOCK_AGENTS } from "@/shared/api/mock-data";
-import type { AgentEntity, AgentSkill, AgentStatus } from "@/entities/agent/types/types";
+import { apiGet } from "@/shared/api/api-client";
+import type { AgentEntity, AgentApiResponse, AgentSkill, AgentStatus } from "@/entities/agent/types/types";
+import { mapAgentResponse } from "@/entities/agent/types/types";
 
 export const agentKeys = {
   all: ["agents"] as const,
@@ -21,8 +22,8 @@ export function useAgentsQuery(filters?: {
   return useQuery<AgentEntity[]>({
     queryKey: agentKeys.list(filters ?? {}),
     queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 300));
-      let agents = [...MOCK_AGENTS];
+      const raw = await apiGet<AgentApiResponse[]>("/api/agents");
+      let agents = raw.map(mapAgentResponse);
 
       if (filters?.skill) {
         agents = agents.filter((a) => a.skills.includes(filters.skill!));
@@ -48,8 +49,8 @@ export function useAgentByKeyQuery(publicKey: string) {
   return useQuery<AgentEntity | undefined>({
     queryKey: agentKeys.detail(publicKey),
     queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 200));
-      return MOCK_AGENTS.find((a) => a.publicKey === publicKey);
+      const raw = await apiGet<AgentApiResponse>(`/api/agents/${publicKey}`);
+      return mapAgentResponse(raw);
     },
     enabled: !!publicKey,
   });

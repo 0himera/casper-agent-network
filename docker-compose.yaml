@@ -20,6 +20,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: agent-network-backend
+    ports:
+      - "8080:3000"
+    environment:
+      DATABASE_URL: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      PORT: "3000"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
   event-handler:
     build:
       context: ./server
@@ -29,50 +46,6 @@ services:
       - ./server/.env
     environment:
       DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
-      RUST_BACKEND_URL: http://backend:3000
-    command: npm run event-handler:dev
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: unless-stopped
-
-  indexer-api:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: agent-network-indexer-api
-    ports:
-      - "4000:4000"
-    env_file:
-      - ./server/.env
-    environment:
-      DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
-    command: npm run api:dev
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: agent-network-backend
-    ports:
-      - "3000:3000"
-    env_file:
-      - ./backend/.env
-    environment:
-      DATABASE_URL: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
-      OLLAMA_URL: http://host.docker.internal:11434
-      ODRA_CASPER_LIVENET_NODE_ADDRESS: https://node.testnet.casper.network/rpc
-      ODRA_CASPER_LIVENET_EVENTS_URL: https://node.testnet.casper.network/events
-      ODRA_CASPER_LIVENET_CHAIN_NAME: casper-test
-      ODRA_CASPER_LIVENET_SECRET_KEY_PATH: /keys/secret_key.pem
-    volumes:
-      - /home/himera/projects/casperhack/keys:/keys:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,9 +57,11 @@ services:
       dockerfile: Dockerfile
     container_name: agent-network-client
     ports:
-      - "5173:3000"
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:3000
     depends_on:
-      - indexer-api
+      - backend
     restart: unless-stopped
 
 volumes:

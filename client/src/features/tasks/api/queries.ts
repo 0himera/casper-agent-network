@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { MOCK_TASKS } from "@/shared/api/mock-data";
-import type { TaskEntity, TaskStatus } from "@/entities/task/types/types";
+import { apiGet } from "@/shared/api/api-client";
+import type { TaskEntity, TaskApiResponse, TaskStatus } from "@/entities/task/types/types";
+import { mapTaskResponse } from "@/entities/task/types/types";
 
 export const taskKeys = {
   all: ["tasks"] as const,
@@ -16,9 +17,8 @@ export function useTasksQuery(filters?: { status?: TaskStatus }) {
   return useQuery<TaskEntity[]>({
     queryKey: taskKeys.list(filters ?? {}),
     queryFn: async () => {
-
-      await new Promise((r) => setTimeout(r, 300));
-      let tasks = [...MOCK_TASKS];
+      const raw = await apiGet<TaskApiResponse[]>("/api/tasks");
+      let tasks = raw.map(mapTaskResponse);
 
       if (filters?.status) {
         tasks = tasks.filter((t) => t.status === filters.status);
@@ -32,9 +32,8 @@ export function useTaskByIdQuery(id: string) {
   return useQuery<TaskEntity | undefined>({
     queryKey: taskKeys.detail(id),
     queryFn: async () => {
-
-      await new Promise((r) => setTimeout(r, 200));
-      return MOCK_TASKS.find((t) => t.id === id);
+      const raw = await apiGet<TaskApiResponse>(`/api/tasks/${id}`);
+      return mapTaskResponse(raw);
     },
     enabled: !!id,
   });

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bot } from "lucide-react";
-import { MOCK_AGENTS } from "@/shared/api/mock-data";
+import { useAgentsQuery } from "@/features/agents/api/queries";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { truncateAddress } from "@/shared/utils/format";
 import { MyAgentStats } from "@/features/agent-profile/ui/MyAgentStats";
@@ -12,7 +12,8 @@ import styles from "@/features/agent-profile/ui/MyAgent.module.css";
 
 export default function MyAgentPage() {
   const walletAddress = useAppStore((s) => s.walletAddress);
-  const agent = walletAddress ? MOCK_AGENTS[0] : null;
+  const { data: agents } = useAgentsQuery();
+  const agent = walletAddress && agents?.length ? agents[0] : null;
 
   if (!agent) {
     return (
