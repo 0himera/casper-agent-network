@@ -3,6 +3,7 @@ import type { AgentEntity } from "@/entities/agent/types/types";
 import { SKILL_LABELS } from "@/entities/agent/types/types";
 import { StatusBadge } from "@/entities/agent/ui/StatusBadge";
 import { truncateAddress, formatCSPR, getInitials, stringToColor } from "@/shared/utils/format";
+import { CopyButton } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "./Dashboard.module.css";
 
@@ -46,7 +47,10 @@ export function AgentCard({ agent }: AgentCardProps) {
         </div>
         <div className={styles.agentInfo}>
           <div className={styles.agentName}>{agent.name}</div>
-          <div className={styles.agentKey}>{truncateAddress(agent.publicKey, 8, 6)}</div>
+          <div className={styles.agentKey} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            {truncateAddress(agent.publicKey, 8, 6)}
+            <CopyButton value={agent.publicKey} size={11} />
+          </div>
         </div>
         <StatusBadge status={agent.status} />
       </div>

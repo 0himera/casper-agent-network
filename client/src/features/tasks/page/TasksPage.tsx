@@ -7,6 +7,7 @@ import { useTasksQuery } from "@/features/tasks/api/queries";
 import type { TaskStatus } from "@/entities/task/types/types";
 import { StatusTabs } from "@/features/tasks/ui/StatusTabs";
 import { TaskCard } from "@/features/tasks/ui/TaskCard";
+import { SkeletonCardGrid } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/tasks/ui/Tasks.module.css";
 
@@ -45,7 +46,7 @@ export default function TasksPage() {
       </div>
       <StatusTabs active={filter} onChange={setFilter} counts={counts} />
       {isLoading ? (
-        <div className={styles.loading}>Loading tasks...</div>
+        <SkeletonCardGrid count={6} />
       ) : filtered.length > 0 ? (
         <motion.div
           className={styles.tasksGrid}

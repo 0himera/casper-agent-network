@@ -9,6 +9,7 @@ import { formatTimeAgo } from "@/shared/utils/format";
 import { StatusTimeline } from "@/features/task-details/ui/StatusTimeline";
 import { EvaluationPanel } from "@/features/task-details/ui/EvaluationPanel";
 import { TransactionsList } from "@/features/task-details/ui/TransactionsList";
+import { SkeletonDetail } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/task-details/ui/TaskDetail.module.css";
 
@@ -39,7 +40,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   const { taskId } = use(params);
   const { data: task, isLoading } = useTaskByIdQuery(taskId);
 
-  if (isLoading) return <div className={styles.loading}>Loading task...</div>;
+  if (isLoading) {
+    return (
+      <div className={styles.page}>
+        <SkeletonDetail />
+      </div>
+    );
+  }
   if (!task) return <div className={styles.loading}>Task not found</div>;
 
   const steps = [

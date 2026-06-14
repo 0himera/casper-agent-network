@@ -61,19 +61,21 @@
 }
 
 .tab {
+  position: relative;
   padding: 6px var(--space-lg);
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: color var(--transition-base);
   border: none;
   background: transparent;
   font-family: var(--font-sans);
   display: flex;
   align-items: center;
   gap: 5px;
+  z-index: 1;
 }
 
 .tab:hover {
@@ -81,8 +83,19 @@
 }
 
 .tabActive {
-  background: var(--accent-primary-muted);
   color: var(--accent-primary);
+}
+
+.activePill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--accent-primary-muted);
+  border-radius: var(--radius-sm);
+  z-index: -1;
+  border: 1px solid rgba(143, 174, 139, 0.15);
 }
 
 .tabCount {

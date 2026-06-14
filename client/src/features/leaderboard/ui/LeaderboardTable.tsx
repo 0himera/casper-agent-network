@@ -1,5 +1,6 @@
 import type { LeaderboardEntry } from "@/entities/reputation/types/types";
 import { LeaderboardRow } from "./LeaderboardRow";
+import { SkeletonTable } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "./Leaderboard.module.css";
 
@@ -19,7 +20,7 @@ const containerVariants = {
 };
 
 export function LeaderboardTable({ entries, isLoading }: LeaderboardTableProps) {
-  if (isLoading) return <div className={styles.loading}>Loading leaderboard...</div>;
+  if (isLoading) return <SkeletonTable rows={5} />;
 
   return (
     <div className={styles.tableWrapper}>

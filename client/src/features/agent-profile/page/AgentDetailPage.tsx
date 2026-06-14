@@ -8,6 +8,7 @@ import { AgentHero } from "@/features/agent-profile/ui/AgentHero";
 import { AgentStatsRow } from "@/features/agent-profile/ui/AgentStatsRow";
 import { SkillBars } from "@/features/agent-profile/ui/SkillBars";
 import { AgentTechInfo } from "@/features/agent-profile/ui/AgentTechInfo";
+import { SkeletonDetail } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/agent-profile/ui/AgentDetail.module.css";
 
@@ -38,7 +39,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ agentId:
   const { agentId } = use(params);
   const { data: agent, isLoading } = useAgentByKeyQuery(agentId);
 
-  if (isLoading) return <div className={styles.loading}>Loading agent...</div>;
+  if (isLoading) {
+    return (
+      <div className={styles.page}>
+        <SkeletonDetail />
+      </div>
+    );
+  }
   if (!agent) return <div className={styles.loading}>Agent not found</div>;
 
   return (

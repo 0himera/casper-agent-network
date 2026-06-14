@@ -7,6 +7,7 @@ import type { AgentSkill, AgentStatus } from "@/entities/agent/types/types";
 import { StatsGrid } from "@/features/dashboard/ui/StatsGrid";
 import { AgentsToolbar } from "@/features/dashboard/ui/AgentsToolbar";
 import { AgentCard } from "@/features/dashboard/ui/AgentCard";
+import { SkeletonCardGrid } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/dashboard/ui/Dashboard.module.css";
 
@@ -40,7 +41,7 @@ export default function DashboardPage() {
         statusFilter={statusFilter} onStatusChange={setStatusFilter}
       />
       {isLoading ? (
-        <div className={styles.loading}>Loading agents...</div>
+        <SkeletonCardGrid count={6} />
       ) : agents && agents.length > 0 ? (
         <motion.div
           className={styles.agentsGrid}

@@ -5,3 +5,5 @@ export * from "./dialog";
 export * from "./tabs";
 export * from "./avatar";
 export * from "./tooltip";
+export * from "./CopyButton";
+export * from "./Skeleton";
