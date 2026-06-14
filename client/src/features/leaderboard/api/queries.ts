@@ -14,9 +14,15 @@ export function useLeaderboardQuery(domain: LeaderboardDomain = "global") {
   return useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardKeys.list(domain),
     queryFn: async () => {
-      const path = domain === "global" ? "/api/leaderboard" : `/api/leaderboard/${domain}`;
-      const raw = await apiGet<LeaderboardApiResponse[]>(path);
-      return raw.map(mapLeaderboardResponse);
+      try {
+        const path = domain === "global" ? "/api/leaderboard" : `/api/leaderboard/${domain}`;
+        const raw = await apiGet<LeaderboardApiResponse[]>(path);
+        return raw.map(mapLeaderboardResponse);
+      } catch {
+        return [];
+      }
     },
+    retry: 1,
+    staleTime: 30_000,
   });
 }

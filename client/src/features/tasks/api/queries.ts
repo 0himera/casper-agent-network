@@ -17,14 +17,20 @@ export function useTasksQuery(filters?: { status?: TaskStatus }) {
   return useQuery<TaskEntity[]>({
     queryKey: taskKeys.list(filters ?? {}),
     queryFn: async () => {
-      const raw = await apiGet<TaskApiResponse[]>("/api/tasks");
-      let tasks = raw.map(mapTaskResponse);
+      try {
+        const raw = await apiGet<TaskApiResponse[]>("/api/tasks");
+        let tasks = raw.map(mapTaskResponse);
 
-      if (filters?.status) {
-        tasks = tasks.filter((t) => t.status === filters.status);
+        if (filters?.status) {
+          tasks = tasks.filter((t) => t.status === filters.status);
+        }
+        return tasks;
+      } catch {
+        return [];
       }
-      return tasks;
     },
+    retry: 1,
+    staleTime: 30_000,
   });
 }
 
@@ -32,9 +38,14 @@ export function useTaskByIdQuery(id: string) {
   return useQuery<TaskEntity | undefined>({
     queryKey: taskKeys.detail(id),
     queryFn: async () => {
-      const raw = await apiGet<TaskApiResponse>(`/api/tasks/${id}`);
-      return mapTaskResponse(raw);
+      try {
+        const raw = await apiGet<TaskApiResponse>(`/api/tasks/${id}`);
+        return mapTaskResponse(raw);
+      } catch {
+        return undefined;
+      }
     },
     enabled: !!id,
+    retry: 1,
   });
 }
