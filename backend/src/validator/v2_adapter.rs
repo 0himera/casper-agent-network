@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::PathBuf;
-
 use validator_engine::{evaluate_with_options, GraderOptions, LlmConfig, SkillId, ValidationInput, ValidationOutput};
 
 use crate::config::Config;
@@ -45,20 +42,14 @@ fn map_skill(skill: &str) -> Option<SkillId> {
     }
 }
 
-fn fixture_file(skill: SkillId) -> &'static str {
-    match skill {
-        SkillId::DefiYieldRouting => "defi_yield_routing.json",
-        SkillId::DefiProtocolRisk => "defi_protocol_risk.json",
-        SkillId::RwaAppraisal => "rwa_appraisal.json",
-        SkillId::RwaCompliance => "rwa_compliance.json",
-    }
-}
-
 fn load_fixture(skill: SkillId) -> Result<serde_json::Value, String> {
-    let path = PathBuf::from("validator").join("fixtures").join(fixture_file(skill));
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("{}: {}", path.display(), e))?;
-    serde_json::from_str(&content).map_err(|e| e.to_string())
+    let content = match skill {
+        SkillId::DefiYieldRouting => include_str!("../../validator/fixtures/defi_yield_routing.json"),
+        SkillId::DefiProtocolRisk => include_str!("../../validator/fixtures/defi_protocol_risk.json"),
+        SkillId::RwaAppraisal => include_str!("../../validator/fixtures/rwa_appraisal.json"),
+        SkillId::RwaCompliance => include_str!("../../validator/fixtures/rwa_compliance.json"),
+    };
+    serde_json::from_str(content).map_err(|e| e.to_string())
 }
 
 pub async fn evaluate_task_v2(
