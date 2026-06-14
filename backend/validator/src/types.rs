@@ -38,11 +38,63 @@ pub struct ValidationInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CriterionKind {
+    Hard,
+    Soft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SoftLabel {
+    Strong,
+    Partial,
+    Missing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CriterionDef {
     pub id: &'static str,
     pub description: &'static str,
     pub tools: &'static [&'static str],
     pub weight: u32,
+    pub kind: CriterionKind,
+    pub critical: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraderMode {
+    V0,
+    F3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GraderOptions {
+    pub mode: GraderMode,
+    pub pass_threshold: u32,
+}
+
+impl Default for GraderOptions {
+    fn default() -> Self {
+        Self::f3()
+    }
+}
+
+impl GraderOptions {
+    pub const DEFAULT_PASS_THRESHOLD: u32 = 70;
+
+    pub fn f3() -> Self {
+        Self {
+            mode: GraderMode::F3,
+            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+        }
+    }
+
+    pub fn v0() -> Self {
+        Self {
+            mode: GraderMode::V0,
+            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

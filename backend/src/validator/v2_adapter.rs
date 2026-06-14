@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use validator_engine::{evaluate, LlmConfig, SkillId, ValidationInput, ValidationOutput};
+use validator_engine::{evaluate_with_options, GraderOptions, LlmConfig, SkillId, ValidationInput, ValidationOutput};
 
 use crate::config::Config;
 
@@ -10,9 +10,9 @@ use crate::config::Config;
 pub enum V2Outcome {
     /// v2 успешно оценил skill.
     Ok(ValidationOutput),
-    /// Этот skill не имеет v2-рубрики (например "code_review"). Caller должен сделать fallback на legacy.
+    /// Этот skill не имеет v2-рубрики (например "code_review"). Benchmark пропускает такой skill.
     Unsupported,
-    /// Не найден fixture-файл для skill. Caller должен сделать fallback на legacy.
+    /// Не найден fixture-файл для skill. Benchmark пропускает такой skill.
     FixtureMissing(String),
     /// Реальная ошибка движка (LLM/parse/consistency). Caller обрабатывает как ошибку оценки.
     EngineError(String),
@@ -86,7 +86,7 @@ pub async fn evaluate_task_v2(
         processing_time_ms,
     };
 
-    match evaluate(input, &map_config(config)).await {
+    match evaluate_with_options(input, &map_config(config), &GraderOptions::f3()).await {
         Ok(output) => V2Outcome::Ok(output),
         Err(e) => V2Outcome::EngineError(e.to_string()),
     }
@@ -117,6 +117,9 @@ mod tests {
             ollama_model: None,
             cloudflare_account_id: Some("cf-id".to_string()),
             cloudflare_api_token: Some("cf-token".to_string()),
+            fireworks_api_key: None,
+            fireworks_model: None,
+            admin_account: String::new(),
         };
 
         let llm = map_config(&config);
@@ -136,6 +139,9 @@ mod tests {
             ollama_model: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
+            fireworks_api_key: None,
+            fireworks_model: None,
+            admin_account: String::new(),
         };
 
         let outcome = evaluate_task_v2(
@@ -166,6 +172,9 @@ mod tests {
             ollama_model: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
+            fireworks_api_key: None,
+            fireworks_model: None,
+            admin_account: String::new(),
         };
 
         let outcome = evaluate_task_v2(

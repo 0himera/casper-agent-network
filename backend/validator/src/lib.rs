@@ -1,19 +1,30 @@
+mod gates;
 mod grader;
+pub mod harness;
 mod llm;
 mod rubric;
+mod scoring;
 mod tools;
 mod types;
 
 pub use types::{
-    CriterionDef, CriterionEval, LlmConfig, SkillId, ToolResult, ValidationInput, ValidationOutput,
-    ValidatorError, Verdict,
+    CriterionDef, CriterionEval, CriterionKind, GraderMode, GraderOptions, LlmConfig, SkillId,
+    SoftLabel, ToolResult, ValidationInput, ValidationOutput, ValidatorError, Verdict,
 };
 
 pub async fn evaluate(
     input: ValidationInput,
     config: &LlmConfig,
 ) -> Result<ValidationOutput, ValidatorError> {
-    grader::evaluate(&input, config).await
+    evaluate_with_options(input, config, &GraderOptions::default()).await
+}
+
+pub async fn evaluate_with_options(
+    input: ValidationInput,
+    config: &LlmConfig,
+    options: &GraderOptions,
+) -> Result<ValidationOutput, ValidatorError> {
+    grader::evaluate_with_options(&input, config, options).await
 }
 
 #[cfg(test)]
@@ -48,7 +59,7 @@ mod tests {
         if config.mock {
             assert_eq!(output.verdict, Verdict::Satisfied);
             assert_eq!(output.total, 100);
-            assert!(output.explanation.contains("Mock evaluation"));
+            assert!(output.explanation.contains("F3 mock evaluation"));
         } else {
             assert!(!output.explanation.is_empty());
         }

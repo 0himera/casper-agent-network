@@ -1,26 +1,7 @@
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::orchestrator::executor::execute_agent;
-use crate::validator::{evaluate_task, evaluate_task_v2, V2Outcome};
-
-fn legacy_prompt(skill: &str) -> &'static str {
-    match skill {
-        "code_review" => r#"Review this Rust smart contract transfer function. Identify security vulnerabilities and suggest gas optimizations:
-```rust
-pub fn transfer(&mut self, recipient: Address, amount: U512) {
-    let sender = self.env().caller();
-    let balance = self.balances.get(&sender).unwrap_or_default();
-    if balance < amount {
-        self.env().revert(Error::InsufficientBalance);
-    }
-    self.balances.set(&sender, balance - amount);
-    let recipient_balance = self.balances.get(&recipient).unwrap_or_default();
-    self.balances.set(&recipient, recipient_balance + amount);
-}
-```"#,
-        _ => "Analyze the yield opportunities and impermanent loss risk of providing liquidity to the CSPR/USDT pool on Casper Network.",
-    }
-}
+use crate::validator::{evaluate_task_v2, V2Outcome};
 
 fn v2_prompt(skill: &str) -> Option<&'static str> {
     match skill {
@@ -40,6 +21,10 @@ fn v2_prompt(skill: &str) -> Option<&'static str> {
     }
 }
 
+/// Оценивает benchmark-skill только через v2-движок (validator-engine).
+///
+/// Legacy-fallback удалён: неподдержанные/без фикстуры skill пропускаются (`None`),
+/// а не оцениваются устаревшим эвалюатором.
 async fn evaluate_benchmark_skill(
     skill: &str,
     prompt: &str,
@@ -51,42 +36,27 @@ async fn evaluate_benchmark_skill(
         V2Outcome::Ok(out) => {
             let rubric_json =
                 serde_json::to_value(&out.criteria).unwrap_or(serde_json::Value::Null);
-            return Some((out.total, out.recommended_price_motes, rubric_json));
+            Some((out.total, out.recommended_price_motes, rubric_json))
         }
-        V2Outcome::Unsupported | V2Outcome::FixtureMissing(_) => {
+        V2Outcome::Unsupported => {
             eprintln!(
-                "v2 evaluator unavailable for skill '{}', falling back to legacy",
+                "skill '{}' is not supported by the v2 evaluator, skipping",
                 skill
             );
+            None
+        }
+        V2Outcome::FixtureMissing(path) => {
+            eprintln!(
+                "fixture missing for skill '{}' ({}), skipping",
+                skill, path
+            );
+            None
         }
         V2Outcome::EngineError(err) => {
             eprintln!("v2 eval failed for skill '{}': {}", skill, err);
-            return None;
+            None
         }
     }
-
-    let eval_res = match evaluate_task(
-        skill,
-        prompt,
-        agent_output,
-        processing_time_ms,
-        config,
-    )
-    .await
-    {
-        Ok(res) => res,
-        Err(err) => {
-            eprintln!("Failed to evaluate benchmark for skill '{}': {}", skill, err);
-            return None;
-        }
-    };
-
-    let rubric_json = serde_json::to_value(&eval_res.scores).unwrap_or(serde_json::Value::Null);
-    Some((
-        eval_res.total,
-        eval_res.recommended_price_motes,
-        rubric_json,
-    ))
 }
 
 pub fn start_benchmark_background(
@@ -115,9 +85,14 @@ pub fn start_benchmark_background(
         let mut total_recommended_price_motes = 0u64;
 
         for skill in &skills {
-            let prompt: &str = match v2_prompt(skill) {
-                Some(p) => p,
-                None => legacy_prompt(skill),
+            // v2-only: skill без v2-промпта (например "code_review") не поддерживается — пропускаем
+            // до запуска агента, чтобы не тратить вызов на неоцениваемый skill.
+            let Some(prompt) = v2_prompt(skill) else {
+                eprintln!(
+                    "skill '{}' is not supported by the v2 evaluator, skipping benchmark",
+                    skill
+                );
+                continue;
             };
 
             // Execute the agent task
@@ -146,7 +121,7 @@ pub fn start_benchmark_background(
                 }
             };
 
-            // Evaluate results via LLM-as-Judge (v2 for supported skills, legacy fallback otherwise)
+            // Evaluate results via the v2 LLM-as-Judge engine (no legacy fallback)
             println!(
                 "Evaluating benchmark response for skill '{}' on agent {}",
                 skill, agent_public_key

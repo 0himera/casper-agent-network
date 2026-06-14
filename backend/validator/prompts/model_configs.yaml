@@ -1,6 +1,13 @@
 # Версионирование промптов grader LLM.
 # current_version — активная версия; старые versions остаются для истории и A/B.
 # Подстановка переменных: {variable} (как в LangChain prompt templates).
+#
+# generation — параметры LLM для judge (дублируются в src/llm.rs до Phase 7).
+
+generation:
+  temperature: 0
+  max_tokens: 1000
+  response_format: json_object
 
 prompts:
   grader_system:
