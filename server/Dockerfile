@@ -7,8 +7,6 @@ RUN npm ci
 
 COPY . .
 
-# Expose the API port (4000)
 EXPOSE 4000
 
-# Start the event handler daemon
 CMD ["npm", "run", "event-handler:dev"]
