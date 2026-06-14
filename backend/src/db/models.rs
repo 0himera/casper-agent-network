@@ -26,6 +26,7 @@ pub struct Task {
     pub budget_motes: u64,
     pub status: String,
     pub result_hash: Option<String>,
+    pub result: Option<String>,
     pub metadata_uri: Option<String>,
     pub transaction_hash: String,
     pub domain: String,

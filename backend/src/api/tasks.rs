@@ -195,10 +195,11 @@ pub async fn execute_task_handler(
 
         // Update database with output, hash and signature
         let _ = sqlx::query(
-            "UPDATE tasks SET result_hash = ?, result_signature = ? WHERE id = ?"
+            "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ? WHERE id = ?"
         )
         .bind(&result_hash)
         .bind(&signature)
+        .bind(&exec_res.output)
         .bind(&task.id)
         .execute(&state.pool)
         .await;
