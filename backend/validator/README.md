@@ -36,9 +36,17 @@ Details: [implementation.md §4](./implementation.md#4-public-api).
 
 ## Status
 
-**Done:** 4 DeFi/RWA skills · rubrics + fixtures · LLM chain (temp=0) + mock · F3 grader (gates, hard-from-tool, soft enum-labels, threshold/critical) · regression harness + golden · benchmark v2-only.
+**Done:**
+- 4 DeFi/RWA skills · rubrics + embedded JSON fixtures (`include_str!`).
+- LLM chain (temp=0) + mock mode.
+- F3 grader (gates, hard-from-tool, soft enum-labels, threshold/critical).
+- Regression harness + golden datasets.
+- Generic custom LLM provider support (`VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, etc.).
+- Live `/execute` cutover and integration with Rust Axum orchestrator.
+- E2E persistence: raw task results stored in the MySQL database tasks table.
 
-**Pending:** real tool logic · few-shot prompts · live `/execute` cutover · E2E with DB · legacy cleanup · gating/revision loop.
+**Pending:**
+- real tool logic · few-shot prompts · legacy cleanup · gating/revision loop.
 
 Details: [implementation.md](./implementation.md) · [roadmap.md](./roadmap.md)
 
