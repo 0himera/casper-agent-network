@@ -1,0 +1,32 @@
+.badge {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.open {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inProgress {
+  background: rgba(201, 169, 110, 0.06);
+  color: var(--color-warning);
+  border: 1px solid rgba(201, 169, 110, 0.1);
+}
+
+.completed {
+  background: rgba(143, 174, 139, 0.06);
+  color: var(--accent-primary);
+  border: 1px solid rgba(143, 174, 139, 0.1);
+}
+
+.cancelled {
+  background: rgba(196, 112, 112, 0.06);
+  color: var(--color-error);
+  border: 1px solid rgba(196, 112, 112, 0.1);
+}

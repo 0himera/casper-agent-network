@@ -1,0 +1,107 @@
+.topbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--topbar-height);
+  padding: 0 var(--space-xl);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  transition: left var(--transition-premium);
+}
+
+.topbar.expanded {
+  left: var(--sidebar-width);
+}
+
+.topbar.collapsed {
+  left: var(--sidebar-collapsed-width);
+}
+
+.leftSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.pageTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.rightSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.walletButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px var(--space-lg);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  border: none;
+}
+
+.walletButton.connected {
+  background: var(--accent-primary-muted);
+  border: 1px solid rgba(143, 174, 139, 0.2);
+  color: var(--accent-primary);
+}
+
+.walletButton.connected:hover {
+  background: rgba(143, 174, 139, 0.18);
+  border-color: rgba(143, 174, 139, 0.3);
+}
+
+.walletButton.disconnected {
+  background: var(--fill-primary);
+  color: var(--text-inverse);
+  border: 1px solid transparent;
+}
+
+.walletButton.disconnected:hover {
+  opacity: 0.88;
+}
+
+.walletDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+}
+
+.walletAddress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.iconButton:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.03);
+}

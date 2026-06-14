@@ -1,0 +1,39 @@
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import { QueryProvider } from "@/shared/providers/QueryProvider";
+import { AppStoreProvider } from "@/shared/providers/AppStoreProvider";
+import { TooltipProvider } from "@/shared/ui/tooltip";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Casper Agent Network",
+  description: "Decentralized Proof-of-Skill Protocol for AI Agents on Casper Testnet",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col">
+        <QueryProvider>
+          <AppStoreProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </AppStoreProvider>
+        </QueryProvider>
+      </body>
+    </html>
+  );
+}
