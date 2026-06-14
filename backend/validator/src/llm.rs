@@ -43,33 +43,10 @@ pub async fn grade_soft_labels(
         return Ok(mock_response_f3(skill, soft_defs, agent_output));
     }
 
-    let text = if let (Some(account_id), Some(api_token)) =
-        (&config.cloudflare_account_id, &config.cloudflare_api_token)
-    {
-        call_cloudflare(account_id, api_token, system_prompt, user_prompt).await?
-    } else if let Some(api_key) = &config.openai_api_key {
-        call_openai(
-            api_key,
-            config.openai_base_url.as_deref(),
-            system_prompt,
-            user_prompt,
-        )
-        .await?
-    } else if let Some(api_key) = &config.claude_api_key {
-        call_claude(api_key, system_prompt, user_prompt).await?
-    } else if let Some(ollama_url) = &config.ollama_url {
-        call_ollama(
-            ollama_url,
-            config.ollama_model.as_deref(),
-            system_prompt,
-            user_prompt,
-        )
-        .await?
-    } else {
-        return Ok(mock_response_f3(skill, soft_defs, agent_output));
-    };
-
-    parse_soft_grader_response(text)
+    match dispatch_llm(config, system_prompt, user_prompt).await {
+        Ok(text) => parse_soft_grader_response(text),
+        Err(_) => Ok(mock_response_f3(skill, soft_defs, agent_output)),
+    }
 }
 
 fn mock_response_f3(
@@ -146,33 +123,10 @@ pub async fn grade(
         return Ok(mock_response(skill, criteria_defs, agent_output));
     }
 
-    let text = if let (Some(account_id), Some(api_token)) =
-        (&config.cloudflare_account_id, &config.cloudflare_api_token)
-    {
-        call_cloudflare(account_id, api_token, system_prompt, user_prompt).await?
-    } else if let Some(api_key) = &config.openai_api_key {
-        call_openai(
-            api_key,
-            config.openai_base_url.as_deref(),
-            system_prompt,
-            user_prompt,
-        )
-        .await?
-    } else if let Some(api_key) = &config.claude_api_key {
-        call_claude(api_key, system_prompt, user_prompt).await?
-    } else if let Some(ollama_url) = &config.ollama_url {
-        call_ollama(
-            ollama_url,
-            config.ollama_model.as_deref(),
-            system_prompt,
-            user_prompt,
-        )
-        .await?
-    } else {
-        return Ok(mock_response(skill, criteria_defs, agent_output));
-    };
-
-    parse_grader_response(text)
+    match dispatch_llm(config, system_prompt, user_prompt).await {
+        Ok(text) => parse_grader_response(text),
+        Err(_) => Ok(mock_response(skill, criteria_defs, agent_output)),
+    }
 }
 
 fn mock_response(
@@ -446,6 +400,113 @@ fn parse_grader_response(text: String) -> Result<GraderLlmResponse, ValidatorErr
         criteria,
         explanation,
     })
+}
+
+async fn dispatch_llm(
+    config: &LlmConfig,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, ValidatorError> {
+    if let Some(ref provider) = config.provider {
+        match provider.to_ascii_lowercase().as_str() {
+            "custom" | "fireworks" => {
+                if let (Some(api_key), Some(url), Some(model)) = (&config.custom_api_key, &config.custom_url, &config.custom_model) {
+                    return call_custom(api_key, url, model, system_prompt, user_prompt).await;
+                } else {
+                    return Err(ValidatorError::Llm("Custom/Fireworks credentials (url, api_key, model) are missing".into()));
+                }
+            }
+            "cloudflare" => {
+                if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+                    return call_cloudflare(account_id, api_token, system_prompt, user_prompt).await;
+                } else {
+                    return Err(ValidatorError::Llm("Cloudflare credentials missing".into()));
+                }
+            }
+            "openai" => {
+                if let Some(api_key) = &config.openai_api_key {
+                    return call_openai(api_key, config.openai_base_url.as_deref(), system_prompt, user_prompt).await;
+                } else {
+                    return Err(ValidatorError::Llm("OpenAI API key missing".into()));
+                }
+            }
+            "claude" => {
+                if let Some(api_key) = &config.claude_api_key {
+                    return call_claude(api_key, system_prompt, user_prompt).await;
+                } else {
+                    return Err(ValidatorError::Llm("Claude API key missing".into()));
+                }
+            }
+            "ollama" => {
+                if let Some(ollama_url) = &config.ollama_url {
+                    return call_ollama(ollama_url, config.ollama_model.as_deref(), system_prompt, user_prompt).await;
+                } else {
+                    return Err(ValidatorError::Llm("Ollama URL missing".into()));
+                }
+            }
+            other => {
+                return Err(ValidatorError::Llm(format!("Unknown or unsupported provider: {other}")));
+            }
+        }
+    }
+
+    if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+        call_cloudflare(account_id, api_token, system_prompt, user_prompt).await
+    } else if let (Some(api_key), Some(url), Some(model)) = (&config.custom_api_key, &config.custom_url, &config.custom_model) {
+        call_custom(api_key, url, model, system_prompt, user_prompt).await
+    } else if let Some(api_key) = &config.openai_api_key {
+        call_openai(api_key, config.openai_base_url.as_deref(), system_prompt, user_prompt).await
+    } else if let Some(api_key) = &config.claude_api_key {
+        call_claude(api_key, system_prompt, user_prompt).await
+    } else if let Some(ollama_url) = &config.ollama_url {
+        call_ollama(ollama_url, config.ollama_model.as_deref(), system_prompt, user_prompt).await
+    } else {
+        Err(ValidatorError::Llm("No LLM provider configured and mock is disabled".into()))
+    }
+}
+
+async fn call_custom(
+    api_key: &str,
+    url: &str,
+    model: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, ValidatorError> {
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "model": model,
+        "temperature": JUDGE_TEMPERATURE,
+        "max_tokens": JUDGE_MAX_TOKENS,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_prompt }
+        ],
+        "response_format": { "type": "json_object" }
+    });
+
+    let url = if url.ends_with("/chat/completions") {
+        url.to_string()
+    } else {
+        format!("{}/chat/completions", url.trim_end_matches('/'))
+    };
+
+    let res = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| ValidatorError::Llm(e.to_string()))?;
+
+    let res_json: serde_json::Value = res
+        .json()
+        .await
+        .map_err(|e| ValidatorError::Llm(e.to_string()))?;
+
+    res_json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| ValidatorError::Llm("Invalid custom LLM response format".into()))
 }
 
 #[cfg(test)]
