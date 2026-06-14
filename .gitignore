@@ -30,6 +30,9 @@ user-?-keys/
 *.sublime-workspace
 .DS_Store
 
+# Firecrawl cache
+.firecrawl/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
