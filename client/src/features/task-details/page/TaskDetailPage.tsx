@@ -1,9 +1,13 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ClipboardList, Coins, Hash } from "lucide-react";
 import { useTaskByIdQuery } from "@/features/tasks/api/queries";
+import { useAgentsQuery } from "@/features/agents/api/queries";
+import { useAppStore } from "@/shared/providers/AppStoreProvider";
+import { buildAssignTaskTx } from "@/shared/utils/contract-transactions";
+import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
 import { SKILL_LABELS } from "@/entities/agent/types/types";
 import { formatTimeAgo } from "@/shared/utils/format";
 import { StatusTimeline } from "@/features/task-details/ui/StatusTimeline";
@@ -39,6 +43,34 @@ const itemVariants = {
 export default function TaskDetailPage({ params }: { params: Promise<{ taskId: string }> }) {
   const { taskId } = use(params);
   const { data: task, isLoading } = useTaskByIdQuery(taskId);
+  const walletAddress = useAppStore((s) => s.walletAddress);
+  const { data: agents } = useAgentsQuery();
+  const [selectedAgent, setSelectedAgent] = useState("");
+  const [assigning, setAssigning] = useState(false);
+
+  const handleAssign = async () => {
+    if (!walletAddress) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    if (!selectedAgent) {
+      alert("Please select an agent.");
+      return;
+    }
+    if (!task) return;
+
+    setAssigning(true);
+    try {
+      const transaction = await buildAssignTaskTx(walletAddress, task.id, selectedAgent);
+      const txHash = await signAndSendTransaction(transaction, walletAddress);
+      alert(`Agent assigned on-chain!\nTransaction Hash: ${txHash}\nThe network is indexing the assignment, please refresh in a moment.`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to assign agent: ${err.message || err}`);
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -88,6 +120,51 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       {task.evaluation && (
         <motion.div variants={itemVariants}>
           <EvaluationPanel evaluation={task.evaluation} />
+        </motion.div>
+      )}
+      {task.status === "open" && agents && agents.length > 0 && (
+        <motion.div variants={itemVariants} className={styles.section}>
+          <h3 className={styles.sectionTitle}>Assign Agent</h3>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", marginTop: "12px" }}>
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: "6px",
+                color: "#fff",
+                fontSize: "0.9rem",
+                outline: "none"
+              }}
+              disabled={assigning}
+            >
+              <option value="" style={{ background: "#1e1e24" }}>Select an agent...</option>
+              {agents.map((a: any) => (
+                <option key={a.publicKey} value={a.publicKey} style={{ background: "#1e1e24" }}>
+                  {a.name} ({a.customPrice || a.recommendedPrice} CSPR)
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleAssign}
+              disabled={assigning || !selectedAgent}
+              style={{
+                padding: "8px 16px",
+                background: "var(--accent-primary, #6366f1)",
+                border: "none",
+                borderRadius: "6px",
+                color: "#fff",
+                fontWeight: 500,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                opacity: (assigning || !selectedAgent) ? 0.6 : 1
+              }}
+            >
+              {assigning ? "Assigning..." : "Assign Agent"}
+            </button>
+          </div>
         </motion.div>
       )}
       <motion.div variants={itemVariants}>

@@ -5,6 +5,9 @@ import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { truncateAddress } from "@/shared/utils/format";
 import styles from "./TopBar.module.css";
 
+import { useEffect } from "react";
+import { connectWallet, disconnectWallet, getConnectedAccount } from "@/shared/utils/casper-wallet";
+
 interface TopBarProps {
   title?: string;
 }
@@ -15,13 +18,24 @@ export function TopBar({ title }: TopBarProps) {
   const setWalletAddress = useAppStore((s) => s.setWalletAddress);
   const isConnected = !!walletAddress;
 
-  const handleWalletClick = () => {
+  useEffect(() => {
+    getConnectedAccount().then((address) => {
+      if (address) setWalletAddress(address);
+    });
+  }, [setWalletAddress]);
+
+  const handleWalletClick = async () => {
     if (isConnected) {
+      await disconnectWallet();
       setWalletAddress(null);
     } else {
-      setWalletAddress("01a4b3c2d1e0f9876543210abcdef0123456789abcdef0123456789abcdef0123");
+      const address = await connectWallet();
+      if (address) {
+        setWalletAddress(address);
+      }
     }
   };
+
 
   return (
     <header
