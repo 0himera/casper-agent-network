@@ -103,6 +103,12 @@
   overflow: hidden;
 }
 
+.dropdownIdenticon {
+  display: flex;
+  justify-content: center;
+  padding: 12px 12px 0;
+}
+
 .dropdownAddr {
   padding: 10px 12px;
   font-size: 11px;

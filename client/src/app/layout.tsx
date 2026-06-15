@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/shared/providers/QueryProvider";
 import { AppStoreProvider } from "@/shared/providers/AppStoreProvider";
+import { CsprClickClientWrapper } from "@/shared/providers/CsprClickClientWrapper";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 
 const geistSans = Geist({
@@ -30,7 +31,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <QueryProvider>
           <AppStoreProvider>
-            <TooltipProvider>{children}</TooltipProvider>
+            <CsprClickClientWrapper>
+              <TooltipProvider>{children}</TooltipProvider>
+            </CsprClickClientWrapper>
           </AppStoreProvider>
         </QueryProvider>
       </body>

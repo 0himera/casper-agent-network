@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@make-software/csprclick-core-types": "^2.1.0",
+    "@make-software/csprclick-ui": "^2.1.0",
     "@tanstack/react-query": "5.90.3",
     "casper-js-sdk": "^5.0.12",
     "class-variance-authority": "^0.7.1",
@@ -30,6 +32,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/styled-components": "^5.1.36",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "eslint-config-prettier": "^10.1.8",
