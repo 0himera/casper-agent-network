@@ -33,6 +33,9 @@ user-?-keys/
 # Firecrawl cache
 .firecrawl/
 
+# Compiled artifacts
+*.wasm
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
