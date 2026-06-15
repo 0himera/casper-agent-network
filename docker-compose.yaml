@@ -55,11 +55,15 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        - API_URL=http://backend:3000
+        - NEXT_PUBLIC_API_URL=http://backend:3000
     container_name: agent-network-client
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://backend:3000
+      API_URL: http://backend:3000
     depends_on:
       - backend
     restart: unless-stopped

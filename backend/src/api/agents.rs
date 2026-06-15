@@ -180,3 +180,19 @@ pub async fn update_agent_price(
 
     Ok(Json(agent))
 }
+
+pub async fn get_agent_benchmarks(
+    State(state): State<AppState>,
+    Path(public_key): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let runs = sqlx::query_as::<_, crate::db::models::BenchmarkRun>(
+        "SELECT * FROM benchmark_runs WHERE agent_public_key = ? ORDER BY timestamp DESC"
+    )
+    .bind(public_key)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(runs))
+}
+
