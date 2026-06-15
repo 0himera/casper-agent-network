@@ -222,6 +222,10 @@ pub struct LlmConfig {
     pub claude_api_key: Option<String>,
     pub ollama_url: Option<String>,
     pub ollama_model: Option<String>,
+    pub custom_url: Option<String>,
+    pub custom_api_key: Option<String>,
+    pub custom_model: Option<String>,
+    pub provider: Option<String>,
     pub mock: bool,
     pub judge_cascade: Option<JudgeCascadeMode>,
     pub judge_timeout_ms: Option<u64>,
@@ -240,14 +244,21 @@ impl LlmConfig {
             .ok()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
+        let mut custom_url = env("VALIDATOR_LLM_URL");
+        let custom_api_key = env("VALIDATOR_LLM_API_KEY").or(env("FIREWORKS_API_KEY"));
+        let custom_model = env("VALIDATOR_LLM_MODEL").or(env("FIREWORKS_MODEL"));
+
+        if custom_url.is_none() && custom_api_key.is_some() {
+            custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
+        }
+
         let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
             "local_first" => Some(JudgeCascadeMode::LocalFirst),
             "api_first" => Some(JudgeCascadeMode::ApiFirst),
             _ => None,
         });
 
-        let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS")
-            .and_then(|v| v.parse().ok());
+        let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
 
         let judge_self_consistency = env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| {
             v == "1" || v.eq_ignore_ascii_case("true")
@@ -261,6 +272,10 @@ impl LlmConfig {
             claude_api_key: env("CLAUDE_API_KEY"),
             ollama_url: env("OLLAMA_URL"),
             ollama_model: env("OLLAMA_MODEL"),
+            custom_url,
+            custom_api_key,
+            custom_model,
+            provider: env("VALIDATOR_PROVIDER"),
             mock,
             judge_cascade,
             judge_timeout_ms,

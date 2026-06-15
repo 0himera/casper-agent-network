@@ -5,7 +5,7 @@ use crate::types::{JudgeCascadeMode, JudgeProvider, LlmConfig, SkillId, Validato
 
 use super::extract_json;
 use super::record_provider_call;
-use super::providers::{call_provider, provider_available};
+use super::providers::{call_custom, call_provider, custom_provider_available, provider_available};
 
 pub fn resolve_effective_cascade(config: &LlmConfig) -> JudgeCascadeMode {
     if let Some(cascade) = config.judge_cascade {
@@ -75,6 +75,23 @@ pub async fn call_judge_with_fallback(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, ValidatorError> {
+    if let Some(ref provider) = config.provider {
+        if matches!(
+            provider.to_ascii_lowercase().as_str(),
+            "custom" | "fireworks"
+        ) && custom_provider_available(config)
+        {
+            let text = call_custom(config, system_prompt, user_prompt).await?;
+            validate_judge_json(&text)?;
+            return Ok(text);
+        }
+    } else if custom_provider_available(config) {
+        let text = call_custom(config, system_prompt, user_prompt).await?;
+        if validate_judge_json(&text).is_ok() {
+            return Ok(text);
+        }
+    }
+
     let cascade = resolve_effective_cascade(config);
     let skill_override = skill_provider_override(skill);
     let chain = provider_chain(cascade, skill_override);

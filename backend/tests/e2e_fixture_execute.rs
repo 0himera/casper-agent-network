@@ -15,6 +15,10 @@ fn test_config() -> Config {
         cloudflare_api_token: None,
         fireworks_api_key: None,
         fireworks_model: None,
+        validator_url: None,
+        validator_api_key: None,
+        validator_model: None,
+        validator_provider: None,
         admin_account: String::new(),
     }
 }

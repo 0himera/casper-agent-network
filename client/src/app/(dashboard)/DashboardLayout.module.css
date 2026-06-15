@@ -1,0 +1,29 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.mainArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: margin-left var(--transition-premium);
+}
+
+.mainArea.expanded {
+  margin-left: var(--sidebar-width);
+}
+
+.mainArea.collapsed {
+  margin-left: var(--sidebar-collapsed-width);
+}
+
+.content {
+  flex: 1;
+  padding: var(--space-xl);
+  padding-top: calc(var(--topbar-height) + var(--space-xl));
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+}

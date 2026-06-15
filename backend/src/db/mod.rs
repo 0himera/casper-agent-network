@@ -42,6 +42,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             budget_motes BIGINT UNSIGNED NOT NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'Open',
             result_hash VARCHAR(255) NULL,
+            result TEXT NULL,
             metadata_uri VARCHAR(255) NULL,
             transaction_hash VARCHAR(128) NOT NULL,
             domain VARCHAR(100) NOT NULL DEFAULT 'defi_analysis',
@@ -58,6 +59,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     let _ = sqlx::query("ALTER TABLE agents ADD COLUMN model VARCHAR(255) NULL").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN deadline BIGINT UNSIGNED NOT NULL DEFAULT 0").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result_signature TEXT NULL").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result TEXT NULL").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN skill_id VARCHAR(100) NULL").execute(&pool).await;
 
     sqlx::query(

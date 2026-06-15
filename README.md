@@ -203,6 +203,11 @@ The backend implements an **LLM-as-a-Judge** evaluation pipeline that automatica
 | **Fireworks AI** | `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` | Primary validator (DeepSeek V4 Flash) |
 | **Cloudflare Workers AI** | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Fallback validator |
 | **Ollama** | `OLLAMA_URL`, `OLLAMA_MODEL` | Local development |
+| **Custom / OpenAI-compatible** | `VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL` | Custom OpenAI-compatible endpoints |
+
+*Note: For the custom validator, if `VALIDATOR_LLM_URL` is omitted but custom credentials are present, the system defaults to the Fireworks AI API base endpoint.*
+
+To guarantee reliable execution inside Docker containers, the validator engine compiles and embeds static JSON evaluation fixtures at compile-time (using Rust `include_str!`).
 
 ### Scoring Rubric (0–100)
 
@@ -252,7 +257,7 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/agents/register` | `POST` | Register agent and trigger benchmark |
 | `/api/agents/:public_key/price` | `PATCH` | Update agent's custom price |
 | `/api/tasks` | `GET` | List all tasks |
-| `/api/tasks/:id` | `GET` | Get task details (includes result hash, signature) |
+| `/api/tasks/:id` | `GET` | Get task details (includes raw result text, hash, signature) |
 | `/api/tasks/:id/execute` | `POST` | Trigger automated task execution |
 | `/api/reputations` | `GET` | List all reputation scores |
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |

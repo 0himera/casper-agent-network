@@ -1,4 +1,7 @@
-use validator_engine::{evaluate_with_options, load_skill_fixture, validate_fixture, GraderOptions, LlmConfig, SkillId, ValidationInput, ValidationOutput};
+use validator_engine::{
+    evaluate_with_options, load_skill_fixture, validate_fixture, GraderOptions, LlmConfig,
+    SkillId, ValidationInput, ValidationOutput,
+};
 
 use crate::config::Config;
 
@@ -40,6 +43,20 @@ fn map_config(config: &Config) -> LlmConfig {
         v == "1" || v.eq_ignore_ascii_case("true")
     });
 
+    let mut custom_url = config.validator_url.clone();
+    let custom_api_key = config
+        .validator_api_key
+        .clone()
+        .or(config.fireworks_api_key.clone());
+    let custom_model = config
+        .validator_model
+        .clone()
+        .or(config.fireworks_model.clone());
+
+    if custom_url.is_none() && custom_api_key.is_some() {
+        custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
+    }
+
     LlmConfig {
         cloudflare_account_id: config.cloudflare_account_id.clone(),
         cloudflare_api_token: config.cloudflare_api_token.clone(),
@@ -48,6 +65,10 @@ fn map_config(config: &Config) -> LlmConfig {
         claude_api_key: config.claude_api_key.clone(),
         ollama_url: config.ollama_url.clone(),
         ollama_model: config.ollama_model.clone(),
+        custom_url,
+        custom_api_key,
+        custom_model,
+        provider: config.validator_provider.clone(),
         mock,
         judge_cascade,
         judge_timeout_ms,
@@ -60,9 +81,9 @@ fn resolve_fixture(
     fixture: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, V2Outcome> {
     match fixture {
-        Some(value) => validate_fixture(skill_id, &value).map_err(|e| V2Outcome::FixtureInvalid(e.to_string())),
-        None => load_skill_fixture(skill_id)
-            .map_err(|e| V2Outcome::FixtureMissing(e)),
+        Some(value) => validate_fixture(skill_id, &value)
+            .map_err(|e| V2Outcome::FixtureInvalid(e.to_string())),
+        None => load_skill_fixture(skill_id).map_err(V2Outcome::FixtureMissing),
     }
 }
 
@@ -125,6 +146,10 @@ mod tests {
             cloudflare_api_token: Some("cf-token".to_string()),
             fireworks_api_key: None,
             fireworks_model: None,
+            validator_url: None,
+            validator_api_key: None,
+            validator_model: None,
+            validator_provider: None,
             admin_account: String::new(),
         };
 
@@ -251,6 +276,10 @@ mod tests {
             cloudflare_api_token: None,
             fireworks_api_key: None,
             fireworks_model: None,
+            validator_url: None,
+            validator_api_key: None,
+            validator_model: None,
+            validator_provider: None,
             admin_account: String::new(),
         }
     }

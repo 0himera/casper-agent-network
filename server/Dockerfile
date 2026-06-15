@@ -7,5 +7,6 @@ RUN npm ci
 
 COPY . .
 
-# Expose the API port (4000)
 EXPOSE 4000
+
+CMD ["npm", "run", "event-handler:dev"]

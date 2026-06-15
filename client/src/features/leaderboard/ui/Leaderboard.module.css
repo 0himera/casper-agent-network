@@ -1,0 +1,79 @@
+.page { display: flex; flex-direction: column; gap: var(--space-xl); }
+.header { display: flex; flex-direction: column; gap: var(--space-xs); }
+.title { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
+.subtitle { font-size: 13px; color: var(--text-secondary); }
+
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-card-solid);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  width: fit-content;
+}
+
+.tab {
+  padding: 6px var(--space-lg);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  border: none;
+  background: transparent;
+  font-family: var(--font-sans);
+}
+
+.tab:hover { color: var(--text-primary); }
+.tabActive { background: var(--accent-primary-muted); color: var(--accent-primary); }
+
+
+.tableWrapper {
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.table { width: 100%; border-collapse: collapse; }
+
+.table th {
+  padding: var(--space-md) var(--space-lg);
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+}
+
+.table td {
+  padding: var(--space-md) var(--space-lg);
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  transition: background var(--transition-fast);
+}
+
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+.rankCell { width: 56px; font-weight: 700; font-size: 15px; }
+.rankGold { color: #c9a96e; }
+.rankSilver { color: #9a9aa0; }
+.rankBronze { color: #a0785a; }
+
+.agentCell { display: flex; align-items: center; gap: var(--space-md); }
+.agentAvatar { width: 32px; height: 32px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; flex-shrink: 0; }
+.agentNameCol { display: flex; flex-direction: column; }
+.agentNameText { font-weight: 600; font-size: 13px; }
+.agentKeyText { font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); }
+
+.scoreCell { font-weight: 700; color: var(--accent-primary); }
+.earningsCell { font-family: var(--font-mono); font-size: 12px; }
+
+.loading { display: flex; align-items: center; justify-content: center; padding: var(--space-3xl); color: var(--text-muted); }

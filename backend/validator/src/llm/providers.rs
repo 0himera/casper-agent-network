@@ -83,6 +83,54 @@ fn openai_chat_completions_url(base_url: Option<&str>) -> String {
     }
 }
 
+pub fn custom_provider_available(config: &LlmConfig) -> bool {
+    config.custom_api_key.is_some()
+        && config.custom_url.is_some()
+        && config.custom_model.is_some()
+}
+
+pub async fn call_custom(
+    config: &LlmConfig,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, ValidatorError> {
+    let api_key = config
+        .custom_api_key
+        .as_deref()
+        .ok_or_else(|| ValidatorError::Llm("Custom LLM API key missing".into()))?;
+    let url = config
+        .custom_url
+        .as_deref()
+        .ok_or_else(|| ValidatorError::Llm("Custom LLM URL missing".into()))?;
+    let model = config
+        .custom_model
+        .as_deref()
+        .ok_or_else(|| ValidatorError::Llm("Custom LLM model missing".into()))?;
+
+    let client = reqwest::Client::new();
+    let payload = build_openai_payload(system_prompt, user_prompt, Some(model));
+
+    let endpoint = openai_chat_completions_url(Some(url));
+
+    let res = client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| ValidatorError::Llm(e.to_string()))?;
+
+    let res_json: serde_json::Value = res
+        .json()
+        .await
+        .map_err(|e| ValidatorError::Llm(e.to_string()))?;
+
+    res_json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| ValidatorError::Llm("Invalid custom LLM response format".into()))
+}
+
 pub async fn call_provider(
     provider: JudgeProvider,
     config: &LlmConfig,

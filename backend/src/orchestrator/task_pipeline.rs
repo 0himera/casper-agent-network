@@ -139,6 +139,7 @@ pub fn sample_task(skill_id: Option<&str>, domain: &str, prompt: &str) -> Task {
         budget_motes: 10_000_000_000,
         status: "InProgress".to_string(),
         result_hash: None,
+        result: None,
         metadata_uri: None,
         transaction_hash: "tx-1".to_string(),
         domain: domain.to_string(),
