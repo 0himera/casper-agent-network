@@ -66,3 +66,20 @@ export function useAgentByKeyQuery(publicKey: string) {
     retry: 1,
   });
 }
+
+export function useAgentBenchmarksQuery(publicKey: string) {
+  return useQuery<any[]>({
+    queryKey: [...agentKeys.detail(publicKey), "benchmarks"],
+    queryFn: async () => {
+      try {
+        const raw = await apiGet<any[]>(`/api/agents/${publicKey}/benchmarks`);
+        return raw;
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!publicKey,
+    retry: 1,
+  });
+}
+

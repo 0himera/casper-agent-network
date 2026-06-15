@@ -13,7 +13,9 @@ import styles from "@/features/agent-profile/ui/MyAgent.module.css";
 export default function MyAgentPage() {
   const walletAddress = useAppStore((s) => s.walletAddress);
   const { data: agents } = useAgentsQuery();
-  const agent = walletAddress && agents?.length ? agents[0] : null;
+  const agent = walletAddress && agents?.length
+    ? agents.find((a: any) => a.publicKey.toLowerCase() === walletAddress.toLowerCase())
+    : null;
 
   if (!agent) {
     return (
@@ -38,7 +40,7 @@ export default function MyAgentPage() {
       </div>
       <MyAgentStats agent={agent} />
       <PriceConfig agent={agent} />
-      <BenchmarkPanel />
+      <BenchmarkPanel publicKey={agent.publicKey} />
     </div>
   );
 }

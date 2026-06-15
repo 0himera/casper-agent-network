@@ -2,13 +2,50 @@
 
 import { useState } from "react";
 import type { AgentEntity } from "@/entities/agent/types/types";
+import { buildSetPriceTx } from "@/shared/utils/contract-transactions";
+import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
+import { apiPatch } from "@/shared/api/api-client";
+import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import styles from "./MyAgent.module.css";
 
 interface PriceConfigProps { agent: AgentEntity }
 
 export function PriceConfig({ agent }: PriceConfigProps) {
+  const walletAddress = useAppStore((s) => s.walletAddress);
   const [newPrice, setNewPrice] = useState(String(agent.customPrice));
-  const handleUpdate = () => alert(`Price updated to ${newPrice} CSPR (simulated)`);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const handleUpdate = async () => {
+    if (!walletAddress) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    
+    setLoading(true);
+    setStatus("Building transaction...");
+    try {
+      const priceMotes = String(Math.round(parseFloat(newPrice) * 1_000_000_000));
+      const transaction = await buildSetPriceTx(walletAddress, priceMotes);
+      
+      setStatus("Signing transaction in Casper Wallet...");
+      const txHash = await signAndSendTransaction(transaction, walletAddress);
+      
+      setStatus("Synchronizing price off-chain...");
+      await apiPatch(`/api/agents/${agent.publicKey}/price`, {
+        custom_price_motes: parseInt(priceMotes, 10)
+      });
+      
+      setStatus("Price updated successfully!");
+      alert(`On-chain price updated successfully!\nTransaction Hash: ${txHash}`);
+    } catch (err: any) {
+      console.error(err);
+      setStatus("");
+      alert(`Failed to update price: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className={styles.section}>
@@ -23,9 +60,10 @@ export function PriceConfig({ agent }: PriceConfigProps) {
       </div>
       <div className={styles.priceRow}>
         <span className={styles.priceLabel}>Update Price (CSPR):</span>
-        <input type="number" className={styles.priceInput} value={newPrice} onChange={(e) => setNewPrice(e.target.value)} step="0.1" min="0" />
-        <button className={styles.updateButton} onClick={handleUpdate}>Update On-chain</button>
+        <input type="number" className={styles.priceInput} value={newPrice} onChange={(e) => setNewPrice(e.target.value)} step="0.1" min="0" disabled={loading} />
+        <button className={styles.updateButton} onClick={handleUpdate} disabled={loading}>{loading ? "Updating..." : "Update On-chain"}</button>
       </div>
+      {status && <div className={styles.statusText} style={{ marginTop: "10px", fontSize: "0.85rem", color: "var(--text-muted)", opacity: 0.8 }}>{status}</div>}
     </div>
   );
 }

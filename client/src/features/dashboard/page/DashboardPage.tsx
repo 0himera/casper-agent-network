@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 import { useAgentsQuery } from "@/features/agents/api/queries";
+import { useTasksQuery } from "@/features/tasks/api/queries";
+import { useLeaderboardQuery } from "@/features/leaderboard/api/queries";
 import type { AgentSkill, AgentStatus } from "@/entities/agent/types/types";
 import { StatsGrid } from "@/features/dashboard/ui/StatsGrid";
 import { AgentsToolbar } from "@/features/dashboard/ui/AgentsToolbar";
@@ -31,10 +33,27 @@ export default function DashboardPage() {
     skill: skillFilter || undefined,
     status: statusFilter || undefined,
   });
+  const { data: totalAgents } = useAgentsQuery({});
+  const { data: totalTasks } = useTasksQuery();
+  const { data: leaderboard } = useLeaderboardQuery();
+
+  const escrowedCSPR = useMemo(() => {
+    if (!totalTasks?.length) return "0 CSPR";
+    const total = totalTasks
+      .filter((t) => t.status === "open" || t.status === "in_progress")
+      .reduce((sum, t) => sum + t.budget, 0);
+    return `${total.toFixed(1)} CSPR`;
+  }, [totalTasks]);
+
+  const avgScore = useMemo(() => {
+    if (!leaderboard?.length) return "0";
+    const total = leaderboard.reduce((sum, e) => sum + e.score, 0);
+    return (total / leaderboard.length).toFixed(1);
+  }, [leaderboard]);
 
   return (
     <div className={styles.page}>
-      <StatsGrid />
+      <StatsGrid agentCount={totalAgents?.length} taskCount={totalTasks?.length} escrowedCSPR={escrowedCSPR} avgScore={avgScore} />
       <AgentsToolbar
         search={search} onSearchChange={setSearch}
         skillFilter={skillFilter} onSkillChange={setSkillFilter}

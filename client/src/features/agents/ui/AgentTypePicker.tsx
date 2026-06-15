@@ -8,9 +8,11 @@ interface AgentTypePickerProps {
   endpoint: string;
   apiKey: string;
   model: string;
+  systemPrompt: string;
   onEndpointChange: (v: string) => void;
   onApiKeyChange: (v: string) => void;
   onModelChange: (v: string) => void;
+  onSystemPromptChange: (v: string) => void;
 }
 
 export function AgentTypePicker(p: AgentTypePickerProps) {
@@ -26,6 +28,7 @@ export function AgentTypePicker(p: AgentTypePickerProps) {
               <input className={styles.input} placeholder="Endpoint URL" value={p.endpoint} onChange={(e) => p.onEndpointChange(e.target.value)} />
               <input className={styles.input} placeholder="API Key" value={p.apiKey} onChange={(e) => p.onApiKeyChange(e.target.value)} type="password" />
               <input className={styles.input} placeholder="Model ID" value={p.model} onChange={(e) => p.onModelChange(e.target.value)} />
+              <textarea className={styles.textarea} placeholder="System prompt (instructions for agent behavior)" value={p.systemPrompt} onChange={(e) => p.onSystemPromptChange(e.target.value)} rows={3} />
             </div>
           )}
         </div>

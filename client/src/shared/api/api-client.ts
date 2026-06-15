@@ -1,6 +1,6 @@
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  return process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://localhost:8080";
 };
 
 class ApiError extends Error {
@@ -29,8 +29,8 @@ export function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
-export function apiPost<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, { method: "POST", body: JSON.stringify(body) });
+export function apiPost<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+  return request<T>(path, { method: "POST", body: JSON.stringify(body), headers });
 }
 
 export function apiPatch<T>(path: string, body: unknown): Promise<T> {
