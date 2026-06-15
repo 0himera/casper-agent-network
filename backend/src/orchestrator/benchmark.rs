@@ -32,7 +32,7 @@ async fn evaluate_benchmark_skill(
     processing_time_ms: u64,
     config: &Config,
 ) -> Option<(u32, u64, serde_json::Value)> {
-    match evaluate_task_v2(skill, prompt, agent_output, processing_time_ms, config).await {
+    match evaluate_task_v2(skill, prompt, agent_output, processing_time_ms, None, config).await {
         V2Outcome::Ok(out) => {
             let rubric_json =
                 serde_json::to_value(&out.criteria).unwrap_or(serde_json::Value::Null);
@@ -42,6 +42,13 @@ async fn evaluate_benchmark_skill(
             eprintln!(
                 "skill '{}' is not supported by the v2 evaluator, skipping",
                 skill
+            );
+            None
+        }
+        V2Outcome::FixtureInvalid(err) => {
+            eprintln!(
+                "invalid fixture for skill '{}': {}",
+                skill, err
             );
             None
         }

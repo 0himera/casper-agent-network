@@ -49,6 +49,7 @@ pub struct CaseResult {
 pub struct RegressionMetrics {
     pub accuracy: f64,
     pub flip_rate: f64,
+    pub total_llm_calls: u32,
     pub case_results: Vec<CaseResult>,
 }
 
@@ -80,6 +81,11 @@ pub fn load_fixture(fixture_file: &str) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("failed to read fixture {}: {e}", path.display()))?;
     serde_json::from_str(&content)
         .map_err(|e| format!("invalid fixture JSON {}: {e}", path.display()))
+}
+
+/// Load the default on-disk fixture for a skill (`fixtures/{skill}.json`).
+pub fn load_skill_fixture(skill: SkillId) -> Result<serde_json::Value, String> {
+    load_fixture(&format!("{}.json", skill.as_str()))
 }
 
 pub fn load_golden_cases_from_path(path: &Path) -> Result<Vec<GoldenCase>, String> {
@@ -192,10 +198,12 @@ pub async fn run_regression(
 ) -> Result<RegressionMetrics, ValidatorError> {
     let mut case_results = Vec::with_capacity(cases.len());
     let mut matched_count = 0u32;
+    let mut total_llm_calls = 0u32;
 
     for case in cases {
         let input = golden_case_to_input(case).map_err(ValidatorError::Llm)?;
         let output = evaluate_with_options(input, config, options).await?;
+        total_llm_calls += crate::llm::judge_call_count();
         let snapshot = snapshot_from_output(&output);
 
         let check = check_expectation(case, &output, &snapshot);
@@ -221,6 +229,7 @@ pub async fn run_regression(
     Ok(RegressionMetrics {
         accuracy,
         flip_rate: 0.0,
+        total_llm_calls,
         case_results,
     })
 }
@@ -239,17 +248,20 @@ pub async fn run_determinism(
 
     let mut case_results = Vec::with_capacity(cases.len());
     let mut flipped_comparisons = 0u32;
+    let mut total_llm_calls = 0u32;
     let comparisons_per_case = repeats.saturating_sub(1);
     let total_comparisons = cases.len() as u32 * comparisons_per_case;
 
     for case in cases {
         let input = golden_case_to_input(case).map_err(ValidatorError::Llm)?;
         let baseline = evaluate_with_options(input.clone(), config, options).await?;
+        total_llm_calls += crate::llm::judge_call_count();
         let baseline_snapshot = snapshot_from_output(&baseline);
 
         let mut case_flips = 0u32;
         for _ in 1..repeats {
             let output = evaluate_with_options(input.clone(), config, options).await?;
+            total_llm_calls += crate::llm::judge_call_count();
             let snapshot = snapshot_from_output(&output);
             if !snapshots_match(&baseline_snapshot, &snapshot) {
                 case_flips += 1;
@@ -279,7 +291,167 @@ pub async fn run_determinism(
             case_results.iter().filter(|r| r.matched).count() as f64 / cases.len() as f64
         },
         flip_rate: compute_flip_rate(total_comparisons, flipped_comparisons),
+        total_llm_calls,
         case_results,
+    })
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SoftLabelExpectation {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SoftCalibrationCase {
+    pub id: String,
+    pub skill: String,
+    pub task_prompt: String,
+    pub agent_output: String,
+    pub fixture_file: String,
+    pub processing_time_ms: u64,
+    pub expect_soft: Vec<SoftLabelExpectation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SoftLabelCaseResult {
+    pub case_id: String,
+    pub matched: bool,
+    pub mismatch_reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SoftLabelMetrics {
+    pub accuracy: f64,
+    pub matched_labels: u32,
+    pub total_labels: u32,
+    pub case_results: Vec<SoftLabelCaseResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpliftReport {
+    pub baseline: SoftLabelMetrics,
+    pub treatment: SoftLabelMetrics,
+    pub delta_accuracy: f64,
+}
+
+pub fn load_soft_calibration_from_path(path: &Path) -> Result<Vec<SoftCalibrationCase>, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("failed to read soft calibration {}: {e}", path.display()))?;
+    serde_json::from_str(&content).map_err(|e| format!("invalid soft calibration JSON: {e}"))
+}
+
+pub fn load_soft_calibration() -> Result<Vec<SoftCalibrationCase>, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("soft_calibration.json");
+    load_soft_calibration_from_path(&path)
+}
+
+pub fn soft_calibration_to_input(case: &SoftCalibrationCase) -> Result<ValidationInput, String> {
+    Ok(ValidationInput {
+        skill: parse_skill(&case.skill)?,
+        task_prompt: case.task_prompt.clone(),
+        agent_output: case.agent_output.clone(),
+        fixture: load_fixture(&case.fixture_file)?,
+        processing_time_ms: case.processing_time_ms,
+    })
+}
+
+fn infer_soft_label(score: u32, weight: u32, passed: bool) -> &'static str {
+    if passed && score == weight {
+        "strong"
+    } else if score == weight / 2 {
+        "partial"
+    } else {
+        "missing"
+    }
+}
+
+pub async fn run_soft_label_regression(
+    cases: &[SoftCalibrationCase],
+    config: &LlmConfig,
+    options: &GraderOptions,
+) -> Result<SoftLabelMetrics, ValidatorError> {
+    let mut case_results = Vec::with_capacity(cases.len());
+    let mut matched_labels = 0u32;
+    let mut total_labels = 0u32;
+
+    for case in cases {
+        let input = soft_calibration_to_input(case).map_err(ValidatorError::Llm)?;
+        let output = evaluate_with_options(input, config, options).await?;
+        let defs = crate::rubric::criteria(parse_skill(&case.skill).map_err(ValidatorError::Llm)?);
+
+        let mut case_matched = true;
+        let mut mismatch_parts = Vec::new();
+
+        for expected in &case.expect_soft {
+            total_labels += 1;
+            let def = defs
+                .iter()
+                .find(|d| d.id == expected.id.as_str())
+                .ok_or_else(|| {
+                    ValidatorError::Llm(format!("unknown criterion id: {}", expected.id))
+                })?;
+            let eval = output
+                .criteria
+                .iter()
+                .find(|c| c.id == expected.id)
+                .ok_or_else(|| {
+                    ValidatorError::Inconsistent(format!(
+                        "missing criterion in output: {}",
+                        expected.id
+                    ))
+                })?;
+
+            let actual = infer_soft_label(eval.score, def.weight, eval.passed);
+            if actual == expected.label {
+                matched_labels += 1;
+            } else {
+                case_matched = false;
+                mismatch_parts.push(format!(
+                    "{}: expected {}, got {}",
+                    expected.id, expected.label, actual
+                ));
+            }
+        }
+
+        case_results.push(SoftLabelCaseResult {
+            case_id: case.id.clone(),
+            matched: case_matched,
+            mismatch_reason: if case_matched {
+                None
+            } else {
+                Some(mismatch_parts.join("; "))
+            },
+        });
+    }
+
+    let accuracy = if total_labels == 0 {
+        1.0
+    } else {
+        matched_labels as f64 / total_labels as f64
+    };
+
+    Ok(SoftLabelMetrics {
+        accuracy,
+        matched_labels,
+        total_labels,
+        case_results,
+    })
+}
+
+pub async fn compare_few_shot_uplift(
+    cases: &[SoftCalibrationCase],
+    config: &LlmConfig,
+) -> Result<UpliftReport, ValidatorError> {
+    let baseline = run_soft_label_regression(cases, config, &GraderOptions::f3_baseline()).await?;
+    let treatment = run_soft_label_regression(cases, config, &GraderOptions::f3_few_shot()).await?;
+
+    Ok(UpliftReport {
+        delta_accuracy: treatment.accuracy - baseline.accuracy,
+        baseline,
+        treatment,
     })
 }
 
@@ -349,6 +521,45 @@ mod tests {
             .expect("regression run ok");
 
         assert_eq!(metrics.accuracy, 1.0);
+        assert_eq!(metrics.total_llm_calls, 0);
         assert!(metrics.case_results.iter().all(|r| r.matched));
+    }
+
+    #[test]
+    fn load_soft_calibration_has_nine_entries() {
+        let cases = load_soft_calibration().expect("soft calibration must load");
+        assert_eq!(cases.len(), 9);
+    }
+
+    #[tokio::test]
+    async fn soft_label_regression_mock_runs_all_cases() {
+        let cases = load_soft_calibration().expect("soft calibration must load");
+        let config = LlmConfig {
+            mock: true,
+            ..Default::default()
+        };
+
+        let metrics = run_soft_label_regression(&cases, &config, &GraderOptions::default())
+            .await
+            .expect("soft label regression ok");
+
+        assert_eq!(metrics.total_labels, 9);
+        assert_eq!(metrics.case_results.len(), 9);
+    }
+
+    #[tokio::test]
+    async fn compare_few_shot_uplift_mock_completes() {
+        let cases = load_soft_calibration().expect("soft calibration must load");
+        let config = LlmConfig {
+            mock: true,
+            ..Default::default()
+        };
+
+        let report = compare_few_shot_uplift(&cases, &config)
+            .await
+            .expect("uplift compare ok");
+
+        assert_eq!(report.baseline.total_labels, 9);
+        assert_eq!(report.treatment.total_labels, 9);
     }
 }

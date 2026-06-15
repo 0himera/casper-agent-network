@@ -1,6 +1,6 @@
 # Методика оценки
 
-Принципы скоринга для validator-engine. Целевая архитектура: **F3** (см. [roadmap.md](./roadmap.md)).
+Принципы скоринга для validator-engine. Подробный план доработок: [roadmap.md](./roadmap.md).
 
 ---
 
@@ -16,7 +16,7 @@ Pairwise — только для калибровки весов, не как ф
 
 ---
 
-## Целевая архитектура (F3)
+## Целевой pipeline (реализован)
 
 ```
 gate → код-оракул (hard-критерии) → LLM enum-label (soft, temp=0) → код-агрегация + threshold
@@ -28,23 +28,24 @@ gate → код-оракул (hard-критерии) → LLM enum-label (soft, t
 
 Soft label mapping: `strong` → 100% weight, `partial` → 50%, `missing` → 0%.
 
-Текущее состояние: F3 pipeline реализован (Phase 5); tools — stubs. План доработки: [roadmap.md](./roadmap.md).
+**Текущее состояние:** pipeline реализован; 11 real tools — authoritative scorer для hard-критериев; few-shot exemplars, per-skill judge routing и optional self-consistency добавлены поверх baseline.
 
 ---
 
 ## Приоритеты внедрения
 
-| P | Механизм | Статус | Фаза |
-|---|----------|--------|------|
-| **P0** | Real tools as authoritative scorer | stub only | 6 |
-| **P0** | `temperature=0` on judge LLM | ✅ | 4 |
-| **P0** | Input gates → skip LLM on hard fail | ✅ | 5 |
-| **P0** | LLM → enum labels; score in code | ✅ | 5 |
-| **P0** | ShotJudge few-shot exemplars | `few_shot: []` | 7 |
-| **P1** | Determinism harness (R=5 repeats) | ✅ | 4 |
-| **P1** | CI regression gate on golden | local script only | 4 |
-| **P1** | Separate judge model from worker | same chain | 8 |
-| **P2** | Pairwise for weight calibration only | not used | — |
+| P | Механизм | Статус |
+|---|----------|--------|
+| **P0** | Real tools as authoritative scorer | ✅ |
+| **P0** | `temperature=0` on judge LLM | ✅ |
+| **P0** | Input gates → skip LLM on hard fail | ✅ |
+| **P0** | LLM → enum labels; score in code | ✅ |
+| **P0** | Few-shot exemplars for soft criteria | ✅ |
+| **P1** | Determinism harness (R=5 repeats) | ✅ |
+| **P1** | CI regression gate on golden | local script only |
+| **P1** | Separate judge model from worker | ✅ per-skill routing |
+| **P1** | Self-consistency on ambiguous soft labels | ✅ optional |
+| **P2** | Pairwise for weight calibration only | not used |
 
 ---
 
@@ -59,8 +60,20 @@ Soft label mapping: `strong` → 100% weight, `partial` → 50%, `missing` → 0
 
 ---
 
+## Changelog
+
+### После baseline гибридного скоринга
+
+- Реализованы 11 deterministic tools; hard-критерии больше не зависят от LLM.
+- LLM-слой: routing по skill, cascade fallback, optional self-consistency для soft-labels.
+- Few-shot exemplars в конфиге промптов; harness для калибровки soft-критериев.
+- JSON Schema для fixture; inline fixture в adapter и worker prompt.
+- E2E-тест полного цикла задачи с injected fixture.
+
+---
+
 ## Связанные документы
 
 - [implementation.md](./implementation.md) — что реализовано сейчас
-- [roadmap.md](./roadmap.md) — фазы доработки до F3
+- [roadmap.md](./roadmap.md) — план доработок
 - [llm-as-judge-pattern.md](./llm-as-judge-pattern.md) — паттерны RubricMiddleware

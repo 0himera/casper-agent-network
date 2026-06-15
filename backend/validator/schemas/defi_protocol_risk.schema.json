@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "defi_protocol_risk",
+  "type": "object",
+  "required": ["revert_rate", "anomaly_threshold"],
+  "properties": {
+    "revert_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "anomaly_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "window_hours": { "type": "integer", "minimum": 1 },
+    "total_transactions": { "type": "integer", "minimum": 0 },
+    "reverted_transactions": { "type": "integer", "minimum": 0 },
+    "recent_spike": { "type": "boolean" },
+    "protocol_tvl_usd": { "type": "number", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

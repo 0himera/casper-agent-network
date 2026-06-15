@@ -6,3 +6,5 @@ cd "$(dirname "$0")/.."
 
 cargo test
 cargo test --test golden
+cd ../
+cargo test --test e2e_fixture_execute
