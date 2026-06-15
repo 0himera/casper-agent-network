@@ -1,0 +1,10 @@
+# Ignore Node.js dependencies and build outputs
+node_modules
+.next
+build
+dist
+.env
+.env*.local
+.git
+.gitignore
+README.md
