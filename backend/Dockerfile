@@ -1,5 +1,5 @@
 # Build stage using bookworm to match runtime stage glibc
-FROM rust:slim-bookworm AS builder
+FROM rust:1.96-slim-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

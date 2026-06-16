@@ -2,12 +2,13 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use crate::casper::contract::CasperClient;
 use crate::db::DbPool;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct XPaymentHeader {
     #[serde(rename = "x402Version")]
     pub x402_version: u32,
@@ -17,6 +18,7 @@ pub struct XPaymentHeader {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct XPaymentPayload {
     #[serde(rename = "paymentType")]
     pub payment_type: String,

@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 
+#[allow(dead_code)]
 /// Client for interacting with the Casper network via CSPR.cloud API.
 #[derive(Clone, Debug)]
 pub struct CasperClient {
@@ -28,6 +29,7 @@ pub struct CasperClient {
 
 /// Represents an on-chain deploy result from CSPR.cloud
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct DeployResult {
     pub deploy_hash: String,
     pub status: String,
@@ -35,6 +37,7 @@ pub struct DeployResult {
 
 /// Account info from CSPR.cloud
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AccountInfo {
     pub public_key: String,
     pub account_hash: String,
@@ -44,12 +47,14 @@ pub struct AccountInfo {
 
 /// CSPR.cloud API response wrapper
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ApiResponse<T> {
     data: T,
 }
 
 /// Contract event from CSPR.cloud
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ContractEvent {
     pub name: String,
     pub data: serde_json::Value,
@@ -57,6 +62,7 @@ pub struct ContractEvent {
     pub timestamp: String,
 }
 
+#[allow(dead_code)]
 impl CasperClient {
     /// Create a new CasperClient from environment variables.
     ///
