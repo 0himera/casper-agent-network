@@ -7,9 +7,10 @@
 | Документ | Язык | Содержание |
 |----------|------|------------|
 | [**implementation.md**](./implementation.md) | EN | **Текущая имплементация** — API, пайплайн, рубрики, tools, интеграция с backend, тесты |
-| [**roadmap.md**](./roadmap.md) | RU | **План разработки** — фазы, целевая архитектура F3, матрица тестов |
+| [**roadmap.md**](./roadmap.md) | RU | **План разработки** — этапы, бэклог fixture source, матрица тестов |
+| [**judge-scenarios.ru.md**](./judge-scenarios.ru.md) | RU | **Сценарии** — когда вызывается judge (benchmark vs live) |
 | [**task.md**](./task.md) | RU | **Требования** — домены DeFi/RWA, задачи, правила разработки |
-| [**methodics.md**](./methodics.md) | RU | **Методика оценки** — принципы F3, приоритеты, внешние источники |
+| [**methodics.md**](./methodics.md) | RU | **Методика оценки** — принципы гибридного скоринга, приоритеты, внешние источники |
 | [**llm-as-judge-pattern.md**](./llm-as-judge-pattern.md) | RU | **Справочник** — разбор паттерна RubricMiddleware |
 | [**README.md**](./README.md) | EN | Эта страница на английском |
 
@@ -36,11 +37,22 @@ let output = evaluate(input, &LlmConfig::from_env()).await?;
 
 ## Статус
 
-**Готово:** 4 skill DeFi/RWA · рубрики + fixtures · LLM-цепочка (temp=0) + mock · F3 grader (gates, hard-from-tool, soft enum-labels, threshold/critical) · regression harness + golden · benchmark только v2.
+**Готово:** 4 skill DeFi/RWA · рубрики + fixtures · гибридный grader (gates, hard из tools, soft через LLM-labels, порог + critical) · 11 реальных deterministic tools · LLM-цепочка (temp=0) + mock · few-shot промпты для judge · per-skill routing + опциональный self-consistency · regression harness + golden · benchmark только v2 · live fixture contract (inline JSON + schema) · E2E assign→execute с injected fixture.
 
-**Впереди:** реальная логика tools · few-shot промпты · cutover live `/execute` · E2E с БД · чистка legacy · gating/revision loop.
+**Впереди:** cutover live `/execute` на v2 · persistence fixture для production-задач · чистка legacy · gating/revision loop.
 
 Подробнее: [implementation.md](./implementation.md) · [roadmap.md](./roadmap.md)
+
+## Changelog
+
+### После baseline гибридного скоринга
+
+- **Deterministic tools:** 11 реальных check-функций по 4 skill (вместо stubs); hard-критерии только из tool evidence.
+- **LLM-модуль:** routing-слой, per-skill overrides для judge-модели, опциональный cascade local→API и timeout fallback.
+- **Few-shot промпты:** exemplars в `model_configs.yaml` для soft-критериев; calibration harness и A/B-скрипт.
+- **Self-consistency:** majority vote при неоднозначном soft-label (настраивается per skill).
+- **Fixture contract:** JSON Schema per skill; adapter принимает inline JSON; worker prompt включает блок `<fixture>` при наличии данных.
+- **Backend:** явный `skill_id` у tasks; task pipeline и сборка worker prompt; E2E-тест с injected fixture и mock LLM.
 
 ## Интеграция с backend
 

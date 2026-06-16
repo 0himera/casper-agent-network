@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,7 @@ pub enum CriterionKind {
     Soft,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SoftLabel {
     Strong,
@@ -67,10 +68,57 @@ pub enum GraderMode {
     F3,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JudgeProvider {
+    Cloudflare,
+    Openai,
+    Claude,
+    Ollama,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JudgeCascadeMode {
+    #[default]
+    ApiFirst,
+    LocalFirst,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfConsistencyTrigger {
+    PartialOnly,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelfConsistencyConfig {
+    pub enabled: bool,
+    pub samples: u32,
+    pub trigger: SelfConsistencyTrigger,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkillJudgeConfig {
+    pub provider: Option<JudgeProvider>,
+    pub model: Option<String>,
+    pub self_consistency: Option<SelfConsistencyConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JudgeRoutingConfig {
+    pub cascade: JudgeCascadeMode,
+    pub default_timeout_ms: u64,
+    pub skills: HashMap<SkillId, SkillJudgeConfig>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraderOptions {
     pub mode: GraderMode,
     pub pass_threshold: u32,
+    /// Prompt version override (`v1`, `v2`). `None` uses YAML `current_version`.
+    pub prompt_version: Option<&'static str>,
+    /// When false, few-shot exemplars are omitted (A/B baseline).
+    pub few_shot_enabled: bool,
+    /// Override YAML self-consistency per skill. `None` uses YAML per skill.
+    pub self_consistency_enabled: Option<bool>,
 }
 
 impl Default for GraderOptions {
@@ -86,6 +134,39 @@ impl GraderOptions {
         Self {
             mode: GraderMode::F3,
             pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+            prompt_version: None,
+            few_shot_enabled: true,
+            self_consistency_enabled: None,
+        }
+    }
+
+    pub fn f3_baseline() -> Self {
+        Self {
+            mode: GraderMode::F3,
+            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+            prompt_version: Some("v1"),
+            few_shot_enabled: false,
+            self_consistency_enabled: None,
+        }
+    }
+
+    pub fn f3_few_shot() -> Self {
+        Self {
+            mode: GraderMode::F3,
+            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+            prompt_version: Some("v2"),
+            few_shot_enabled: true,
+            self_consistency_enabled: None,
+        }
+    }
+
+    pub fn f3_with_self_consistency() -> Self {
+        Self {
+            mode: GraderMode::F3,
+            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+            prompt_version: None,
+            few_shot_enabled: true,
+            self_consistency_enabled: Some(true),
         }
     }
 
@@ -93,6 +174,9 @@ impl GraderOptions {
         Self {
             mode: GraderMode::V0,
             pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
+            prompt_version: None,
+            few_shot_enabled: false,
+            self_consistency_enabled: None,
         }
     }
 }
@@ -143,6 +227,9 @@ pub struct LlmConfig {
     pub custom_model: Option<String>,
     pub provider: Option<String>,
     pub mock: bool,
+    pub judge_cascade: Option<JudgeCascadeMode>,
+    pub judge_timeout_ms: Option<u64>,
+    pub judge_self_consistency: Option<bool>,
 }
 
 impl LlmConfig {
@@ -165,6 +252,18 @@ impl LlmConfig {
             custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
         }
 
+        let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
+            "local_first" => Some(JudgeCascadeMode::LocalFirst),
+            "api_first" => Some(JudgeCascadeMode::ApiFirst),
+            _ => None,
+        });
+
+        let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
+
+        let judge_self_consistency = env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| {
+            v == "1" || v.eq_ignore_ascii_case("true")
+        });
+
         Self {
             cloudflare_account_id: env("CLOUDFLARE_ACCOUNT_ID"),
             cloudflare_api_token: env("CLOUDFLARE_API_TOKEN"),
@@ -178,6 +277,9 @@ impl LlmConfig {
             custom_model,
             provider: env("VALIDATOR_PROVIDER"),
             mock,
+            judge_cascade,
+            judge_timeout_ms,
+            judge_self_consistency,
         }
     }
 }
@@ -187,6 +289,7 @@ pub enum ValidatorError {
     Llm(String),
     Parse(String),
     Inconsistent(String),
+    Fixture(String),
 }
 
 impl fmt::Display for ValidatorError {
@@ -195,6 +298,7 @@ impl fmt::Display for ValidatorError {
             ValidatorError::Llm(msg) => write!(f, "LLM request failed: {msg}"),
             ValidatorError::Parse(msg) => write!(f, "LLM response parse failed: {msg}"),
             ValidatorError::Inconsistent(msg) => write!(f, "consistency check failed: {msg}"),
+            ValidatorError::Fixture(msg) => write!(f, "fixture validation failed: {msg}"),
         }
     }
 }

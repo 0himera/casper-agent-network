@@ -30,6 +30,7 @@ pub struct Task {
     pub metadata_uri: Option<String>,
     pub transaction_hash: String,
     pub domain: String,
+    pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: u64,
     pub result_signature: Option<String>,

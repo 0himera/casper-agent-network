@@ -21,6 +21,7 @@ pub struct CreateOrUpdateTaskPayload {
     pub budget_motes: u64,
     pub transaction_hash: String,
     pub domain: String,
+    pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: Option<u64>,
 }
@@ -63,18 +64,20 @@ pub async fn create_or_update_task(
     let deadline_val = payload.deadline.unwrap_or(0);
 
     sqlx::query(
-        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, prompt, deadline)
-         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE domain = ?, prompt = ?, deadline = ?"
+        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, skill_id, prompt, deadline)
+         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE domain = ?, skill_id = ?, prompt = ?, deadline = ?"
     )
     .bind(&payload.id)
     .bind(&payload.creator_public_key)
     .bind(payload.budget_motes)
     .bind(&payload.transaction_hash)
     .bind(&payload.domain)
+    .bind(&payload.skill_id)
     .bind(&payload.prompt)
     .bind(deadline_val)
     .bind(&payload.domain)
+    .bind(&payload.skill_id)
     .bind(&payload.prompt)
     .bind(deadline_val)
     .execute(&state.pool)
