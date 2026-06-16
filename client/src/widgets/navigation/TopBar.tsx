@@ -1,8 +1,10 @@
 "use client";
 
+import "@/shared/providers/patch-react-before";
+import { useClickRef, AccountIdenticon } from "@make-software/csprclick-ui";
+import "@/shared/providers/patch-react-after";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, Copy, ExternalLink, LogOut } from "lucide-react";
-import { useClickRef, AccountIdenticon } from "@make-software/csprclick-ui";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { truncateAddress } from "@/shared/utils/format";
 import styles from "./TopBar.module.css";

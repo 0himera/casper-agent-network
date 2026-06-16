@@ -1,8 +1,10 @@
 "use client";
 
+import "./patch-react-before";
 import { type ReactNode } from "react";
 import { ThemeProvider } from "styled-components";
 import { ClickProvider, DefaultThemes, buildTheme } from "@make-software/csprclick-ui";
+import "./patch-react-after";
 import { CONTENT_MODE } from "@make-software/csprclick-core-types";
 
 const appTheme = buildTheme({
