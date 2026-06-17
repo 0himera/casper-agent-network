@@ -3,7 +3,7 @@ node_modules
 .next
 build
 dist
-.env
+# .env
 .env*.local
 .git
 .gitignore
