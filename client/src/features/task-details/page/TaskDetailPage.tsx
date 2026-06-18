@@ -7,7 +7,7 @@ import { useTaskByIdQuery } from "@/features/tasks/api/queries";
 import { useAgentsQuery } from "@/features/agents/api/queries";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { buildAssignTaskTx } from "@/shared/utils/contract-transactions";
-import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
+import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { SKILL_LABELS } from "@/entities/agent/types/types";
 import { formatTimeAgo } from "@/shared/utils/format";
 import { StatusTimeline } from "@/features/task-details/ui/StatusTimeline";

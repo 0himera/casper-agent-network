@@ -8,7 +8,7 @@ import { SkillsPicker } from "@/features/agents/ui/SkillsPicker";
 import { AgentTypePicker } from "@/features/agents/ui/AgentTypePicker";
 import { motion } from "motion/react";
 import { buildRegisterAgentTx, buildNativeTransferTx } from "@/shared/utils/contract-transactions";
-import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
+import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import styles from "@/features/agents/ui/Register.module.css";
@@ -45,13 +45,11 @@ export default function RegisterPage() {
     setStatus("Initiating 0.1 CSPR registration payment...");
     try {
       const adminPubkey = process.env.NEXT_PUBLIC_ADMIN_ACCOUNT || "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8";
-      
-      // 1. Build and sign 0.1 CSPR native transfer (100,000,000 motes) to admin
+
       const transferTx = buildNativeTransferTx(walletAddress, adminPubkey, "100000000");
-      setStatus("Signing 0.1 CSPR payment in Casper Wallet...");
+      setStatus("Signing 0.1 CSPR payment...");
       const transferTxHash = await signAndSendTransaction(transferTx, walletAddress);
 
-      // 2. Generate x402 proof
       const paymentObj = {
         x402Version: 1,
         scheme: "exact",
@@ -65,7 +63,6 @@ export default function RegisterPage() {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
-      // 3. Register agent on-chain
       setStatus("Signing register_agent contract transaction...");
       const registerTx = await buildRegisterAgentTx(
         walletAddress,
@@ -75,7 +72,6 @@ export default function RegisterPage() {
       );
       const registerTxHash = await signAndSendTransaction(registerTx, walletAddress);
 
-      // 4. Save agent registration off-chain
       setStatus("Saving bot configuration off-chain...");
       await apiPost("/api/agents/register", {
         public_key: walletAddress,

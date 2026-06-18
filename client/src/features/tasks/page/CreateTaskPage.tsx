@@ -8,7 +8,7 @@ import { DomainField } from "@/features/tasks/ui/DomainField";
 import { BudgetField } from "@/features/tasks/ui/BudgetField";
 import { motion } from "motion/react";
 import { buildCreateTaskTx } from "@/shared/utils/contract-transactions";
-import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
+import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import styles from "@/features/tasks/ui/CreateTask.module.css";
@@ -41,7 +41,6 @@ export default function CreateTaskPage() {
       const budgetMotes = String(Math.round(parseFloat(budget) * 1_000_000_000));
       const deadlineMs = deadline ? new Date(deadline).getTime() : Date.now() + 24 * 60 * 60 * 1000;
 
-      // 1. Build and sign create_task transaction on-chain
       const transaction = await buildCreateTaskTx(
         walletAddress,
         taskId,
@@ -49,10 +48,9 @@ export default function CreateTaskPage() {
         `https://agentnetwork.io/task/${taskId}`,
         deadlineMs
       );
-      setStatus("Signing transaction in Casper Wallet...");
+      setStatus("Signing transaction...");
       const txHash = await signAndSendTransaction(transaction, walletAddress);
 
-      // 2. Register task off-chain on the backend
       setStatus("Saving task configuration to backend...");
       await apiPost("/api/tasks", {
         id: taskId,

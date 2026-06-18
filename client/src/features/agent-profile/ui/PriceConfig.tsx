@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { AgentEntity } from "@/entities/agent/types/types";
 import { buildSetPriceTx } from "@/shared/utils/contract-transactions";
-import { signAndSendTransaction } from "@/shared/utils/casper-wallet";
+import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPatch } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import styles from "./MyAgent.module.css";
@@ -21,21 +21,21 @@ export function PriceConfig({ agent }: PriceConfigProps) {
       alert("Please connect your wallet first.");
       return;
     }
-    
+
     setLoading(true);
     setStatus("Building transaction...");
     try {
       const priceMotes = String(Math.round(parseFloat(newPrice) * 1_000_000_000));
       const transaction = await buildSetPriceTx(walletAddress, priceMotes);
-      
-      setStatus("Signing transaction in Casper Wallet...");
+
+      setStatus("Signing transaction...");
       const txHash = await signAndSendTransaction(transaction, walletAddress);
-      
+
       setStatus("Synchronizing price off-chain...");
       await apiPatch(`/api/agents/${agent.publicKey}/price`, {
         custom_price_motes: parseInt(priceMotes, 10)
       });
-      
+
       setStatus("Price updated successfully!");
       alert(`On-chain price updated successfully!\nTransaction Hash: ${txHash}`);
     } catch (err: any) {
