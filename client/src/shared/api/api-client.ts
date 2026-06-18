@@ -22,7 +22,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new ApiError(res.status, text);
   }
 
-  return res.json();
+  const text = await res.text();
+  if (!text) return {} as T;
+  
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return text as unknown as T;
+  }
 }
 
 export function apiGet<T>(path: string): Promise<T> {
