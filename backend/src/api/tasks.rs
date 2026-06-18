@@ -1,16 +1,16 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::process::Command;
 use std::env as std_env;
+use std::process::Command;
 
 use crate::api::AppState;
-use crate::db::models::{Task, Agent};
+use crate::db::models::{Agent, Task};
 use crate::orchestrator::executor::execute_agent;
 use crate::validator::evaluate_task;
 
@@ -29,12 +29,10 @@ pub struct CreateOrUpdateTaskPayload {
 pub async fn get_tasks(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let tasks = sqlx::query_as::<_, Task>(
-        "SELECT * FROM tasks ORDER BY timestamp DESC"
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY timestamp DESC")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(tasks))
 }
@@ -43,13 +41,11 @@ pub async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let task = sqlx::query_as::<_, Task>(
-        "SELECT * FROM tasks WHERE id = ?"
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     match task {
         Some(task) => Ok(Json(task)),
@@ -92,36 +88,38 @@ pub async fn execute_task_handler(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // 1. Fetch task details
-    let task = sqlx::query_as::<_, Task>(
-        "SELECT * FROM tasks WHERE id = ?"
-    )
-    .bind(&id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .ok_or((StatusCode::NOT_FOUND, "Task not found".to_string()))?;
+    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Task not found".to_string()))?;
 
     // 2. We only execute tasks that are InProgress and have an assigned agent
     if task.status != "InProgress" || task.assigned_agent_public_key.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "Task is not in progress or has no assigned agent".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Task is not in progress or has no assigned agent".to_string(),
+        ));
     }
 
     let agent_pubkey = task.assigned_agent_public_key.clone().unwrap();
 
     // 3. Fetch agent details
-    let agent = sqlx::query_as::<_, Agent>(
-        "SELECT * FROM agents WHERE public_key = ?"
-    )
-    .bind(&agent_pubkey)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .ok_or((StatusCode::NOT_FOUND, "Assigned agent not found".to_string()))?;
+    let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE public_key = ?")
+        .bind(&agent_pubkey)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "Assigned agent not found".to_string(),
+        ))?;
 
     // 4. Spawn background execution task
     tokio::spawn(async move {
         println!("Background execution started for task {}", task.id);
-        
+
         // Execute the agent task
         let exec_res = match execute_agent(
             &task.domain,
@@ -131,7 +129,9 @@ pub async fn execute_task_handler(
             agent.model.as_deref(),
             agent.system_prompt.as_deref(),
             &state.config,
-        ).await {
+        )
+        .await
+        {
             Ok(res) => res,
             Err(err) => {
                 eprintln!("Failed to execute agent for task {}: {}", task.id, err);
@@ -146,7 +146,9 @@ pub async fn execute_task_handler(
             &exec_res.output,
             exec_res.processing_time_ms,
             &state.config,
-        ).await {
+        )
+        .await
+        {
             Ok(res) => res,
             Err(err) => {
                 eprintln!("Failed to evaluate task {}: {}", task.id, err);
@@ -155,7 +157,7 @@ pub async fn execute_task_handler(
         };
 
         let score = eval_res.total;
-        
+
         // Calculate weight based on reputation.md multi-dimensional weight formula
         let base_price = match task.domain.as_str() {
             "code_review" => 10_000_000_000f64,
@@ -198,23 +200,28 @@ pub async fn execute_task_handler(
 
         // Update database with output, hash and signature
         let _ = sqlx::query(
-            "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ? WHERE id = ?"
+            "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ?, validator_audit = ? WHERE id = ?",
         )
         .bind(&result_hash)
         .bind(&signature)
         .bind(&exec_res.output)
+        .bind(&eval_res.validator_audit)
         .bind(&task.id)
         .execute(&state.pool)
         .await;
 
-        println!("Task {} executed. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...", task.id, score, weight, result_hash);
+        println!(
+            "Task {} executed. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...",
+            task.id, score, weight, result_hash
+        );
 
         // Call the on-chain CLI tool
-        let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_submit_complete").exists() {
-            "/usr/local/bin/agent_network_submit_complete"
-        } else {
-            "cargo"
-        };
+        let bin_path =
+            if std::path::Path::new("/usr/local/bin/agent_network_submit_complete").exists() {
+                "/usr/local/bin/agent_network_submit_complete"
+            } else {
+                "cargo"
+            };
 
         let mut cmd = Command::new(bin_path);
         if bin_path == "cargo" {
@@ -255,7 +262,10 @@ pub async fn execute_task_handler(
                 if status.success() {
                     println!("✅ Successfully completed task {} on-chain!", task.id);
                 } else {
-                    eprintln!("❌ On-chain transaction failed for task {} with status: {:?}", task.id, status);
+                    eprintln!(
+                        "❌ On-chain transaction failed for task {} with status: {:?}",
+                        task.id, status
+                    );
                 }
             }
             Err(e) => {

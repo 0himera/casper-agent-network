@@ -64,7 +64,6 @@ pub struct CriterionDef {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraderMode {
-    V0,
     F3,
 }
 
@@ -159,26 +158,6 @@ impl GraderOptions {
             self_consistency_enabled: None,
         }
     }
-
-    pub fn f3_with_self_consistency() -> Self {
-        Self {
-            mode: GraderMode::F3,
-            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
-            prompt_version: None,
-            few_shot_enabled: true,
-            self_consistency_enabled: Some(true),
-        }
-    }
-
-    pub fn v0() -> Self {
-        Self {
-            mode: GraderMode::V0,
-            pass_threshold: Self::DEFAULT_PASS_THRESHOLD,
-            prompt_version: None,
-            few_shot_enabled: false,
-            self_consistency_enabled: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -227,6 +206,8 @@ pub struct LlmConfig {
     pub custom_model: Option<String>,
     pub provider: Option<String>,
     pub mock: bool,
+    pub factuality_enabled: Option<bool>,
+    pub serpapi_api_key: Option<String>,
     pub judge_cascade: Option<JudgeCascadeMode>,
     pub judge_timeout_ms: Option<u64>,
     pub judge_self_consistency: Option<bool>,
@@ -260,9 +241,11 @@ impl LlmConfig {
 
         let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
 
-        let judge_self_consistency = env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| {
-            v == "1" || v.eq_ignore_ascii_case("true")
-        });
+        let judge_self_consistency = env("VALIDATOR_JUDGE_SELF_CONSISTENCY")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+
+        let factuality_enabled =
+            env("VALIDATOR_FACTUALITY").map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         Self {
             cloudflare_account_id: env("CLOUDFLARE_ACCOUNT_ID"),
@@ -277,6 +260,8 @@ impl LlmConfig {
             custom_model,
             provider: env("VALIDATOR_PROVIDER"),
             mock,
+            factuality_enabled,
+            serpapi_api_key: env("SERPAPI_API_KEY"),
             judge_cascade,
             judge_timeout_ms,
             judge_self_consistency,
@@ -287,18 +272,22 @@ impl LlmConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatorError {
     Llm(String),
+    RateLimited(String),
     Parse(String),
     Inconsistent(String),
     Fixture(String),
+    Search(String),
 }
 
 impl fmt::Display for ValidatorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ValidatorError::Llm(msg) => write!(f, "LLM request failed: {msg}"),
+            ValidatorError::RateLimited(msg) => write!(f, "LLM rate limited: {msg}"),
             ValidatorError::Parse(msg) => write!(f, "LLM response parse failed: {msg}"),
             ValidatorError::Inconsistent(msg) => write!(f, "consistency check failed: {msg}"),
             ValidatorError::Fixture(msg) => write!(f, "fixture validation failed: {msg}"),
+            ValidatorError::Search(msg) => write!(f, "search provider failed: {msg}"),
         }
     }
 }

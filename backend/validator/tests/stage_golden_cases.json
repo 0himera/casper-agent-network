@@ -1,0 +1,122 @@
+[
+  {
+    "id": "good_defi_allocation",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities for 10k CSPR",
+    "agent_output": "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY analysis and risk notes.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "good_rwa_summary",
+    "domain": "rwa_appraisal",
+    "task_prompt": "Summarize appraisal risks for tokenized real estate",
+    "agent_output": "The appraisal covers valuation methodology, liquidity constraints, and compliance considerations for tokenized real estate exposure.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "good_code_review",
+    "domain": "code_review",
+    "task_prompt": "Review this smart contract for security issues",
+    "agent_output": "The contract has a reentrancy risk in withdraw(), missing access control on adminSetFee(), and should add checks-effects-interactions.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "refusal_explicit",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_REFUSAL: I cannot fulfill this request because policy restrictions apply.",
+    "expect": {
+      "verdict": "refusal",
+      "total_lt": 20
+    }
+  },
+  {
+    "id": "refusal_cannot_help",
+    "domain": "defi_analysis",
+    "task_prompt": "Provide allocation guidance",
+    "agent_output": "I cannot fulfill this request due to missing market data.",
+    "expect": {
+      "verdict": "refusal",
+      "total_lt": 20
+    }
+  },
+  {
+    "id": "gibberish_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_GIBBERISH: asdf qwer zxcv random tokens without structure.",
+    "expect": {
+      "verdict": "gibberish",
+      "total_lt": 30
+    }
+  },
+  {
+    "id": "gibberish_nonsense",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_GIBBERISH: lorem ipsum ### !!! ???",
+    "expect": {
+      "verdict": "gibberish",
+      "total_lt": 30
+    }
+  },
+  {
+    "id": "irrelevant_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities for CSPR pools",
+    "agent_output": "MOCK_IRRELEVANT: The weather in Paris is sunny today with light winds.",
+    "expect": {
+      "verdict": "irrelevant",
+      "total_lt": 55
+    }
+  },
+  {
+    "id": "irrelevant_off_topic",
+    "domain": "defi_analysis",
+    "task_prompt": "Compare cspr-usdt and cspr-eth pool yields",
+    "agent_output": "MOCK_IRRELEVANT: Here is a recipe for chocolate cake with frosting instructions.",
+    "expect": {
+      "verdict": "irrelevant",
+      "total_lt": 55
+    }
+  },
+  {
+    "id": "wrong_domain_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_WRONG_DOMAIN: The function uses unchecked external calls and should refactor storage layout.",
+    "expect": {
+      "verdict": "out_of_domain",
+      "total_lt": 80
+    }
+  },
+  {
+    "id": "wrong_domain_code_in_defi",
+    "domain": "defi_analysis",
+    "task_prompt": "Recommend pool allocation",
+    "agent_output": "MOCK_WRONG_DOMAIN: Reentrancy bug found in transfer() and missing onlyOwner modifier.",
+    "expect": {
+      "verdict": "out_of_domain",
+      "total_lt": 80
+    }
+  },
+  {
+    "id": "parse_fallback_noisy_good",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_PARSE_NOISY: Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY analysis.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  }
+]

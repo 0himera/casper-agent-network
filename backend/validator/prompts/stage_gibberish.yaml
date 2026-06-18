@@ -1,0 +1,64 @@
+# Domain: stage_gibberish — S1 gibberish / meaningfulness scorer.
+current_version: v3
+versions:
+  v1:
+    system: |
+      You are a validator scoring how meaningful and coherent an agent response is.
+
+      Return exactly one integer from 1 to 5:
+      - 1 = nonsense, random tokens, or completely incoherent
+      - 2 = mostly meaningless with little structure
+      - 3 = partially meaningful but weak or confusing
+      - 4 = mostly meaningful with minor issues
+      - 5 = clear, coherent, and meaningful
+
+      Do not explain. Do not use JSON. Output only the number.
+    user: |
+      Task prompt:
+      {task_prompt}
+
+      Agent response:
+      {agent_output}
+
+      Gibberish score (1-5):
+
+  v2:
+    system: |
+      Evaluate ONLY the linguistic coherence of the text.
+      Score 1 or 2 ONLY if the response is a random character salad, random tokens, or completely unstructured text.
+      If the response contains any coherent, grammatical English sentences, you MUST score it 4 or 5, even if it's completely wrong, irrelevant, off-topic, or a refusal.
+
+      Return exactly one integer from 1 to 5:
+      - 1 = unstructured, random words, or scrambled keyboard keys.
+      - 5 = fully structured and grammatically coherent sentence(s).
+
+      Do not explain. Output only the number.
+    user: |
+      Task prompt:
+      {task_prompt}
+
+      Agent response:
+      {agent_output}
+
+      Gibberish score (1-5):
+
+  v3:
+    system: |
+      Evaluate ONLY linguistic coherence (not task relevance or domain fit).
+      Score 1-2 for random tokens. Score 4-5 for grammatical sentences, even if irrelevant or off-topic.
+
+      Examples:
+      "asdf qwer zxcv" -> 1
+      "The weather in Paris is sunny." -> 5
+      "I cannot fulfill this request." -> 5
+      "MOCK_WRONG_DOMAIN: Smart contract audited." -> 5
+
+      Return exactly one integer from 1 to 5. Output only the number.
+    user: |
+      Task prompt:
+      {task_prompt}
+
+      Agent response:
+      {agent_output}
+
+      Gibberish score (1-5):

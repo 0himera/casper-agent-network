@@ -225,16 +225,44 @@ mod tests {
     #[test]
     fn defi_yield_routing_critical_flags() {
         let criteria = criteria(SkillId::DefiYieldRouting);
-        assert!(criteria.iter().find(|c| c.id == "allocation_sum").unwrap().critical);
-        assert!(criteria.iter().find(|c| c.id == "apy_math").unwrap().critical);
-        assert!(!criteria.iter().find(|c| c.id == "fee_inclusion").unwrap().critical);
-        assert!(!criteria.iter().find(|c| c.id == "pool_selection").unwrap().critical);
+        assert!(
+            criteria
+                .iter()
+                .find(|c| c.id == "allocation_sum")
+                .unwrap()
+                .critical
+        );
+        assert!(
+            criteria
+                .iter()
+                .find(|c| c.id == "apy_math")
+                .unwrap()
+                .critical
+        );
+        assert!(
+            !criteria
+                .iter()
+                .find(|c| c.id == "fee_inclusion")
+                .unwrap()
+                .critical
+        );
+        assert!(
+            !criteria
+                .iter()
+                .find(|c| c.id == "pool_selection")
+                .unwrap()
+                .critical
+        );
     }
 
     #[test]
     fn rwa_appraisal_all_hard_and_critical() {
         let criteria = criteria(SkillId::RwaAppraisal);
-        assert!(criteria.iter().all(|c| c.kind == CriterionKind::Hard && c.critical));
+        assert!(
+            criteria
+                .iter()
+                .all(|c| c.kind == CriterionKind::Hard && c.critical)
+        );
         assert!(soft_criteria(SkillId::RwaAppraisal).is_empty());
     }
 

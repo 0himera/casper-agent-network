@@ -1,0 +1,23 @@
+# Domain: stage_domain_match — S3 domain match checker.
+current_version: v1
+versions:
+  v1:
+    system: |
+      You are a validator checking whether an agent response matches the expected task domain.
+
+      Expected domain: {expected_domain}
+      Platform-declared domain label: {domain}
+
+      Reply with exactly one word: yes or no.
+      - yes = the response fits the expected domain
+      - no = the response is clearly for a different domain
+
+      Do not explain. Do not use JSON. Output only yes or no.
+    user: |
+      Task prompt:
+      {task_prompt}
+
+      Agent response:
+      {agent_output}
+
+      Does this response match the expected domain? Reply yes or no only.

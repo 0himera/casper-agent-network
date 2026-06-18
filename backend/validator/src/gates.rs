@@ -41,6 +41,23 @@ pub fn check_input(input: &ValidationInput) -> Result<(), GateFailure> {
     Ok(())
 }
 
+/// Fixture-free input gate for the stage pipeline (no fixture required).
+pub fn check_input_fixture_free(agent_output: &str) -> Result<(), GateFailure> {
+    if agent_output.trim().is_empty() {
+        return Err(GateFailure::EmptyOutput);
+    }
+
+    if agent_output.len() < MIN_OUTPUT_LEN {
+        return Err(GateFailure::MinLength);
+    }
+
+    if agent_output.to_ascii_lowercase().contains("error") {
+        return Err(GateFailure::ErrorMarker);
+    }
+
+    Ok(())
+}
+
 pub fn gate_failure_output(
     criteria_defs: &[CriterionDef],
     failure: GateFailure,
@@ -121,10 +138,43 @@ mod tests {
     }
 
     #[test]
+    fn fixture_free_empty_output_fails() {
+        assert_eq!(
+            check_input_fixture_free("   "),
+            Err(GateFailure::EmptyOutput)
+        );
+    }
+
+    #[test]
+    fn fixture_free_short_output_fails() {
+        assert_eq!(
+            check_input_fixture_free("too short"),
+            Err(GateFailure::MinLength)
+        );
+    }
+
+    #[test]
+    fn fixture_free_error_marker_fails() {
+        assert_eq!(
+            check_input_fixture_free("Allocation failed due to error in pool math"),
+            Err(GateFailure::ErrorMarker)
+        );
+    }
+
+    #[test]
+    fn fixture_free_valid_output_passes() {
+        assert!(
+            check_input_fixture_free(
+                "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY."
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn gate_failure_output_sets_zero_scores() {
         let criteria_defs = crate::rubric::criteria(SkillId::DefiYieldRouting);
-        let (criteria, explanation) =
-            gate_failure_output(criteria_defs, GateFailure::MinLength);
+        let (criteria, explanation) = gate_failure_output(criteria_defs, GateFailure::MinLength);
 
         assert_eq!(criteria.len(), 5);
         assert!(criteria.iter().all(|c| !c.passed && c.score == 0));

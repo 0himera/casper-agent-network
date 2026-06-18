@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::common::{
     contains_ci, contains_id, failed, malformed, median, missing, passed, weighted_median,
@@ -142,8 +142,8 @@ pub fn check_sources(fixture: &Value, agent_output: &str) -> crate::types::ToolR
     let mut checks = Vec::new();
 
     for source in &credible {
-        let mentioned = contains_id(agent_output, &source.id)
-            || canonical_name_match(agent_output, &source.id);
+        let mentioned =
+            contains_id(agent_output, &source.id) || canonical_name_match(agent_output, &source.id);
         if mentioned {
             cited.push(source.id.clone());
         }
@@ -192,10 +192,7 @@ pub fn validate_price_derivation(fixture: &Value, agent_output: &str) -> crate::
     let outlier_ids = expected_outliers(&sources, threshold_pct);
     let clean: Vec<&Source> = non_outlier_sources(&sources, &outlier_ids);
 
-    let pairs: Vec<(f64, f64)> = clean
-        .iter()
-        .map(|s| (s.price_usd, s.reliability))
-        .collect();
+    let pairs: Vec<(f64, f64)> = clean.iter().map(|s| (s.price_usd, s.reliability)).collect();
     let reference = weighted_median(&pairs).unwrap_or(0.0);
 
     let agent_price = extract_dollar_price(agent_output);
@@ -263,9 +260,9 @@ fn extract_dollar_price(text: &str) -> Option<f64> {
 }
 
 fn first_dollar_amount(text: &str) -> Option<f64> {
-    let after = text.strip_prefix('$').or_else(|| {
-        text.find('$').map(|idx| &text[idx + 1..])
-    })?;
+    let after = text
+        .strip_prefix('$')
+        .or_else(|| text.find('$').map(|idx| &text[idx + 1..]))?;
     super::common::parse_numbers(after).first().copied()
 }
 

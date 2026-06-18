@@ -1,11 +1,11 @@
+use crate::api::AppState;
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::Serialize;
-use crate::api::AppState;
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct LeaderboardEntry {
@@ -64,7 +64,7 @@ pub async fn get_domain_leaderboard(
          FROM agents a
          JOIN reputations r ON a.public_key = r.agent_public_key
          WHERE r.skill = ?
-         ORDER BY score DESC"
+         ORDER BY score DESC",
     )
     .bind(domain)
     .fetch_all(&state.pool)

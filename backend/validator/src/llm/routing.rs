@@ -1,11 +1,17 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::prompts;
 use crate::types::{JudgeCascadeMode, JudgeProvider, LlmConfig, SkillId, ValidatorError};
 
 use super::extract_json;
-use super::record_provider_call;
 use super::providers::{call_custom, call_provider, custom_provider_available, provider_available};
+use super::record_provider_call;
+
+const STAGE_RATE_LIMIT_MAX_RETRIES: u32 = 8;
+const STAGE_DELAY_MAX_MS: u64 = 8_000;
+
+static STAGE_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 
 pub fn resolve_effective_cascade(config: &LlmConfig) -> JudgeCascadeMode {
     if let Some(cascade) = config.judge_cascade {
@@ -55,6 +61,16 @@ fn resolve_timeout_ms(config: &LlmConfig) -> u64 {
         .unwrap_or(15_000)
 }
 
+fn skill_from_routing_key(routing_key: &str) -> Option<SkillId> {
+    match routing_key {
+        "defi_yield_routing" => Some(SkillId::DefiYieldRouting),
+        "defi_protocol_risk" => Some(SkillId::DefiProtocolRisk),
+        "rwa_appraisal" => Some(SkillId::RwaAppraisal),
+        "rwa_compliance" => Some(SkillId::RwaCompliance),
+        _ => None,
+    }
+}
+
 fn skill_provider_override(skill: SkillId) -> Option<JudgeProvider> {
     prompts::skill_judge_config(skill)
         .ok()
@@ -69,34 +85,105 @@ fn skill_model_override(skill: SkillId) -> Option<String> {
         .and_then(|c| c.model)
 }
 
-pub async fn call_judge_with_fallback(
+fn routing_provider_override(routing_key: &str) -> Option<JudgeProvider> {
+    skill_from_routing_key(routing_key).and_then(skill_provider_override)
+}
+
+fn routing_model_override(routing_key: &str) -> Option<String> {
+    skill_from_routing_key(routing_key).and_then(skill_model_override)
+}
+
+type ResponseValidator = fn(&str) -> Result<(), ValidatorError>;
+
+fn base_delay_ms() -> u64 {
+    std::env::var("STAGE_LLM_REQUEST_DELAY_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000)
+}
+
+fn backoff_step_ms() -> u64 {
+    std::env::var("STAGE_LLM_RATE_LIMIT_BACKOFF_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(500)
+}
+
+fn current_stage_delay_ms() -> u64 {
+    let loaded = STAGE_DELAY_MS.load(Ordering::Relaxed);
+    if loaded > 0 {
+        return loaded;
+    }
+    let base = base_delay_ms();
+    STAGE_DELAY_MS
+        .compare_exchange(0, base, Ordering::Relaxed, Ordering::Relaxed)
+        .unwrap_or(base)
+}
+
+fn bump_stage_delay_on_rate_limit() {
+    let step = backoff_step_ms();
+    loop {
+        let current = current_stage_delay_ms();
+        let next = (current + step).min(STAGE_DELAY_MAX_MS);
+        if STAGE_DELAY_MS
+            .compare_exchange(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            break;
+        }
+    }
+}
+
+async fn maybe_delay_stage_request(config: &LlmConfig, routing_key: &str) {
+    if config.mock || !routing_key.starts_with("stage_") {
+        return;
+    }
+    let delay_ms = current_stage_delay_ms();
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+}
+
+async fn call_judge_impl_once(
     config: &LlmConfig,
-    skill: SkillId,
+    routing_key: &str,
     system_prompt: &str,
     user_prompt: &str,
+    validate: Option<ResponseValidator>,
 ) -> Result<String, ValidatorError> {
-    if let Some(ref provider) = config.provider {
-        if matches!(
+    let try_custom_first = config.provider.as_ref().is_some_and(|provider| {
+        matches!(
             provider.to_ascii_lowercase().as_str(),
             "custom" | "fireworks"
-        ) && custom_provider_available(config)
-        {
-            let text = call_custom(config, system_prompt, user_prompt).await?;
-            validate_judge_json(&text)?;
-            return Ok(text);
-        }
-    } else if custom_provider_available(config) {
-        let text = call_custom(config, system_prompt, user_prompt).await?;
-        if validate_judge_json(&text).is_ok() {
-            return Ok(text);
+        )
+    }) || config.provider.is_none();
+
+    let json_mode = !routing_key.starts_with("stage_");
+
+    if try_custom_first && custom_provider_available(config) {
+        match call_custom(config, system_prompt, user_prompt, json_mode).await {
+            Ok(text) => {
+                let accepted = match validate {
+                    Some(validator) => validator(&text).is_ok(),
+                    None => true,
+                };
+                if accepted {
+                    return Ok(text);
+                }
+            }
+            Err(ValidatorError::RateLimited(msg)) => {
+                return Err(ValidatorError::RateLimited(msg));
+            }
+            Err(err) if config.provider.is_some() => return Err(err),
+            Err(_) => {}
         }
     }
 
     let cascade = resolve_effective_cascade(config);
-    let skill_override = skill_provider_override(skill);
+    let skill_override = routing_provider_override(routing_key);
     let chain = provider_chain(cascade, skill_override);
     let timeout_ms = resolve_timeout_ms(config);
-    let model_override = skill_model_override(skill);
+    let model_override = routing_model_override(routing_key);
     let model_ref = model_override.as_deref();
 
     let mut last_error: Option<ValidatorError> = None;
@@ -113,13 +200,31 @@ pub async fn call_judge_with_fallback(
             model_ref,
             system_prompt,
             user_prompt,
+            json_mode,
         );
 
         let result = tokio::time::timeout(Duration::from_millis(timeout_ms), call).await;
 
         match result {
-            Ok(Ok(text)) => match validate_judge_json(&text) {
-                Ok(()) => {
+            Ok(Ok(text)) => {
+                if let Some(validator) = validate {
+                    match validator(&text) {
+                        Ok(()) => {
+                            record_provider_call(provider);
+                            if fallback_from.is_some() {
+                                eprintln!(
+                                    "judge LLM: used {:?} after fallback from {:?}",
+                                    provider, fallback_from
+                                );
+                            }
+                            return Ok(text);
+                        }
+                        Err(parse_err) => {
+                            fallback_from.get_or_insert(provider);
+                            last_error = Some(parse_err);
+                        }
+                    }
+                } else {
                     record_provider_call(provider);
                     if fallback_from.is_some() {
                         eprintln!(
@@ -129,11 +234,10 @@ pub async fn call_judge_with_fallback(
                     }
                     return Ok(text);
                 }
-                Err(parse_err) => {
-                    fallback_from.get_or_insert(provider);
-                    last_error = Some(parse_err);
-                }
-            },
+            }
+            Ok(Err(ValidatorError::RateLimited(msg))) => {
+                return Err(ValidatorError::RateLimited(msg));
+            }
             Ok(Err(err)) => {
                 fallback_from.get_or_insert(provider);
                 last_error = Some(err);
@@ -150,6 +254,64 @@ pub async fn call_judge_with_fallback(
     Err(last_error.unwrap_or_else(|| {
         ValidatorError::Llm("no judge LLM provider available in cascade chain".into())
     }))
+}
+
+async fn call_judge_impl(
+    config: &LlmConfig,
+    routing_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    validate: Option<ResponseValidator>,
+) -> Result<String, ValidatorError> {
+    let is_stage = routing_key.starts_with("stage_") && !config.mock;
+    let mut rate_limit_retries = 0u32;
+
+    loop {
+        maybe_delay_stage_request(config, routing_key).await;
+
+        match call_judge_impl_once(config, routing_key, system_prompt, user_prompt, validate).await
+        {
+            Ok(text) => return Ok(text),
+            Err(ValidatorError::RateLimited(msg))
+                if is_stage && rate_limit_retries < STAGE_RATE_LIMIT_MAX_RETRIES =>
+            {
+                rate_limit_retries += 1;
+                bump_stage_delay_on_rate_limit();
+                eprintln!(
+                    "judge LLM: rate limited (retry {rate_limit_retries}/{}), delay={}ms: {msg}",
+                    STAGE_RATE_LIMIT_MAX_RETRIES,
+                    current_stage_delay_ms()
+                );
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+/// Skill-agnostic judge call: provider chain + timeout + call stats, no JSON validation.
+pub async fn call_judge_raw(
+    config: &LlmConfig,
+    routing_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, ValidatorError> {
+    call_judge_impl(config, routing_key, system_prompt, user_prompt, None).await
+}
+
+pub async fn call_judge_with_fallback(
+    config: &LlmConfig,
+    skill: SkillId,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, ValidatorError> {
+    call_judge_impl(
+        config,
+        skill.as_str(),
+        system_prompt,
+        user_prompt,
+        Some(validate_judge_json),
+    )
+    .await
 }
 
 fn validate_judge_json(text: &str) -> Result<(), ValidatorError> {
@@ -202,7 +364,28 @@ mod tests {
     fn skill_override_puts_provider_first_without_duplicate() {
         let chain = provider_chain(JudgeCascadeMode::LocalFirst, Some(JudgeProvider::Openai));
         assert_eq!(chain[0], JudgeProvider::Openai);
-        assert_eq!(chain.iter().filter(|p| **p == JudgeProvider::Openai).count(), 1);
+        assert_eq!(
+            chain
+                .iter()
+                .filter(|p| **p == JudgeProvider::Openai)
+                .count(),
+            1
+        );
         assert!(!chain.contains(&JudgeProvider::Ollama) || chain[0] != JudgeProvider::Ollama);
+    }
+
+    #[test]
+    fn call_judge_raw_is_exported_and_skill_from_routing_key_works() {
+        assert_eq!(
+            skill_from_routing_key("defi_yield_routing"),
+            Some(SkillId::DefiYieldRouting)
+        );
+        assert_eq!(skill_from_routing_key("stage_refusal"), None);
+    }
+
+    #[test]
+    fn stage_delay_defaults_to_one_second() {
+        assert_eq!(base_delay_ms(), 1000);
+        assert_eq!(backoff_step_ms(), 500);
     }
 }

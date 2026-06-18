@@ -1,0 +1,250 @@
+[
+  {
+    "id": "cal_good_defi_allocation",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities for 10k CSPR",
+    "agent_output": "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY analysis and risk notes.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_good_rwa_summary",
+    "domain": "rwa_appraisal",
+    "task_prompt": "Summarize appraisal risks for tokenized real estate",
+    "agent_output": "The appraisal covers valuation methodology, liquidity constraints, and compliance considerations for tokenized real estate exposure.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_good_code_review",
+    "domain": "code_review",
+    "task_prompt": "Review this smart contract for security issues",
+    "agent_output": "The contract has a reentrancy risk in withdraw(), missing access control on adminSetFee(), and should add checks-effects-interactions.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_good_defi_variant_a",
+    "domain": "defi_analysis",
+    "task_prompt": "Compare cspr-usdt and cspr-eth yields",
+    "agent_output": "cspr-usdt offers higher fee-adjusted APY with lower IL; cspr-eth has moderate yield and higher volatility exposure.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_good_defi_variant_b",
+    "domain": "defi_analysis",
+    "task_prompt": "Recommend pool allocation",
+    "agent_output": "Allocate across cspr-usdt, cspr-eth, and cspr-wbtc with explicit IL and fee assumptions for each pool.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_good_rwa_variant",
+    "domain": "rwa_appraisal",
+    "task_prompt": "Assess tokenized property valuation",
+    "agent_output": "Valuation relies on comparable sales, discount rate assumptions, and jurisdictional compliance constraints.",
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_refusal_explicit",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_REFUSAL: I cannot fulfill this request because policy restrictions apply.",
+    "expect": {
+      "verdict": "refusal",
+      "total_center": 0
+    }
+  },
+  {
+    "id": "cal_refusal_cannot_help",
+    "domain": "defi_analysis",
+    "task_prompt": "Provide allocation guidance",
+    "agent_output": "I cannot fulfill this request due to missing market data.",
+    "expect": {
+      "verdict": "refusal",
+      "total_center": 0
+    }
+  },
+  {
+    "id": "cal_refusal_rwa",
+    "domain": "rwa_appraisal",
+    "task_prompt": "Summarize appraisal risks",
+    "agent_output": "MOCK_REFUSAL: I can't fulfill this request without licensed appraisal data.",
+    "expect": {
+      "verdict": "refusal",
+      "total_center": 0
+    }
+  },
+  {
+    "id": "cal_gibberish_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_GIBBERISH: asdf qwer zxcv random tokens without structure.",
+    "expect": {
+      "verdict": "gibberish",
+      "total_center": 17
+    }
+  },
+  {
+    "id": "cal_gibberish_nonsense",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_GIBBERISH: lorem ipsum ### !!! ???",
+    "expect": {
+      "verdict": "gibberish",
+      "total_center": 17
+    }
+  },
+  {
+    "id": "cal_gibberish_code_review",
+    "domain": "code_review",
+    "task_prompt": "Review contract",
+    "agent_output": "MOCK_GIBBERISH: qwerty uiop asdf random symbols only.",
+    "expect": {
+      "verdict": "gibberish",
+      "total_center": 17
+    }
+  },
+  {
+    "id": "cal_irrelevant_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities for CSPR pools",
+    "agent_output": "MOCK_IRRELEVANT: The weather in Paris is sunny today with light winds.",
+    "expect": {
+      "verdict": "irrelevant",
+      "total_center": 48
+    }
+  },
+  {
+    "id": "cal_irrelevant_off_topic",
+    "domain": "defi_analysis",
+    "task_prompt": "Compare cspr-usdt and cspr-eth pool yields",
+    "agent_output": "MOCK_IRRELEVANT: Here is a recipe for chocolate cake with frosting instructions.",
+    "expect": {
+      "verdict": "irrelevant",
+      "total_center": 48
+    }
+  },
+  {
+    "id": "cal_irrelevant_rwa",
+    "domain": "rwa_appraisal",
+    "task_prompt": "Summarize appraisal risks",
+    "agent_output": "MOCK_IRRELEVANT: Today's sports scores and playoff standings update.",
+    "expect": {
+      "verdict": "irrelevant",
+      "total_center": 48
+    }
+  },
+  {
+    "id": "cal_wrong_domain_marker",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield opportunities",
+    "agent_output": "MOCK_WRONG_DOMAIN: The function uses unchecked external calls and should refactor storage layout.",
+    "expect": {
+      "verdict": "out_of_domain",
+      "total_center": 68
+    }
+  },
+  {
+    "id": "cal_wrong_domain_code_in_defi",
+    "domain": "defi_analysis",
+    "task_prompt": "Recommend pool allocation",
+    "agent_output": "MOCK_WRONG_DOMAIN: Reentrancy bug found in transfer() and missing onlyOwner modifier.",
+    "expect": {
+      "verdict": "out_of_domain",
+      "total_center": 68
+    }
+  },
+  {
+    "id": "cal_wrong_domain_defi_in_code",
+    "domain": "code_review",
+    "task_prompt": "Review contract security",
+    "agent_output": "MOCK_WRONG_DOMAIN: Allocate 60% to cspr-usdt and 40% to cspr-eth based on APY.",
+    "expect": {
+      "verdict": "out_of_domain",
+      "total_center": 68
+    }
+  },
+  {
+    "id": "cal_factuality_supported",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "factuality_enabled": true,
+    "expect": {
+      "verdict": "factual",
+      "total_center": 96
+    }
+  },
+  {
+    "id": "cal_factuality_contradicted",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_CONTRADICTED: CSPR staking APY is 50%. All DeFi pools are risk-free regardless of contract audits or market conditions and users should treat every pool as guaranteed principal protection without further due diligence.",
+    "factuality_enabled": true,
+    "search_mode": "contradicted",
+    "expect": {
+      "verdict": "hallucinated",
+      "total_center": 56
+    }
+  },
+  {
+    "id": "cal_factuality_unverifiable",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze obscure protocol launch",
+    "agent_output": "MOCK_FACT_UNVERIFIABLE: An obscure protocol launched yesterday with unknown tokenomics and no public documentation, yet it is presented here as a verified market fact requiring immediate capital deployment without any independent confirmation from reputable sources.",
+    "factuality_enabled": true,
+    "search_mode": "unverifiable",
+    "expect": {
+      "verdict": "unverifiable",
+      "total_center": 56
+    }
+  },
+  {
+    "id": "cal_factuality_short_skip",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield",
+    "agent_output": "MOCK_FACT_SUPPORTED: short",
+    "factuality_enabled": true,
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_factuality_code_review_skip",
+    "domain": "code_review",
+    "task_prompt": "Review contract",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "factuality_enabled": true,
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  },
+  {
+    "id": "cal_factuality_disabled",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "factuality_enabled": false,
+    "expect": {
+      "verdict": "factual",
+      "total_center": 93
+    }
+  }
+]

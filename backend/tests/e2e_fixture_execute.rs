@@ -19,6 +19,7 @@ fn test_config() -> Config {
         validator_api_key: None,
         validator_model: None,
         validator_provider: None,
+        validator_pipeline: backend::config::ValidatorPipeline::Legacy,
         admin_account: String::new(),
     }
 }
@@ -110,23 +111,14 @@ async fn e2e_skill_id_resolves_over_domain() {
 
 #[tokio::test]
 async fn e2e_invalid_fixture_returns_fixture_invalid() {
-    let task = sample_task(
-        Some("defi_yield_routing"),
-        "defi_analysis",
-        "Allocate CSPR",
-    );
+    let task = sample_task(Some("defi_yield_routing"), "defi_analysis", "Allocate CSPR");
     let config = test_config();
     let invalid_fixture = serde_json::json!({ "amount_cspr": 10000 });
 
-    let result = run_fixture_pipeline_with_output(
-        &task,
-        "some output",
-        1000,
-        invalid_fixture,
-        &config,
-    )
-    .await
-    .expect("pipeline returns result even on invalid fixture");
+    let result =
+        run_fixture_pipeline_with_output(&task, "some output", 1000, invalid_fixture, &config)
+            .await
+            .expect("pipeline returns result even on invalid fixture");
 
     assert!(matches!(result.v2_outcome, V2Outcome::FixtureInvalid(_)));
 }

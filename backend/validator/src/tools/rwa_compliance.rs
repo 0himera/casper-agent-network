@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::common::{contains_ci, failed, malformed, missing, parse_decimal_fractions, passed};
 
@@ -52,7 +52,10 @@ fn headline_keywords(headline: &str) -> Vec<String> {
     headline
         .split_whitespace()
         .filter(|w| w.len() >= 4)
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_ascii_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_ascii_lowercase()
+        })
         .filter(|w| w.len() >= 4)
         .take(4)
         .collect()
@@ -60,11 +63,11 @@ fn headline_keywords(headline: &str) -> Vec<String> {
 
 fn mentions_headline(output: &str, headline: &str) -> bool {
     let keywords = headline_keywords(headline);
-    let matched = keywords
-        .iter()
-        .filter(|kw| contains_ci(output, kw))
-        .count();
-    matched >= 2 || keywords.iter().any(|kw| contains_ci(output, kw) && kw.len() >= 6)
+    let matched = keywords.iter().filter(|kw| contains_ci(output, kw)).count();
+    matched >= 2
+        || keywords
+            .iter()
+            .any(|kw| contains_ci(output, kw) && kw.len() >= 6)
 }
 
 pub fn classify_news(fixture: &Value, agent_output: &str) -> crate::types::ToolResult {
@@ -84,7 +87,10 @@ pub fn classify_news(fixture: &Value, agent_output: &str) -> crate::types::ToolR
                 || contains_ci(agent_output, "sec");
             let context = threat_context(agent_output, &item.headline);
             let not_classified_as_fud = !contains_ci(&context, "fud");
-            ("real_threat", mentioned && treats_as_threat && not_classified_as_fud)
+            (
+                "real_threat",
+                mentioned && treats_as_threat && not_classified_as_fud,
+            )
         } else if !item.verified {
             let treats_as_fud = contains_ci(agent_output, "fud")
                 || contains_ci(agent_output, "unverified")
@@ -170,7 +176,9 @@ pub fn validate_collateral_logic(fixture: &Value, agent_output: &str) -> crate::
         || contains_ci(agent_output, "reduction")
         || contains_ci(agent_output, "lower");
 
-    let new_cf_ok = new_cf.map(|nf| nf < current_cf && nf >= floor).unwrap_or(false);
+    let new_cf_ok = new_cf
+        .map(|nf| nf < current_cf && nf >= floor)
+        .unwrap_or(false);
     let drop_ok = new_cf
         .map(|nf| {
             let drop = current_cf - nf;
