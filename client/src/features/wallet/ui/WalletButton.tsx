@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, LogOut, RefreshCw } from "lucide-react";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
-import { truncateAddress } from "@/shared/utils/format";
+import { truncateAddress, formatCSPR, motesToCSPR } from "@/shared/utils/format";
 import { useCsprClick, useWalletStore } from "../hooks/useCsprClick";
 import { walletStore } from "../store/wallet-store";
 import { AccountIdenticon } from "./AccountIdenticon";
@@ -20,6 +20,7 @@ export function WalletButton() {
   const address = useWalletStore((s) => s.address);
   const isConnected = useWalletStore((s) => s.isConnected);
   const isInitialized = useWalletStore((s) => s.isInitialized);
+  const balance = useWalletStore((s) => s.balance);
   const { connect, switchAccount, disconnect } = useCsprClick();
   const setWalletAddress = useAppStore((s) => s.setWalletAddress);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -33,16 +34,22 @@ export function WalletButton() {
   useEffect(() => {
     if (!isInitialized || !window.csprclick) return;
 
-    const onSignedIn = (evt: any) => {
-      const acc = evt.account || evt;
-      walletStore.getState().setAddress(acc?.public_key || acc?.publicKey || null);
-      walletStore.getState().setProvider(acc?.provider || null);
+    const updateAccount = async (accPayload?: any) => {
+      const activeAccount = await window.csprclick?.getActiveAccountWithBalance?.();
+      const acc = activeAccount || accPayload;
+      if (acc) {
+        walletStore.getState().setAddress(acc.public_key || acc.publicKey || null);
+        walletStore.getState().setProvider(acc.provider || null);
+        if (acc.balance !== undefined) {
+          walletStore.getState().setBalance(acc.balance);
+        }
+      } else {
+        walletStore.getState().disconnect();
+      }
     };
-    const onSwitchedAccount = (evt: any) => {
-      const acc = evt.account || evt;
-      walletStore.getState().setAddress(acc?.public_key || acc?.publicKey || null);
-      walletStore.getState().setProvider(acc?.provider || null);
-    };
+
+    const onSignedIn = (evt: any) => updateAccount(evt.account || evt);
+    const onSwitchedAccount = (evt: any) => updateAccount(evt.account || evt);
     const onSignedOut = () => walletStore.getState().disconnect();
     const onDisconnected = () => walletStore.getState().disconnect();
 
@@ -52,12 +59,7 @@ export function WalletButton() {
     csprclick.on("csprclick:signed_out", onSignedOut);
     csprclick.on("csprclick:disconnected", onDisconnected);
 
-    if (csprclick.currentAccount) {
-      walletStore.getState().setAddress(csprclick.currentAccount.public_key || null);
-      walletStore.getState().setProvider(csprclick.currentAccount.provider || null);
-    } else {
-      walletStore.getState().disconnect();
-    }
+    updateAccount(csprclick.currentAccount);
 
     return () => {
       csprclick.off("csprclick:signed_in", onSignedIn);
@@ -98,28 +100,28 @@ export function WalletButton() {
         <DialogTrigger render={<button className={`${styles.walletButton} ${styles.disconnected}`} />}>
           <span>Connect Wallet</span>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-zinc-950 border border-zinc-800 text-zinc-100 shadow-2xl backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle className="text-center text-xl font-semibold mb-2">Connect Wallet</DialogTitle>
+            <DialogTitle className="text-center text-2xl font-bold mb-4 tracking-tight">Connect Wallet</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
             <button
-              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              className="flex items-center justify-center p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 transition-all cursor-pointer shadow-sm text-zinc-100"
               onClick={() => { setConnectModalOpen(false); connect("casper-wallet"); }}
             >
-              <span className="font-semibold text-base">Casper Wallet</span>
+              <span className="font-semibold text-lg">Casper Wallet</span>
             </button>
             <button
-              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              className="flex items-center justify-center p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 transition-all cursor-pointer shadow-sm text-zinc-100"
               onClick={() => { setConnectModalOpen(false); connect("ledger"); }}
             >
-              <span className="font-semibold text-base">Ledger</span>
+              <span className="font-semibold text-lg">Ledger</span>
             </button>
             <button
-              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              className="flex items-center justify-center p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700 transition-all cursor-pointer shadow-sm text-zinc-100"
               onClick={() => { setConnectModalOpen(false); connect("metamask-snap"); }}
             >
-              <span className="font-semibold text-base">MetaMask Snap</span>
+              <span className="font-semibold text-lg">MetaMask Snap</span>
             </button>
           </div>
         </DialogContent>
@@ -133,8 +135,18 @@ export function WalletButton() {
         className={`${styles.walletButton} ${styles.connected}`}
         onClick={() => setDropdownOpen((v) => !v)}
       >
-        <AccountIdenticon hex={address} size="xs" />
-        <span className={styles.walletAddress}>{truncateAddress(address)}</span>
+        {balance && (
+          <>
+            <span className={styles.walletBalance}>
+              {balance.includes('CSPR') ? balance : formatCSPR(motesToCSPR(Number(balance)))}
+            </span>
+            <div className={styles.divider} />
+          </>
+        )}
+        <div className="flex items-center gap-2 bg-black/10 px-2 py-1 rounded-full">
+          <AccountIdenticon hex={address} size="xs" />
+          <span className={styles.walletAddress}>{truncateAddress(address)}</span>
+        </div>
       </button>
       {dropdownOpen && (
         <div className={styles.dropdown}>

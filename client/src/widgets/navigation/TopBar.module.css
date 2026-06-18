@@ -81,6 +81,20 @@
   background: var(--accent-primary);
 }
 
+.walletBalance {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border-color);
+  margin: 0 4px;
+}
+
 .walletAddress {
   font-family: var(--font-mono);
   font-size: 11px;
