@@ -56,7 +56,7 @@ fn skill_schema(skill: SkillId) -> Result<&'static Validator, ValidatorError> {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn skill_schema_file(skill: SkillId) -> &'static str {
     match skill {
         SkillId::DefiYieldRouting => "defi_yield_routing.schema.json",

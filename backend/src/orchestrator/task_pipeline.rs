@@ -2,7 +2,6 @@ use serde_json::Value;
 
 use crate::config::Config;
 use crate::db::models::Task;
-use crate::orchestrator::executor::ExecutionResult;
 use crate::orchestrator::worker_prompt::build_worker_prompt;
 use crate::validator::{V2Outcome, evaluate_task_v2, resolve_skill_str};
 
@@ -69,5 +68,3 @@ pub fn sample_task(skill_id: Option<&str>, domain: &str, prompt: &str) -> Task {
         timestamp: Utc::now(),
     }
 }
-
-pub type StubExecutionResult = ExecutionResult;

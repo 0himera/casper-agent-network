@@ -3,7 +3,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm config set legacy-peer-deps true && npm ci || npm install
+RUN npm config set legacy-peer-deps true && npm install
 
 FROM base AS builder
 WORKDIR /app
