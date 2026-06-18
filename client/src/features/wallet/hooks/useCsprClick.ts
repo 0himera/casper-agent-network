@@ -9,12 +9,17 @@ export function useWalletStore<T>(selector: (s: WalletStore) => T): T {
 }
 
 export function useCsprClick() {
-  const connect = useCallback(() => {
-    window.csprclick?.signIn();
+  const connect = useCallback(async (providerName?: string | any) => {
+    if (typeof providerName === "string") {
+      await window.csprclick?.connect(providerName);
+    } else {
+      window.csprclick?.signIn();
+    }
   }, []);
 
   const switchAccount = useCallback(() => {
-    window.csprclick?.switchAccount("");
+    const provider = walletStore.getState().provider;
+    window.csprclick?.switchAccount(provider || "");
   }, []);
 
   const disconnect = useCallback(async () => {

@@ -24,31 +24,40 @@ export function CsprClickProvider({ children }: CsprClickProviderProps) {
     const appId =
       process.env.NEXT_PUBLIC_CLICK_APP_ID || "csprclick-template";
 
-    window.csprClickSDKAsyncInit = () => {
-      window.csprclick.once("csprclick:loaded", () => {
-        const acc = window.csprclick.currentAccount;
-        walletStore.getState().setInitialized(true);
-        if (acc?.public_key) {
-          walletStore.getState().setAddress(acc.public_key);
-          walletStore.getState().setProvider(acc.provider);
-        }
-        window.dispatchEvent(new CustomEvent("csprclick:loaded", {}));
-      });
+    if (window.csprclick) {
+      const acc = window.csprclick.currentAccount;
+      walletStore.getState().setInitialized(true);
+      if (acc?.public_key) {
+        walletStore.getState().setAddress(acc.public_key);
+        walletStore.getState().setProvider(acc.provider);
+      }
+    } else {
+      window.csprClickSDKAsyncInit = () => {
+        window.csprclick.once("csprclick:loaded", () => {
+          const acc = window.csprclick.currentAccount;
+          walletStore.getState().setInitialized(true);
+          if (acc?.public_key) {
+            walletStore.getState().setAddress(acc.public_key);
+            walletStore.getState().setProvider(acc.provider);
+          }
+          window.dispatchEvent(new CustomEvent("csprclick:loaded", {}));
+        });
 
-      window.csprclick.init({
-        appName,
-        appId,
-        contentMode: CONTENT_MODE.IFRAME,
-        providers: ["casper-wallet", "ledger", "metamask-snap"],
-      });
-    };
+        window.csprclick.init({
+          appName,
+          appId,
+          contentMode: CONTENT_MODE.IFRAME,
+          providers: ["casper-wallet", "ledger", "metamask-snap"],
+        });
+      };
 
-    if (!document.getElementById("csprclick-sdk") && !window.csprclick) {
-      const script = document.createElement("script");
-      script.id = "csprclick-sdk";
-      script.src = `${host}/csprclick-sdk-${SDK_VERSION}.js`;
-      script.async = true;
-      document.head.appendChild(script);
+      if (!document.getElementById("csprclick-sdk")) {
+        const script = document.createElement("script");
+        script.id = "csprclick-sdk";
+        script.src = `${host}/csprclick-sdk-${SDK_VERSION}.js`;
+        script.async = true;
+        document.head.appendChild(script);
+      }
     }
   }, []);
 

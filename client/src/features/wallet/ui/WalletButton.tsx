@@ -8,6 +8,13 @@ import { useCsprClick, useWalletStore } from "../hooks/useCsprClick";
 import { walletStore } from "../store/wallet-store";
 import { AccountIdenticon } from "./AccountIdenticon";
 import styles from "@/widgets/navigation/TopBar.module.css";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/shared/ui/dialog";
 
 export function WalletButton() {
   const address = useWalletStore((s) => s.address);
@@ -16,6 +23,7 @@ export function WalletButton() {
   const { connect, switchAccount, disconnect } = useCsprClick();
   const setWalletAddress = useAppStore((s) => s.setWalletAddress);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +55,8 @@ export function WalletButton() {
     if (csprclick.currentAccount) {
       walletStore.getState().setAddress(csprclick.currentAccount.public_key || null);
       walletStore.getState().setProvider(csprclick.currentAccount.provider || null);
+    } else {
+      walletStore.getState().disconnect();
     }
 
     return () => {
@@ -84,12 +94,36 @@ export function WalletButton() {
 
   if (!isConnected || !address) {
     return (
-      <button
-        className={`${styles.walletButton} ${styles.disconnected}`}
-        onClick={connect}
-      >
-        <span>Connect Wallet</span>
-      </button>
+      <Dialog open={connectModalOpen} onOpenChange={setConnectModalOpen}>
+        <DialogTrigger render={<button className={`${styles.walletButton} ${styles.disconnected}`} />}>
+          <span>Connect Wallet</span>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl font-semibold mb-2">Connect Wallet</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            <button
+              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              onClick={() => { setConnectModalOpen(false); connect("casper-wallet"); }}
+            >
+              <span className="font-semibold text-base">Casper Wallet</span>
+            </button>
+            <button
+              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              onClick={() => { setConnectModalOpen(false); connect("ledger"); }}
+            >
+              <span className="font-semibold text-base">Ledger</span>
+            </button>
+            <button
+              className="flex items-center justify-center p-3 rounded-xl border border-border/50 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-all cursor-pointer shadow-sm"
+              onClick={() => { setConnectModalOpen(false); connect("metamask-snap"); }}
+            >
+              <span className="font-semibold text-base">MetaMask Snap</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   }
 

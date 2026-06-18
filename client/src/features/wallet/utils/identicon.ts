@@ -14,7 +14,7 @@ const COLORS = [
 
 export function generateIdenticonSvg(hex: string, size: number): string {
   const hash = hashFromHex(hex);
-  const cell = Math.max(size / 8, 4);
+  const cell = size / 8;
   const color = COLORS[hash[0] % COLORS.length];
   const bg = hash[1] % 2 === 0 ? "#1e1e24" : "#2a2a32";
 
