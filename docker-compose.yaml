@@ -32,6 +32,8 @@ services:
       PORT: "3000"
     env_file:
       - ./backend/.env
+    volumes:
+      - /home/himera/projects/casperhack/keys:/keys
     depends_on:
       mysql:
         condition: service_healthy
@@ -46,6 +48,7 @@ services:
       - ./server/.env
     environment:
       DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      RUST_BACKEND_URL: http://backend:3000
     depends_on:
       mysql:
         condition: service_healthy

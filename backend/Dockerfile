@@ -39,6 +39,12 @@ RUN touch backend/src/main.rs backend/validator/src/lib.rs
 WORKDIR /usr/src/app/backend
 RUN cargo build --release
 
+# Copy and build smart contract submit_complete CLI tool
+WORKDIR /usr/src/app
+COPY smart-contract ./smart-contract
+WORKDIR /usr/src/app/smart-contract
+RUN cargo build --release --bin agent_network_submit_complete --features livenet
+
 # Final runtime stage
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
@@ -49,6 +55,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /usr/local/bin
 
 COPY --from=builder /usr/src/app/backend/target/release/backend /usr/local/bin/backend
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
 
 EXPOSE 3000
 

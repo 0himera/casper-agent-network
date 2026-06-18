@@ -25,7 +25,16 @@ export function WalletButton() {
   const setWalletAddress = useAppStore((s) => s.setWalletAddress);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [mockInput, setMockInput] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleMockConnect = () => {
+    if (!mockInput.trim()) return;
+    walletStore.getState().setAddress(mockInput.trim());
+    walletStore.getState().setProvider("mock");
+    walletStore.getState().setBalance("5000000000000"); // 5000 CSPR
+    setConnectModalOpen(false);
+  };
 
   useEffect(() => {
     setWalletAddress(address);
@@ -123,6 +132,29 @@ export function WalletButton() {
             >
               <span className="font-semibold text-lg">MetaMask Snap</span>
             </button>
+
+            <div className="my-2 border-t border-zinc-800/80 pt-4">
+              <div className="text-xs text-zinc-400 mb-2 text-center font-medium uppercase tracking-wider">Development Bypass</div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Paste Casper public key..."
+                  className="flex-1 px-3 py-2 text-sm bg-zinc-900 border border-zinc-850 rounded-lg text-zinc-100 focus:outline-none focus:border-zinc-700 font-mono"
+                  value={mockInput}
+                  onChange={(e) => setMockInput(e.target.value)}
+                />
+                <button
+                  onClick={handleMockConnect}
+                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-zinc-100 font-semibold rounded-lg transition-all"
+                  disabled={!mockInput.trim()}
+                >
+                  Connect
+                </button>
+              </div>
+              <div className="text-[10px] text-zinc-500 mt-2 text-center">
+                Use this if CSPR.click SDK is blocked by an adblocker or fails to load.
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

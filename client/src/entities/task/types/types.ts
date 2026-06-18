@@ -26,6 +26,7 @@ export interface TaskApiResponse {
   deadline: number;
   result_signature: string | null;
   timestamp: string;
+  validator_audit?: any | null;
 }
 
 function mapStatus(raw: string): TaskStatus {
@@ -39,6 +40,46 @@ function mapStatus(raw: string): TaskStatus {
 
 export function mapTaskResponse(raw: TaskApiResponse): TaskEntity {
   const MOTES_TO_CSPR = 1_000_000_000;
+
+  let evaluation: EvaluationScore | null = null;
+  if (raw.validator_audit) {
+    let audit: any = null;
+    if (typeof raw.validator_audit === "string") {
+      try {
+        audit = JSON.parse(raw.validator_audit);
+      } catch (e) {}
+    } else {
+      audit = raw.validator_audit;
+    }
+
+    if (audit) {
+      if (audit.scores) {
+        evaluation = {
+          accuracy: audit.scores.accuracy ?? 0,
+          depth: audit.scores.depth ?? 0,
+          sources: audit.scores.sources ?? 0,
+          actionability: audit.scores.actionability ?? 0,
+          presentation: audit.scores.presentation ?? 0,
+          total: audit.total ?? 0,
+        };
+      } else if (audit.output && typeof audit.output.total === "number") {
+        const criteria = audit.output.criteria || [];
+        const getScore = (key: string, maxVal: number) => {
+          const crit = criteria.find((c: any) => c.id?.toLowerCase().includes(key));
+          return crit ? crit.score : maxVal;
+        };
+        evaluation = {
+          accuracy: getScore("accuracy", 30),
+          depth: getScore("depth", 25),
+          sources: getScore("sources", 20),
+          actionability: getScore("actionability", 15),
+          presentation: getScore("presentation", 10),
+          total: audit.output.total,
+        };
+      }
+    }
+  }
+
   return {
     id: raw.id,
     creator: raw.creator_public_key,
@@ -51,7 +92,7 @@ export function mapTaskResponse(raw: TaskApiResponse): TaskEntity {
     status: mapStatus(raw.status),
     result: raw.result ?? null,
     resultHash: raw.result_hash ?? null,
-    evaluation: null,
+    evaluation,
     transactionHashes: { create: raw.transaction_hash },
     createdAt: raw.timestamp,
     updatedAt: raw.timestamp,

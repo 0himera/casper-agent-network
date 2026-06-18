@@ -81,9 +81,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   }
   if (!task) return <div className={styles.loading}>Task not found</div>;
 
+  const assignedAgentName = task.assignedAgent
+    ? (agents?.find((a: any) => a.publicKey === task.assignedAgent)?.name || `${task.assignedAgent.slice(0, 6)}...${task.assignedAgent.slice(-6)}`)
+    : null;
+
   const steps = [
     { label: "Created", time: formatTimeAgo(task.createdAt) },
-    { label: "Assigned", time: task.assignedAgentName ? formatTimeAgo(task.createdAt) : null, detail: task.assignedAgentName ?? undefined },
+    { label: "Assigned", time: task.assignedAgent ? formatTimeAgo(task.createdAt) : null, detail: assignedAgentName ?? undefined },
     { label: "In Progress", time: task.status !== "open" ? formatTimeAgo(task.updatedAt) : null },
     { label: "Submitted", time: task.result ? formatTimeAgo(task.updatedAt) : null },
     { label: "Completed", time: task.status === "completed" ? formatTimeAgo(task.updatedAt) : null, detail: task.status === "completed" ? "Escrow released" : undefined },

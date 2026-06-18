@@ -1,4 +1,5 @@
 import type { SendResult } from "@make-software/csprclick-core-types";
+import { walletStore } from "../store/wallet-store";
 
 /**
  * Sign and broadcast a transaction via CSPR.click.
@@ -8,6 +9,15 @@ export async function signAndSendTransaction(
   transaction: any,
   senderHex: string,
 ): Promise<string> {
+  const storeProvider = walletStore.getState().provider;
+  if (storeProvider === "mock") {
+    console.warn("Dev mode: bypassing transaction signing. Generating mock transaction hash.");
+    const randHex = Array.from({ length: 32 }, () =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join("");
+    return `mock-tx-${randHex}`;
+  }
+
   const csprclick = window.csprclick;
   if (!csprclick) throw new Error("CSPR.click not initialized");
 

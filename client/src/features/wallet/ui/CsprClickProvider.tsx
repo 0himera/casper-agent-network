@@ -24,7 +24,16 @@ export function CsprClickProvider({ children }: CsprClickProviderProps) {
     const appId =
       process.env.NEXT_PUBLIC_CLICK_APP_ID || "csprclick-template";
 
+    // Safety timeout to switch from infinite "Loading..." state to fallback if SDK fails to load
+    const safetyTimeout = setTimeout(() => {
+      if (!walletStore.getState().isInitialized) {
+        console.warn("CSPR.click SDK load timed out. Activating developer fallback wallet option.");
+        walletStore.getState().setInitialized(true);
+      }
+    }, 3500);
+
     if (window.csprclick) {
+      clearTimeout(safetyTimeout);
       const acc = window.csprclick.currentAccount;
       walletStore.getState().setInitialized(true);
       if (acc?.public_key) {
@@ -34,6 +43,7 @@ export function CsprClickProvider({ children }: CsprClickProviderProps) {
     } else {
       window.csprClickSDKAsyncInit = () => {
         window.csprclick.once("csprclick:loaded", () => {
+          clearTimeout(safetyTimeout);
           const acc = window.csprclick.currentAccount;
           walletStore.getState().setInitialized(true);
           if (acc?.public_key) {
@@ -56,9 +66,18 @@ export function CsprClickProvider({ children }: CsprClickProviderProps) {
         script.id = "csprclick-sdk";
         script.src = `${host}/csprclick-sdk-${SDK_VERSION}.js`;
         script.async = true;
+        script.onerror = () => {
+          console.error("Failed to load CSPR.click SDK script.");
+          clearTimeout(safetyTimeout);
+          walletStore.getState().setInitialized(true);
+        };
         document.head.appendChild(script);
       }
     }
+
+    return () => {
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   return <>{children}</>;

@@ -144,7 +144,10 @@ Return JSON format exactly matching:
         config.fireworks_model.as_deref(),
     ) {
         // 0. Fireworks AI Integration
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let payload = serde_json::json!({
             "model": model,
             "messages": [
@@ -185,7 +188,10 @@ Return JSON format exactly matching:
         (&config.cloudflare_account_id, &config.cloudflare_api_token)
     {
         // 1. Cloudflare Workers AI Integration (Moonshot Kimi k2.6)
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let payload = serde_json::json!({
             "messages": [
                 { "role": "system", "content": rubric_prompt },
@@ -228,7 +234,10 @@ Return JSON format exactly matching:
         (total, scores, reasoning)
     } else if let Some(ref api_key) = config.openai_api_key {
         // 1. OpenAI Integration
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let payload = serde_json::json!({
             "model": "gpt-4o-mini",
             "messages": [
@@ -259,7 +268,10 @@ Return JSON format exactly matching:
         (total, scores, reasoning)
     } else if let Some(ref api_key) = config.claude_api_key {
         // 2. Claude Integration
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let payload = serde_json::json!({
             "model": "claude-3-5-sonnet-20240620",
             "max_tokens": 1000,
@@ -300,7 +312,10 @@ Return JSON format exactly matching:
         (total, scores, reasoning)
     } else if let Some(ref ollama_url) = config.ollama_url {
         // 3. Ollama Integration
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let model_name = config.ollama_model.as_deref().unwrap_or("qwen3.5:4b-gpu");
         let payload = serde_json::json!({
             "model": model_name,
@@ -378,12 +393,25 @@ Return JSON format exactly matching:
     // Calculate pricing based on score and processing speed
     let recommended_price_motes = recommended_price_motes(domain, total, processing_time_ms);
 
+    let audit_json = serde_json::json!({
+        "pipeline": "legacy",
+        "scores": {
+            "accuracy": scores.accuracy_or_safety,
+            "depth": scores.depth_or_quality,
+            "sources": scores.sources_or_testing,
+            "actionability": scores.actionability_or_explanation,
+            "presentation": scores.presentation,
+        },
+        "total": total,
+        "reasoning": reasoning
+    });
+
     Ok(EvaluationResult {
         scores,
         total,
         reasoning,
         recommended_price_motes,
-        validator_audit: None,
+        validator_audit: Some(audit_json),
     })
 }
 
@@ -454,6 +482,6 @@ mod tests {
 
         assert!(result.total <= 100);
         assert!(!result.reasoning.is_empty());
-        assert!(result.validator_audit.is_none());
+        assert!(result.validator_audit.is_some());
     }
 }
