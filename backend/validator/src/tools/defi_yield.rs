@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::common::{
     contains_ci, contains_id, failed, malformed, missing, motes_to_cspr, parse_numbers, passed,
@@ -47,10 +47,7 @@ fn parse_pools(fixture: &Value) -> Result<(u64, i64, Vec<Pool>), String> {
                 .get("apy")
                 .and_then(|v| v.as_f64())
                 .ok_or("pool missing apy")?,
-            fee_bps: item
-                .get("fee_bps")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
+            fee_bps: item.get("fee_bps").and_then(|v| v.as_u64()).unwrap_or(0),
         });
     }
     Ok((amount_cspr, gas_price_motes, pools))
@@ -92,7 +89,10 @@ pub fn check_allocation_sum(fixture: &Value, agent_output: &str) -> crate::types
     }
 }
 
-fn extract_pool_allocations(output: &str, pools: &[Pool]) -> std::collections::HashMap<String, f64> {
+fn extract_pool_allocations(
+    output: &str,
+    pools: &[Pool],
+) -> std::collections::HashMap<String, f64> {
     let mut result = std::collections::HashMap::new();
     let lower = output.to_ascii_lowercase();
 
@@ -100,7 +100,11 @@ fn extract_pool_allocations(output: &str, pools: &[Pool]) -> std::collections::H
         if let Some(idx) = lower.find(&pool.id.to_ascii_lowercase()) {
             let window_start = idx.saturating_sub(40);
             let window = &output[window_start..idx];
-            if let Some(amount) = parse_numbers(window).into_iter().rev().find(|n| *n >= 100.0) {
+            if let Some(amount) = parse_numbers(window)
+                .into_iter()
+                .rev()
+                .find(|n| *n >= 100.0)
+            {
                 result.insert(pool.id.clone(), amount);
             }
         }
@@ -112,9 +116,7 @@ fn extract_explicit_total(output: &str) -> Option<f64> {
     let lower = output.to_ascii_lowercase();
     if let Some(idx) = lower.find("total") {
         let window = &output[idx..output.len().min(idx + 40)];
-        return parse_numbers(window)
-            .into_iter()
-            .find(|n| *n >= 1000.0);
+        return parse_numbers(window).into_iter().find(|n| *n >= 1000.0);
     }
     None
 }
@@ -193,7 +195,8 @@ pub fn check_fees(fixture: &Value, agent_output: &str) -> crate::types::ToolResu
 
     let mentions_pool_fee = pools.iter().any(|p| {
         contains_id(agent_output, &p.id)
-            && (contains_ci(agent_output, "fee") || contains_ci(agent_output, &format_fee_bps(p.fee_bps)))
+            && (contains_ci(agent_output, "fee")
+                || contains_ci(agent_output, &format_fee_bps(p.fee_bps)))
     });
 
     let ok = mentions_fees && (gas_mentioned || mentions_pool_fee);
@@ -254,7 +257,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn fixture() -> Value {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/defi_yield_routing.json");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/defi_yield_routing.json");
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     }
 
@@ -353,10 +357,7 @@ mod tests {
 
     #[test]
     fn validate_il_fail_one_pool() {
-        let r = validate_il(
-            &fixture(),
-            "cspr-usdt has low impermanent loss exposure.",
-        );
+        let r = validate_il(&fixture(), "cspr-usdt has low impermanent loss exposure.");
         assert!(!r.ok);
     }
 

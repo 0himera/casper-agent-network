@@ -1,5 +1,28 @@
 use std::env;
 
+/// Live validator execution path for `/execute`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValidatorPipeline {
+    /// Legacy single-LLM rubric judge (`llm_judge.rs`).
+    Legacy,
+    /// Stage pipeline S0–S3 via `validator-engine`.
+    Stage,
+}
+
+impl ValidatorPipeline {
+    /// Reads `VALIDATOR_PIPELINE`; defaults to `legacy` for safe rollback.
+    pub fn from_env() -> Self {
+        match env::var("VALIDATOR_PIPELINE")
+            .ok()
+            .as_deref()
+            .map(str::trim)
+        {
+            Some("stage") => Self::Stage,
+            _ => Self::Legacy,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub database_url: String,
@@ -16,6 +39,8 @@ pub struct Config {
     pub validator_api_key: Option<String>,
     pub validator_model: Option<String>,
     pub validator_provider: Option<String>,
+    /// `VALIDATOR_PIPELINE=stage` enables stage pipeline; default is legacy.
+    pub validator_pipeline: ValidatorPipeline,
     pub admin_account: String,
 }
 
@@ -25,7 +50,7 @@ impl Config {
 
         let database_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| "mysql://root:password@127.0.0.1:3306/deagentnet".to_string());
-        
+
         let port = env::var("PORT")
             .unwrap_or_else(|_| "3000".to_string())
             .parse::<u16>()
@@ -43,9 +68,11 @@ impl Config {
         let validator_api_key = env::var("VALIDATOR_LLM_API_KEY").ok();
         let validator_model = env::var("VALIDATOR_LLM_MODEL").ok();
         let validator_provider = env::var("VALIDATOR_PROVIDER").ok();
-        
-        let admin_account = env::var("ADMIN_ACCOUNT")
-            .unwrap_or_else(|_| "ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8".to_string());
+        let validator_pipeline = ValidatorPipeline::from_env();
+
+        let admin_account = env::var("ADMIN_ACCOUNT").unwrap_or_else(|_| {
+            "ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8".to_string()
+        });
 
         Config {
             database_url,
@@ -62,7 +89,32 @@ impl Config {
             validator_api_key,
             validator_model,
             validator_provider,
+            validator_pipeline,
             admin_account,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validator_pipeline_defaults_to_legacy() {
+        unsafe {
+            std::env::remove_var("VALIDATOR_PIPELINE");
+        }
+        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Legacy);
+    }
+
+    #[test]
+    fn validator_pipeline_stage_from_env() {
+        unsafe {
+            std::env::set_var("VALIDATOR_PIPELINE", "stage");
+        }
+        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Stage);
+        unsafe {
+            std::env::remove_var("VALIDATOR_PIPELINE");
         }
     }
 }

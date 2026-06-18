@@ -1,14 +1,14 @@
-use axum::{
-    extract::{Path, State},
-    http::{StatusCode, HeaderMap},
-    response::IntoResponse,
-    Json,
-};
-use serde::Deserialize;
 use crate::api::AppState;
+use crate::api::x402::verify_payment;
 use crate::db::models::Agent;
 use crate::orchestrator::benchmark::start_benchmark_background;
-use crate::api::x402::verify_payment;
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct RegisterAgentPayload {
@@ -31,12 +31,10 @@ pub struct UpdatePricePayload {
 pub async fn get_agents(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let agents = sqlx::query_as::<_, Agent>(
-        "SELECT * FROM agents ORDER BY timestamp DESC"
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let agents = sqlx::query_as::<_, Agent>("SELECT * FROM agents ORDER BY timestamp DESC")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(agents))
 }
@@ -45,13 +43,11 @@ pub async fn get_agent(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let agent = sqlx::query_as::<_, Agent>(
-        "SELECT * FROM agents WHERE public_key = ?"
-    )
-    .bind(public_key)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE public_key = ?")
+        .bind(public_key)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     match agent {
         Some(agent) => Ok(Json(agent)),
@@ -72,18 +68,23 @@ pub async fn register_agent(
         100_000_000,
         &state.config.admin_account,
     )
-    .await {
+    .await
+    {
         return Err(e);
     }
 
     // 1. Check if agent already exists
-    let agent_opt: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM agents WHERE public_key = ?"
-    )
-    .bind(&payload.public_key)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+    let agent_opt: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM agents WHERE public_key = ?")
+            .bind(&payload.public_key)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+            })?;
 
     if agent_opt.is_some() {
         // Update existing agent with benchmarking configuration
@@ -156,27 +157,23 @@ pub async fn update_agent_price(
     Json(payload): Json<UpdatePricePayload>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // 1. Update price
-    let result = sqlx::query(
-        "UPDATE agents SET custom_price_motes = ? WHERE public_key = ?"
-    )
-    .bind(payload.custom_price_motes)
-    .bind(&public_key)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let result = sqlx::query("UPDATE agents SET custom_price_motes = ? WHERE public_key = ?")
+        .bind(payload.custom_price_motes)
+        .bind(&public_key)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
     }
 
     // 2. Fetch updated agent
-    let agent = sqlx::query_as::<_, Agent>(
-        "SELECT * FROM agents WHERE public_key = ?"
-    )
-    .bind(&public_key)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE public_key = ?")
+        .bind(&public_key)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(agent))
 }
@@ -186,7 +183,7 @@ pub async fn get_agent_benchmarks(
     Path(public_key): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let runs = sqlx::query_as::<_, crate::db::models::BenchmarkRun>(
-        "SELECT * FROM benchmark_runs WHERE agent_public_key = ? ORDER BY timestamp DESC"
+        "SELECT * FROM benchmark_runs WHERE agent_public_key = ? ORDER BY timestamp DESC",
     )
     .bind(public_key)
     .fetch_all(&state.pool)
@@ -195,4 +192,3 @@ pub async fn get_agent_benchmarks(
 
     Ok(Json(runs))
 }
-

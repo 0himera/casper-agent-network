@@ -75,8 +75,7 @@ impl CasperClient {
             .unwrap_or_else(|_| "https://api.testnet.cspr.cloud".to_string());
         let access_key = env::var("CSPR_CLOUD_ACCESS_KEY")
             .map_err(|_| "CSPR_CLOUD_ACCESS_KEY not set".to_string())?;
-        let contract_package_hash = env::var("CONTRACT_PACKAGE_HASH")
-            .unwrap_or_default();
+        let contract_package_hash = env::var("CONTRACT_PACKAGE_HASH").unwrap_or_default();
 
         Ok(Self {
             api_url,
@@ -204,7 +203,8 @@ impl CasperClient {
             .await
             .map_err(|e| format!("Failed to parse deploy details: {}", e))?;
 
-        let status = body.get("data")
+        let status = body
+            .get("data")
             .and_then(|d| d.get("status"))
             .and_then(|s| s.as_str())
             .unwrap_or_default();
@@ -213,22 +213,28 @@ impl CasperClient {
             return Ok(false);
         }
 
-        let transfers = body.get("data")
+        let transfers = body
+            .get("data")
             .and_then(|d| d.get("transfers"))
             .and_then(|t| t.as_array());
 
         if let Some(transfers_list) = transfers {
             for transfer in transfers_list {
-                let amount_str = transfer.get("amount")
+                let amount_str = transfer
+                    .get("amount")
                     .and_then(|a| a.as_str())
                     .unwrap_or("0");
-                let to = transfer.get("to")
+                let to = transfer
+                    .get("to")
                     .and_then(|t| t.as_str())
                     .unwrap_or_default();
 
                 let amount: u64 = amount_str.parse().unwrap_or(0);
 
-                if amount >= expected_amount_motes && (to.to_lowercase() == merchant_pubkey.to_lowercase() || merchant_pubkey.to_lowercase().contains(&to.to_lowercase())) {
+                if amount >= expected_amount_motes
+                    && (to.to_lowercase() == merchant_pubkey.to_lowercase()
+                        || merchant_pubkey.to_lowercase().contains(&to.to_lowercase()))
+                {
                     return Ok(true);
                 }
             }

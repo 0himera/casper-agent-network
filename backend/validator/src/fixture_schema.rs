@@ -12,19 +12,24 @@ fn schemas_dir() -> PathBuf {
 
 fn compile_schema(filename: &str) -> Result<Validator, ValidatorError> {
     let path = schemas_dir().join(filename);
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| ValidatorError::Fixture(format!("failed to read schema {}: {e}", path.display())))?;
-    let schema: Value = serde_json::from_str(&content)
-        .map_err(|e| ValidatorError::Fixture(format!("invalid schema JSON {}: {e}", path.display())))?;
+    let content = std::fs::read_to_string(&path).map_err(|e| {
+        ValidatorError::Fixture(format!("failed to read schema {}: {e}", path.display()))
+    })?;
+    let schema: Value = serde_json::from_str(&content).map_err(|e| {
+        ValidatorError::Fixture(format!("invalid schema JSON {}: {e}", path.display()))
+    })?;
     jsonschema::options()
         .with_draft(Draft::Draft7)
         .build(&schema)
-        .map_err(|e| ValidatorError::Fixture(format!("schema compile failed for {}: {e}", path.display())))
+        .map_err(|e| {
+            ValidatorError::Fixture(format!("schema compile failed for {}: {e}", path.display()))
+        })
 }
 
 fn meta_schema() -> Result<&'static Validator, ValidatorError> {
     static SCHEMA: OnceLock<Result<Validator, String>> = OnceLock::new();
-    let result = SCHEMA.get_or_init(|| compile_schema("_meta.schema.json").map_err(|e| e.to_string()));
+    let result =
+        SCHEMA.get_or_init(|| compile_schema("_meta.schema.json").map_err(|e| e.to_string()));
     match result {
         Ok(schema) => Ok(schema),
         Err(msg) => Err(ValidatorError::Fixture(msg.clone())),
@@ -68,10 +73,7 @@ pub fn is_fixture_envelope(value: &Value) -> bool {
 }
 
 fn validation_errors(schema: &Validator, value: &Value) -> Result<(), ValidatorError> {
-    let errors: Vec<String> = schema
-        .iter_errors(value)
-        .map(|e| e.to_string())
-        .collect();
+    let errors: Vec<String> = schema.iter_errors(value).map(|e| e.to_string()).collect();
     if errors.is_empty() {
         Ok(())
     } else {
@@ -132,7 +134,8 @@ mod tests {
             "source": "seed",
             "data": raw
         });
-        let normalized = validate_fixture(SkillId::DefiYieldRouting, &envelope).expect("envelope ok");
+        let normalized =
+            validate_fixture(SkillId::DefiYieldRouting, &envelope).expect("envelope ok");
         assert_eq!(normalized["amount_cspr"], 10000);
     }
 
@@ -150,7 +153,9 @@ mod tests {
             "data": { "amount_cspr": 1 }
         });
         assert!(is_fixture_envelope(&envelope));
-        assert!(!is_fixture_envelope(&serde_json::json!({ "amount_cspr": 1 })));
+        assert!(!is_fixture_envelope(
+            &serde_json::json!({ "amount_cspr": 1 })
+        ));
     }
 
     #[test]

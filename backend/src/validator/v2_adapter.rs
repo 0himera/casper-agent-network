@@ -1,6 +1,6 @@
 use validator_engine::{
-    evaluate_with_options, load_skill_fixture, validate_fixture, GraderOptions, LlmConfig,
-    SkillId, ValidationInput, ValidationOutput,
+    GraderOptions, LlmConfig, SkillId, ValidationInput, ValidationOutput, evaluate_with_options,
+    load_skill_fixture, validate_fixture,
 };
 
 use crate::config::Config;
@@ -39,9 +39,8 @@ fn map_config(config: &Config) -> LlmConfig {
 
     let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
 
-    let judge_self_consistency = env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| {
-        v == "1" || v.eq_ignore_ascii_case("true")
-    });
+    let judge_self_consistency =
+        env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
     let mut custom_url = config.validator_url.clone();
     let custom_api_key = config
@@ -70,6 +69,8 @@ fn map_config(config: &Config) -> LlmConfig {
         custom_model,
         provider: config.validator_provider.clone(),
         mock,
+        factuality_enabled: None,
+        serpapi_api_key: env("SERPAPI_API_KEY"),
         judge_cascade,
         judge_timeout_ms,
         judge_self_consistency,
@@ -81,8 +82,9 @@ fn resolve_fixture(
     fixture: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, V2Outcome> {
     match fixture {
-        Some(value) => validate_fixture(skill_id, &value)
-            .map_err(|e| V2Outcome::FixtureInvalid(e.to_string())),
+        Some(value) => {
+            validate_fixture(skill_id, &value).map_err(|e| V2Outcome::FixtureInvalid(e.to_string()))
+        }
         None => load_skill_fixture(skill_id).map_err(V2Outcome::FixtureMissing),
     }
 }
@@ -125,9 +127,15 @@ mod tests {
 
     #[test]
     fn map_skill_supports_v2_and_legacy_alias() {
-        assert_eq!(map_skill("defi_yield_routing"), Some(SkillId::DefiYieldRouting));
+        assert_eq!(
+            map_skill("defi_yield_routing"),
+            Some(SkillId::DefiYieldRouting)
+        );
         assert_eq!(map_skill("defi_analysis"), Some(SkillId::DefiYieldRouting));
-        assert_eq!(map_skill("defi_protocol_risk"), Some(SkillId::DefiProtocolRisk));
+        assert_eq!(
+            map_skill("defi_protocol_risk"),
+            Some(SkillId::DefiProtocolRisk)
+        );
         assert_eq!(map_skill("rwa_appraisal"), Some(SkillId::RwaAppraisal));
         assert_eq!(map_skill("rwa_compliance"), Some(SkillId::RwaCompliance));
         assert_eq!(map_skill("code_review"), None);
@@ -150,6 +158,7 @@ mod tests {
             validator_api_key: None,
             validator_model: None,
             validator_provider: None,
+            validator_pipeline: crate::config::ValidatorPipeline::Legacy,
             admin_account: String::new(),
         };
 
@@ -280,6 +289,7 @@ mod tests {
             validator_api_key: None,
             validator_model: None,
             validator_provider: None,
+            validator_pipeline: crate::config::ValidatorPipeline::Legacy,
             admin_account: String::new(),
         }
     }

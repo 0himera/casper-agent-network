@@ -1,0 +1,73 @@
+[
+  {
+    "id": "factuality_supported",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "factuality_contradicted",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_CONTRADICTED: CSPR staking APY is 50%. All DeFi pools are risk-free regardless of contract audits or market conditions and users should treat every pool as guaranteed principal protection without further due diligence.",
+    "search_mode": "contradicted",
+    "expect": {
+      "verdict": "hallucinated"
+    }
+  },
+  {
+    "id": "factuality_unverifiable",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze obscure protocol launch",
+    "agent_output": "MOCK_FACT_UNVERIFIABLE: An obscure protocol launched yesterday with unknown tokenomics and no public documentation, yet it is presented here as a verified market fact requiring immediate capital deployment without any independent confirmation from reputable sources.",
+    "search_mode": "unverifiable",
+    "expect": {
+      "verdict": "unverifiable"
+    }
+  },
+  {
+    "id": "factuality_short_skip",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze yield",
+    "agent_output": "MOCK_FACT_SUPPORTED: short",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "factuality_code_review_skip",
+    "domain": "code_review",
+    "task_prompt": "Review contract",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  },
+  {
+    "id": "factuality_search_error",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "search_mode": "error",
+    "expect": {
+      "verdict": "unverifiable"
+    }
+  },
+  {
+    "id": "factuality_disabled",
+    "domain": "defi_analysis",
+    "task_prompt": "Analyze staking and pool risks",
+    "agent_output": "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+    "factuality_enabled": false,
+    "expect": {
+      "verdict": "factual",
+      "total_gte": 90
+    }
+  }
+]

@@ -6,6 +6,8 @@ mod llm;
 mod prompts;
 mod rubric;
 mod scoring;
+pub mod search;
+pub mod stage_pipeline;
 mod tools;
 mod types;
 
@@ -17,7 +19,17 @@ pub use types::{
     ValidatorError, Verdict,
 };
 
-pub use crate::llm::{judge_call_count, last_judge_provider_used, reset_judge_call_stats};
+pub use crate::llm::{
+    call_judge_raw, judge_call_count, last_judge_provider_used, reset_judge_call_stats,
+};
+pub use prompts::{
+    build_stage_gibberish_prompts_version, build_stage_refusal_prompts_version,
+    build_stage_relevance_prompts_version,
+};
+pub use stage_pipeline::{
+    PipelineRunStats, PipelineVerdict, StageId, StagePipelineOutput, StageResult, StageTiming,
+    evaluate_stage_pipeline, evaluate_stage_pipeline_mock, evaluate_stage_pipeline_with_stats,
+};
 
 pub async fn evaluate(
     input: ValidationInput,
@@ -40,7 +52,8 @@ mod tests {
 
     fn sample_input() -> ValidationInput {
         let fixture = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/defi_yield_routing.json"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/defi_yield_routing.json"),
         )
         .expect("fixture");
         ValidationInput {

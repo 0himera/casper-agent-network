@@ -22,8 +22,14 @@ async fn few_shot_uplift_real_llm_ab() {
         .await
         .expect("uplift compare ok");
 
-    println!("Baseline accuracy: {:.1}%", report.baseline.accuracy * 100.0);
-    println!("Treatment accuracy: {:.1}%", report.treatment.accuracy * 100.0);
+    println!(
+        "Baseline accuracy: {:.1}%",
+        report.baseline.accuracy * 100.0
+    );
+    println!(
+        "Treatment accuracy: {:.1}%",
+        report.treatment.accuracy * 100.0
+    );
     println!("Delta accuracy: {:+.1}pp", report.delta_accuracy * 100.0);
 
     for result in &report.baseline.case_results {

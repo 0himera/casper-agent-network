@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use crate::config::Config;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RubricScores {
@@ -16,11 +16,32 @@ pub struct EvaluationResult {
     pub total: u32,
     pub reasoning: String,
     pub recommended_price_motes: u64,
+    /// Stage pipeline audit JSON; `None` for legacy judge path.
+    pub validator_audit: Option<serde_json::Value>,
 }
 
 // Base prices in motes (1 CSPR = 1,000,000,000 motes)
-const BASE_DEFI_PRICE: u64 = 5_000_000_000;  // 5 CSPR
+const BASE_DEFI_PRICE: u64 = 5_000_000_000; // 5 CSPR
 const BASE_CODE_PRICE: u64 = 10_000_000_000; // 10 CSPR
+
+pub(crate) fn recommended_price_motes(domain: &str, total: u32, processing_time_ms: u64) -> u64 {
+    let base_price = match domain {
+        "code_review" => BASE_CODE_PRICE,
+        _ => BASE_DEFI_PRICE,
+    };
+
+    let speed_multiplier = if processing_time_ms < 5000 {
+        1.2
+    } else if processing_time_ms < 15000 {
+        1.0
+    } else if processing_time_ms < 30000 {
+        0.8
+    } else {
+        0.6
+    };
+
+    (base_price as f64 * (total as f64 / 100.0) * speed_multiplier) as u64
+}
 
 pub async fn evaluate_task(
     domain: &str,
@@ -29,10 +50,42 @@ pub async fn evaluate_task(
     processing_time_ms: u64,
     config: &Config,
 ) -> Result<EvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
-    
+    use crate::config::ValidatorPipeline;
+
+    if config.validator_pipeline == ValidatorPipeline::Stage {
+        return super::stage_adapter::evaluate_task_stage(
+            domain,
+            task_prompt,
+            agent_result,
+            processing_time_ms,
+            config,
+        )
+        .await;
+    }
+
+    evaluate_task_legacy(
+        domain,
+        task_prompt,
+        agent_result,
+        processing_time_ms,
+        config,
+    )
+    .await
+}
+
+async fn evaluate_task_legacy(
+    domain: &str,
+    task_prompt: &str,
+    agent_result: &str,
+    processing_time_ms: u64,
+    config: &Config,
+) -> Result<EvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
+    println!("Validator pipeline: legacy");
+
     // Choose rubric system prompt
     let rubric_prompt = match domain {
-        "code_review" => r#"
+        "code_review" => {
+            r#"
 You are an expert code auditor. Evaluate the agent's code review response.
 Rate the following dimensions:
 1. safety_or_security (0-30): Vulnerability analysis, reentrancy, access control.
@@ -53,8 +106,10 @@ Return JSON format exactly matching:
   "total": SumOfAbove,
   "reasoning": "Brief explanation of scores..."
 }
-"#,
-        _ => r#"
+"#
+        }
+        _ => {
+            r#"
 You are an expert financial and data validator. Evaluate the agent's DeFi analysis response.
 Rate the following dimensions:
 1. accuracy_or_safety (0-30): Correctness of yield calculations, impermanent loss calculations.
@@ -75,7 +130,8 @@ Return JSON format exactly matching:
   "total": SumOfAbove,
   "reasoning": "Brief explanation of scores..."
 }
-"#,
+"#
+        }
     };
 
     let user_content = format!(
@@ -83,7 +139,10 @@ Return JSON format exactly matching:
         task_prompt, agent_result
     );
 
-    let (total, scores, reasoning) = if let (Some(api_key), Some(model)) = (config.fireworks_api_key.as_deref(), config.fireworks_model.as_deref()) {
+    let (total, scores, reasoning) = if let (Some(api_key), Some(model)) = (
+        config.fireworks_api_key.as_deref(),
+        config.fireworks_model.as_deref(),
+    ) {
         // 0. Fireworks AI Integration
         let client = reqwest::Client::new();
         let payload = serde_json::json!({
@@ -94,7 +153,8 @@ Return JSON format exactly matching:
             ]
         });
 
-        let res = client.post("https://api.fireworks.ai/inference/v1/chat/completions")
+        let res = client
+            .post("https://api.fireworks.ai/inference/v1/chat/completions")
             .bearer_auth(api_key)
             .json(&payload)
             .send()
@@ -106,8 +166,13 @@ Return JSON format exactly matching:
             .ok_or("Invalid Fireworks response format")?;
 
         // Extract JSON block if wrapped in markdown code fence or text
-        let json_start = text_content.find('{').ok_or("No JSON object found in Fireworks response")?;
-        let json_end = text_content.rfind('}').ok_or("No JSON object found in Fireworks response")? + 1;
+        let json_start = text_content
+            .find('{')
+            .ok_or("No JSON object found in Fireworks response")?;
+        let json_end = text_content
+            .rfind('}')
+            .ok_or("No JSON object found in Fireworks response")?
+            + 1;
         let json_str = &text_content[json_start..json_end];
 
         let parsed: serde_json::Value = serde_json::from_str(json_str)?;
@@ -116,8 +181,9 @@ Return JSON format exactly matching:
         let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
 
         (total, scores, reasoning)
-
-    } else if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+    } else if let (Some(account_id), Some(api_token)) =
+        (&config.cloudflare_account_id, &config.cloudflare_api_token)
+    {
         // 1. Cloudflare Workers AI Integration (Moonshot Kimi k2.6)
         let client = reqwest::Client::new();
         let payload = serde_json::json!({
@@ -132,7 +198,8 @@ Return JSON format exactly matching:
             account_id
         );
 
-        let res = client.post(&url)
+        let res = client
+            .post(&url)
             .bearer_auth(api_token)
             .json(&payload)
             .send()
@@ -144,8 +211,13 @@ Return JSON format exactly matching:
             .ok_or("Invalid Cloudflare AI response format")?;
 
         // Extract JSON block if wrapped in markdown code fence or text
-        let json_start = text_content.find('{').ok_or("No JSON object found in Cloudflare AI response")?;
-        let json_end = text_content.rfind('}').ok_or("No JSON object found in Cloudflare AI response")? + 1;
+        let json_start = text_content
+            .find('{')
+            .ok_or("No JSON object found in Cloudflare AI response")?;
+        let json_end = text_content
+            .rfind('}')
+            .ok_or("No JSON object found in Cloudflare AI response")?
+            + 1;
         let json_str = &text_content[json_start..json_end];
 
         let parsed: serde_json::Value = serde_json::from_str(json_str)?;
@@ -154,7 +226,6 @@ Return JSON format exactly matching:
         let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
 
         (total, scores, reasoning)
-
     } else if let Some(ref api_key) = config.openai_api_key {
         // 1. OpenAI Integration
         let client = reqwest::Client::new();
@@ -167,7 +238,8 @@ Return JSON format exactly matching:
             "response_format": { "type": "json_object" }
         });
 
-        let res = client.post("https://api.openai.com/v1/chat/completions")
+        let res = client
+            .post("https://api.openai.com/v1/chat/completions")
             .bearer_auth(api_key)
             .json(&payload)
             .send()
@@ -179,13 +251,12 @@ Return JSON format exactly matching:
             .ok_or("Invalid OpenAI response format")?;
 
         let parsed: serde_json::Value = serde_json::from_str(text_content)?;
-        
+
         let scores: RubricScores = serde_json::from_value(parsed["scores"].clone())?;
         let total = parsed["total"].as_u64().unwrap_or(0) as u32;
         let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
-        
-        (total, scores, reasoning)
 
+        (total, scores, reasoning)
     } else if let Some(ref api_key) = config.claude_api_key {
         // 2. Claude Integration
         let client = reqwest::Client::new();
@@ -198,7 +269,8 @@ Return JSON format exactly matching:
             ]
         });
 
-        let res = client.post("https://api.anthropic.com/v1/messages")
+        let res = client
+            .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .json(&payload)
@@ -211,8 +283,13 @@ Return JSON format exactly matching:
             .ok_or("Invalid Claude response format")?;
 
         // Extract JSON block if Claude wrapped it in markdown or text
-        let json_start = text_content.find('{').ok_or("No JSON object found in Claude response")?;
-        let json_end = text_content.rfind('}').ok_or("No JSON object found in Claude response")? + 1;
+        let json_start = text_content
+            .find('{')
+            .ok_or("No JSON object found in Claude response")?;
+        let json_end = text_content
+            .rfind('}')
+            .ok_or("No JSON object found in Claude response")?
+            + 1;
         let json_str = &text_content[json_start..json_end];
 
         let parsed: serde_json::Value = serde_json::from_str(json_str)?;
@@ -221,7 +298,6 @@ Return JSON format exactly matching:
         let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
 
         (total, scores, reasoning)
-
     } else if let Some(ref ollama_url) = config.ollama_url {
         // 3. Ollama Integration
         let client = reqwest::Client::new();
@@ -237,22 +313,30 @@ Return JSON format exactly matching:
             }
         });
 
-        let res = client.post(format!("{}/api/generate", ollama_url))
+        let res = client
+            .post(format!("{}/api/generate", ollama_url))
             .json(&payload)
             .send()
             .await?;
 
         let res_json: serde_json::Value = res.json().await?;
-        println!("Ollama validator response received. Model: {}", res_json["model"]);
-        
+        println!(
+            "Ollama validator response received. Model: {}",
+            res_json["model"]
+        );
+
         let text_content = if let Some(thinking) = res_json["thinking"].as_str() {
             if !thinking.is_empty() {
                 thinking
             } else {
-                res_json["response"].as_str().ok_or("Invalid Ollama response format: response field missing or not a string")?
+                res_json["response"].as_str().ok_or(
+                    "Invalid Ollama response format: response field missing or not a string",
+                )?
             }
         } else {
-            res_json["response"].as_str().ok_or("Invalid Ollama response format: response field missing or not a string")?
+            res_json["response"]
+                .as_str()
+                .ok_or("Invalid Ollama response format: response field missing or not a string")?
         };
 
         let parsed: serde_json::Value = serde_json::from_str(text_content)?;
@@ -261,11 +345,10 @@ Return JSON format exactly matching:
         let reasoning = parsed["reasoning"].as_str().unwrap_or("").to_string();
 
         (total, scores, reasoning)
-
     } else {
         // 4. Fallback Mock Evaluator (if no API keys configured)
         println!("WARNING: No LLM API key set. Running in Mock Evaluator mode.");
-        
+
         let total = if agent_result.contains("error") || agent_result.len() < 20 {
             55
         } else {
@@ -285,34 +368,92 @@ Return JSON format exactly matching:
 
         let reasoning = format!(
             "Mock Evaluator (No API Key): Result analyzed for domain {}. Content length was {} chars. Detail scores generated.",
-            domain, agent_result.len()
+            domain,
+            agent_result.len()
         );
 
         (total, scores, reasoning)
     };
 
     // Calculate pricing based on score and processing speed
-    let base_price = match domain {
-        "code_review" => BASE_CODE_PRICE,
-        _ => BASE_DEFI_PRICE,
-    };
-
-    let speed_multiplier = if processing_time_ms < 5000 {
-        1.2
-    } else if processing_time_ms < 15000 {
-        1.0
-    } else if processing_time_ms < 30000 {
-        0.8
-    } else {
-        0.6
-    };
-
-    let recommended_price_motes = (base_price as f64 * (total as f64 / 100.0) * speed_multiplier) as u64;
+    let recommended_price_motes = recommended_price_motes(domain, total, processing_time_ms);
 
     Ok(EvaluationResult {
         scores,
         total,
         reasoning,
         recommended_price_motes,
+        validator_audit: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ValidatorPipeline};
+
+    fn sample_config(pipeline: ValidatorPipeline) -> Config {
+        Config {
+            database_url: "mysql://localhost".to_string(),
+            port: 3000,
+            openai_api_key: None,
+            claude_api_key: None,
+            ollama_url: None,
+            ollama_model: None,
+            cloudflare_account_id: None,
+            cloudflare_api_token: None,
+            fireworks_api_key: None,
+            fireworks_model: None,
+            validator_url: None,
+            validator_api_key: None,
+            validator_model: None,
+            validator_provider: None,
+            validator_pipeline: pipeline,
+            admin_account: String::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluate_task_stage_pipeline_mock_smoke() {
+        unsafe {
+            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
+        }
+
+        let config = sample_config(ValidatorPipeline::Stage);
+        let result = evaluate_task(
+            "defi_analysis",
+            "Analyze yield",
+            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
+            4000,
+            &config,
+        )
+        .await
+        .expect("stage path smoke");
+
+        assert!(result.total <= 100);
+        assert!(!result.reasoning.is_empty());
+        assert!(result.validator_audit.is_some());
+
+        unsafe {
+            std::env::remove_var("VALIDATOR_MOCK_LLM");
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluate_task_legacy_pipeline_mock_smoke() {
+        let config = sample_config(ValidatorPipeline::Legacy);
+        let result = evaluate_task(
+            "defi_analysis",
+            "Analyze yield",
+            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
+            4000,
+            &config,
+        )
+        .await
+        .expect("legacy path smoke");
+
+        assert!(result.total <= 100);
+        assert!(!result.reasoning.is_empty());
+        assert!(result.validator_audit.is_none());
+    }
 }

@@ -1,0 +1,20 @@
+# Domain: stage_claim_verification — verify one claim against search snippets.
+current_version: v1
+versions:
+  v1:
+    system: |
+      You verify whether search snippets support, contradict, or fail to verify a claim.
+      Reply with exactly one word: supported, contradicted, or unverifiable.
+      - supported = snippets clearly confirm the claim
+      - contradicted = snippets clearly contradict the claim
+      - unverifiable = insufficient or ambiguous evidence
+
+      Do not explain. Output only one word.
+    user: |
+      Claim:
+      {claim}
+
+      Search snippets:
+      {snippets}
+
+      Verdict (supported, contradicted, or unverifiable):

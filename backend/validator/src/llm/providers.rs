@@ -7,11 +7,20 @@ fn judge_generation() -> &'static prompts::GenerationConfig {
     prompts::generation_config().expect("model_configs.yaml generation section must parse")
 }
 
-pub fn build_cloudflare_payload(system_prompt: &str, user_prompt: &str) -> serde_json::Value {
+pub fn build_cloudflare_payload(
+    system_prompt: &str,
+    user_prompt: &str,
+    json_mode: bool,
+) -> serde_json::Value {
+    let system = if json_mode {
+        format!("{system_prompt}\n\nRespond with JSON only.")
+    } else {
+        system_prompt.to_string()
+    };
     serde_json::json!({
         "temperature": judge_generation().temperature,
         "messages": [
-            { "role": "system", "content": format!("{system_prompt}\n\nRespond with JSON only.") },
+            { "role": "system", "content": system },
             { "role": "user", "content": user_prompt }
         ]
     })
@@ -21,52 +30,73 @@ pub fn build_openai_payload(
     system_prompt: &str,
     user_prompt: &str,
     model: Option<&str>,
+    json_mode: bool,
 ) -> serde_json::Value {
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": model.unwrap_or("gpt-4o-mini"),
         "temperature": judge_generation().temperature,
         "max_tokens": judge_generation().max_tokens,
         "messages": [
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": user_prompt }
-        ],
-        "response_format": { "type": "json_object" }
-    })
+        ]
+    });
+    if json_mode {
+        payload["response_format"] = serde_json::json!({ "type": "json_object" });
+    }
+    payload
 }
 
 pub fn build_claude_payload(
     system_prompt: &str,
     user_prompt: &str,
     model: Option<&str>,
+    json_mode: bool,
 ) -> serde_json::Value {
-    serde_json::json!({
-        "model": model.unwrap_or("claude-3-5-sonnet-20240620"),
-        "temperature": judge_generation().temperature,
-        "max_tokens": judge_generation().max_tokens,
-        "system": format!("{system_prompt}\n\nRespond with JSON only."),
-        "messages": [
-            { "role": "user", "content": user_prompt },
-            { "role": "assistant", "content": CLAUDE_JSON_PREFILL }
-        ]
-    })
+    if json_mode {
+        serde_json::json!({
+            "model": model.unwrap_or("claude-3-5-sonnet-20240620"),
+            "temperature": judge_generation().temperature,
+            "max_tokens": judge_generation().max_tokens,
+            "system": format!("{system_prompt}\n\nRespond with JSON only."),
+            "messages": [
+                { "role": "user", "content": user_prompt },
+                { "role": "assistant", "content": CLAUDE_JSON_PREFILL }
+            ]
+        })
+    } else {
+        serde_json::json!({
+            "model": model.unwrap_or("claude-3-5-sonnet-20240620"),
+            "temperature": judge_generation().temperature,
+            "max_tokens": judge_generation().max_tokens,
+            "system": system_prompt,
+            "messages": [
+                { "role": "user", "content": user_prompt }
+            ]
+        })
+    }
 }
 
 pub fn build_ollama_payload(
     model_name: &str,
     system_prompt: &str,
     user_prompt: &str,
+    json_mode: bool,
 ) -> serde_json::Value {
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": model_name,
         "system": system_prompt,
         "prompt": user_prompt,
         "stream": false,
-        "format": "json",
         "options": {
             "temperature": judge_generation().temperature,
             "num_ctx": 8192
         }
-    })
+    });
+    if json_mode {
+        payload["format"] = serde_json::json!("json");
+    }
+    payload
 }
 
 fn openai_chat_completions_url(base_url: Option<&str>) -> String {
@@ -84,15 +114,42 @@ fn openai_chat_completions_url(base_url: Option<&str>) -> String {
 }
 
 pub fn custom_provider_available(config: &LlmConfig) -> bool {
-    config.custom_api_key.is_some()
-        && config.custom_url.is_some()
-        && config.custom_model.is_some()
+    config.custom_api_key.is_some() && config.custom_url.is_some() && config.custom_model.is_some()
+}
+
+fn openai_rate_limited(status: reqwest::StatusCode, body: &str) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || body.contains("Too many requests")
+        || body.contains("rate limit")
+        || body.contains("Rate limit")
+}
+
+fn parse_openai_chat_response(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<String, ValidatorError> {
+    if openai_rate_limited(status, body) {
+        return Err(ValidatorError::RateLimited(body.to_string()));
+    }
+
+    if !status.is_success() {
+        return Err(ValidatorError::Llm(format!("OpenAI HTTP {status}: {body}")));
+    }
+
+    let res_json: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| ValidatorError::Llm(format!("OpenAI JSON parse failed: {e}")))?;
+
+    res_json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| ValidatorError::Llm("Invalid OpenAI response format".into()))
 }
 
 pub async fn call_custom(
     config: &LlmConfig,
     system_prompt: &str,
     user_prompt: &str,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let api_key = config
         .custom_api_key
@@ -108,7 +165,7 @@ pub async fn call_custom(
         .ok_or_else(|| ValidatorError::Llm("Custom LLM model missing".into()))?;
 
     let client = reqwest::Client::new();
-    let payload = build_openai_payload(system_prompt, user_prompt, Some(model));
+    let payload = build_openai_payload(system_prompt, user_prompt, Some(model), json_mode);
 
     let endpoint = openai_chat_completions_url(Some(url));
 
@@ -120,15 +177,13 @@ pub async fn call_custom(
         .await
         .map_err(|e| ValidatorError::Llm(e.to_string()))?;
 
-    let res_json: serde_json::Value = res
-        .json()
+    let status = res.status();
+    let body = res
+        .text()
         .await
         .map_err(|e| ValidatorError::Llm(e.to_string()))?;
 
-    res_json["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| ValidatorError::Llm("Invalid custom LLM response format".into()))
+    parse_openai_chat_response(status, &body)
 }
 
 pub async fn call_provider(
@@ -137,6 +192,7 @@ pub async fn call_provider(
     model_override: Option<&str>,
     system_prompt: &str,
     user_prompt: &str,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     match provider {
         JudgeProvider::Cloudflare => {
@@ -148,7 +204,7 @@ pub async fn call_provider(
                 .cloudflare_api_token
                 .as_deref()
                 .ok_or_else(|| ValidatorError::Llm("Cloudflare credentials missing".into()))?;
-            call_cloudflare(account_id, api_token, system_prompt, user_prompt).await
+            call_cloudflare(account_id, api_token, system_prompt, user_prompt, json_mode).await
         }
         JudgeProvider::Openai => {
             let api_key = config
@@ -161,6 +217,7 @@ pub async fn call_provider(
                 system_prompt,
                 user_prompt,
                 model_override,
+                json_mode,
             )
             .await
         }
@@ -169,7 +226,14 @@ pub async fn call_provider(
                 .claude_api_key
                 .as_deref()
                 .ok_or_else(|| ValidatorError::Llm("Claude API key missing".into()))?;
-            call_claude(api_key, system_prompt, user_prompt, model_override).await
+            call_claude(
+                api_key,
+                system_prompt,
+                user_prompt,
+                model_override,
+                json_mode,
+            )
+            .await
         }
         JudgeProvider::Ollama => {
             let ollama_url = config
@@ -177,7 +241,7 @@ pub async fn call_provider(
                 .as_deref()
                 .ok_or_else(|| ValidatorError::Llm("Ollama URL missing".into()))?;
             let model = model_override.or(config.ollama_model.as_deref());
-            call_ollama(ollama_url, model, system_prompt, user_prompt).await
+            call_ollama(ollama_url, model, system_prompt, user_prompt, json_mode).await
         }
     }
 }
@@ -198,9 +262,10 @@ async fn call_cloudflare(
     api_token: &str,
     system_prompt: &str,
     user_prompt: &str,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let client = reqwest::Client::new();
-    let payload = build_cloudflare_payload(system_prompt, user_prompt);
+    let payload = build_cloudflare_payload(system_prompt, user_prompt, json_mode);
 
     let url = format!(
         "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/moonshotai/kimi-k2.6",
@@ -232,9 +297,10 @@ async fn call_openai(
     system_prompt: &str,
     user_prompt: &str,
     model: Option<&str>,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let client = reqwest::Client::new();
-    let payload = build_openai_payload(system_prompt, user_prompt, model);
+    let payload = build_openai_payload(system_prompt, user_prompt, model, json_mode);
 
     let res = client
         .post(openai_chat_completions_url(base_url))
@@ -244,15 +310,13 @@ async fn call_openai(
         .await
         .map_err(|e| ValidatorError::Llm(e.to_string()))?;
 
-    let res_json: serde_json::Value = res
-        .json()
+    let status = res.status();
+    let body = res
+        .text()
         .await
         .map_err(|e| ValidatorError::Llm(e.to_string()))?;
 
-    res_json["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| ValidatorError::Llm("Invalid OpenAI response format".into()))
+    parse_openai_chat_response(status, &body)
 }
 
 async fn call_claude(
@@ -260,9 +324,10 @@ async fn call_claude(
     system_prompt: &str,
     user_prompt: &str,
     model: Option<&str>,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let client = reqwest::Client::new();
-    let payload = build_claude_payload(system_prompt, user_prompt, model);
+    let payload = build_claude_payload(system_prompt, user_prompt, model, json_mode);
 
     let res = client
         .post("https://api.anthropic.com/v1/messages")
@@ -283,7 +348,11 @@ async fn call_claude(
         .map(|s| s.to_string())
         .ok_or_else(|| ValidatorError::Llm("Invalid Claude response format".into()))?;
 
-    Ok(format!("{CLAUDE_JSON_PREFILL}{text}"))
+    if json_mode {
+        Ok(format!("{CLAUDE_JSON_PREFILL}{text}"))
+    } else {
+        Ok(text)
+    }
 }
 
 async fn call_ollama(
@@ -291,10 +360,11 @@ async fn call_ollama(
     ollama_model: Option<&str>,
     system_prompt: &str,
     user_prompt: &str,
+    json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let client = reqwest::Client::new();
     let model_name = ollama_model.unwrap_or("qwen3.5:4b-gpu");
-    let payload = build_ollama_payload(model_name, system_prompt, user_prompt);
+    let payload = build_ollama_payload(model_name, system_prompt, user_prompt, json_mode);
 
     let res = client
         .post(format!("{ollama_url}/api/generate"))

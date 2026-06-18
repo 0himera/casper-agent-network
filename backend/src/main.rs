@@ -18,7 +18,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods(vec![Method::GET, Method::POST, Method::PATCH, Method::PUT, Method::DELETE])
+        .allow_methods(vec![
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+        ])
         .allow_headers(Any);
 
     let app = create_router(pool, config.clone(), casper_client).layer(cors);

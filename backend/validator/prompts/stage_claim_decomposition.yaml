@@ -1,0 +1,13 @@
+# Domain: stage_claim_decomposition — extract verifiable claims from agent answer.
+current_version: v1
+versions:
+  v1:
+    system: |
+      You extract independently verifiable factual claims from an agent answer.
+      Return a strict JSON array of strings. Each string is one claim.
+      Do not add comments, markdown, or extra keys. Output only the JSON array.
+    user: |
+      Agent answer:
+      {agent_output}
+
+      Return a JSON array of verifiable claims.

@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub const REASON_PASSED: &str = "passed";
 pub const REASON_FAILED: &str = "failed";
@@ -149,7 +149,14 @@ pub fn weighted_median(prices_weights: &[(f64, f64)]) -> Option<f64> {
     sorted.last().map(|(p, _)| *p)
 }
 
-pub fn result(tool: &str, ok: bool, reason: &str, expected: Value, found: Value, checks: Value) -> crate::types::ToolResult {
+pub fn result(
+    tool: &str,
+    ok: bool,
+    reason: &str,
+    expected: Value,
+    found: Value,
+    checks: Value,
+) -> crate::types::ToolResult {
     crate::types::ToolResult {
         tool: tool.to_string(),
         ok,
@@ -173,15 +180,30 @@ pub fn malformed(tool: &str, message: &str) -> crate::types::ToolResult {
     )
 }
 
-pub fn missing(tool: &str, expected: Value, found: Value, checks: Value) -> crate::types::ToolResult {
+pub fn missing(
+    tool: &str,
+    expected: Value,
+    found: Value,
+    checks: Value,
+) -> crate::types::ToolResult {
     result(tool, false, REASON_MISSING, expected, found, checks)
 }
 
-pub fn failed(tool: &str, expected: Value, found: Value, checks: Value) -> crate::types::ToolResult {
+pub fn failed(
+    tool: &str,
+    expected: Value,
+    found: Value,
+    checks: Value,
+) -> crate::types::ToolResult {
     result(tool, false, REASON_FAILED, expected, found, checks)
 }
 
-pub fn passed(tool: &str, expected: Value, found: Value, checks: Value) -> crate::types::ToolResult {
+pub fn passed(
+    tool: &str,
+    expected: Value,
+    found: Value,
+    checks: Value,
+) -> crate::types::ToolResult {
     result(tool, true, REASON_PASSED, expected, found, checks)
 }
 

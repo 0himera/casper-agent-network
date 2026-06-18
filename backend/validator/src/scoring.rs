@@ -1,16 +1,10 @@
 use crate::llm::LlmSoftCriterionResponse;
-use crate::types::{
-    CriterionDef, CriterionEval, SoftLabel, ToolResult, Verdict,
-};
+use crate::types::{CriterionDef, CriterionEval, SoftLabel, ToolResult, Verdict};
 
 pub fn hard_from_tool(def: &CriterionDef, evidence: &[ToolResult]) -> CriterionEval {
     let tool_failed = evidence.iter().any(|e| !e.ok);
     let (passed, score, gap) = if tool_failed {
-        (
-            false,
-            0,
-            Some("tool check failed".to_string()),
-        )
+        (false, 0, Some("tool check failed".to_string()))
     } else {
         (true, def.weight, None)
     };
@@ -65,9 +59,10 @@ pub fn compute_verdict_f3(
     total: u32,
     threshold: u32,
 ) -> Verdict {
-    let critical_failed = defs.iter().zip(criteria.iter()).any(|(def, eval)| {
-        def.critical && !eval.passed
-    });
+    let critical_failed = defs
+        .iter()
+        .zip(criteria.iter())
+        .any(|(def, eval)| def.critical && !eval.passed);
 
     if critical_failed {
         return Verdict::Failed;

@@ -1,12 +1,12 @@
-use axum::{
-    extract::{Path, State},
-    http::{StatusCode, HeaderMap},
-    response::IntoResponse,
-    Json,
-};
 use crate::api::AppState;
-use crate::db::models::Reputation;
 use crate::api::x402::verify_payment;
+use crate::db::models::Reputation;
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+};
 
 pub async fn get_reputations(
     State(state): State<AppState>,
@@ -20,16 +20,21 @@ pub async fn get_reputations(
         10_000_000,
         &state.config.admin_account,
     )
-    .await {
+    .await
+    {
         return Err(e);
     }
 
-    let reputations = sqlx::query_as::<_, Reputation>(
-        "SELECT * FROM reputations ORDER BY timestamp DESC"
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+    let reputations =
+        sqlx::query_as::<_, Reputation>("SELECT * FROM reputations ORDER BY timestamp DESC")
+            .fetch_all(&state.pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+            })?;
 
     Ok(Json(serde_json::json!(reputations)))
 }
@@ -39,7 +44,7 @@ pub async fn get_agent_reputations(
     Path(agent_pubkey): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let reputations = sqlx::query_as::<_, Reputation>(
-        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC"
+        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC",
     )
     .bind(agent_pubkey)
     .fetch_all(&state.pool)

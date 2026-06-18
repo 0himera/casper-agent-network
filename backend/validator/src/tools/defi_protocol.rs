@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::common::{
     contains_ci, failed, find_percent_near, malformed, missing, passed, within_abs,
@@ -13,9 +13,7 @@ pub fn validate_revert_rate(fixture: &Value, agent_output: &str) -> crate::types
         .and_then(|v| v.as_f64())
         .ok_or_else(|| "missing revert_rate".to_string());
 
-    let threshold = fixture
-        .get("anomaly_threshold")
-        .and_then(|v| v.as_f64());
+    let threshold = fixture.get("anomaly_threshold").and_then(|v| v.as_f64());
 
     let expected_rate = match expected_rate {
         Ok(r) => r,
@@ -114,7 +112,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn fixture() -> Value {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/defi_protocol_risk.json");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/defi_protocol_risk.json");
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     }
 
@@ -157,10 +156,7 @@ mod tests {
 
     #[test]
     fn check_risk_thresholds_fail_safe_when_high() {
-        let r = check_risk_thresholds(
-            &fixture(),
-            "Revert rate is 15%, classification: Safe.",
-        );
+        let r = check_risk_thresholds(&fixture(), "Revert rate is 15%, classification: Safe.");
         assert!(!r.ok);
     }
 

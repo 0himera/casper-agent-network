@@ -70,24 +70,14 @@ pub fn aggregate_soft_responses(samples: &[SoftGraderLlmResponse]) -> SoftGrader
         .first()
         .expect("self-consistency requires at least one sample");
 
-    let criterion_ids: Vec<String> = first
-        .criteria
-        .iter()
-        .map(|c| c.id.clone())
-        .collect();
+    let criterion_ids: Vec<String> = first.criteria.iter().map(|c| c.id.clone()).collect();
 
     let mut aggregated_criteria = Vec::with_capacity(criterion_ids.len());
 
     for id in criterion_ids {
         let labels: Vec<SoftLabel> = samples
             .iter()
-            .filter_map(|sample| {
-                sample
-                    .criteria
-                    .iter()
-                    .find(|c| c.id == id)
-                    .map(|c| c.label)
-            })
+            .filter_map(|sample| sample.criteria.iter().find(|c| c.id == id).map(|c| c.label))
             .collect();
 
         let majority = pick_majority_label(&labels);
@@ -117,12 +107,7 @@ pub fn aggregate_soft_responses(samples: &[SoftGraderLlmResponse]) -> SoftGrader
 
     let explanation = samples
         .iter()
-        .find_map(|sample| {
-            sample
-                .criteria
-                .first()
-                .map(|_| sample.explanation.clone())
-        })
+        .find_map(|sample| sample.criteria.first().map(|_| sample.explanation.clone()))
         .unwrap_or_else(|| first.explanation.clone());
 
     SoftGraderLlmResponse {

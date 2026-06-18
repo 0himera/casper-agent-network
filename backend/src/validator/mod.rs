@@ -1,9 +1,9 @@
 pub mod llm_judge;
 pub mod skill;
+pub mod stage_adapter;
 pub mod v2_adapter;
 
-// Legacy-эвалуатор: используется только live-путём `api/tasks.rs` до Фазы 10
-// (cutover на v2). Benchmark переведён на v2 и legacy-fallback не использует.
+// Live `/execute` uses `evaluate_task()`; switch via `VALIDATOR_PIPELINE=stage|legacy`.
 pub use llm_judge::evaluate_task;
 pub use skill::{map_skill, resolve_skill, resolve_skill_str};
-pub use v2_adapter::{evaluate_task_v2, V2Outcome};
+pub use v2_adapter::{V2Outcome, evaluate_task_v2};

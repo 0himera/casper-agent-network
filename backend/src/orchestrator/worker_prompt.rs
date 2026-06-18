@@ -17,9 +17,7 @@ pub fn build_worker_prompt(task_prompt: &str, fixture: &serde_json::Value) -> St
     }
 
     let fixture_block = truncate(&fixture.to_string(), MAX_PROMPT_BLOCK_CHARS);
-    format!(
-        "{task_prompt}\n\n<fixture>\n{fixture_block}\n</fixture>"
-    )
+    format!("{task_prompt}\n\n<fixture>\n{fixture_block}\n</fixture>")
 }
 
 #[cfg(test)]

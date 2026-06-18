@@ -2,6 +2,8 @@ mod providers;
 mod routing;
 mod self_consistency;
 
+pub use routing::call_judge_raw;
+
 use std::cell::Cell;
 
 use crate::types::{CriterionDef, LlmConfig, SkillId, SoftLabel, ValidatorError};
@@ -32,20 +34,6 @@ fn record_judge_call(provider: crate::types::JudgeProvider) {
 }
 
 #[derive(Debug, Clone)]
-pub struct GraderLlmResponse {
-    pub criteria: Vec<LlmCriterionResponse>,
-    pub explanation: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct LlmCriterionResponse {
-    pub id: String,
-    pub passed: bool,
-    pub score: u32,
-    pub gap: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub struct LlmSoftCriterionResponse {
     pub id: String,
     pub label: SoftLabel,
@@ -70,14 +58,14 @@ pub async fn grade_soft_labels(
         return Ok(mock_response_f3(skill, soft_defs, agent_output));
     }
 
-    let text = match routing::call_judge_with_fallback(config, skill, system_prompt, user_prompt).await
-    {
-        Ok(text) => text,
-        Err(ValidatorError::Llm(ref msg)) if msg.contains("no judge LLM provider") => {
-            return Ok(mock_response_f3(skill, soft_defs, agent_output));
-        }
-        Err(err) => return Err(err),
-    };
+    let text =
+        match routing::call_judge_with_fallback(config, skill, system_prompt, user_prompt).await {
+            Ok(text) => text,
+            Err(ValidatorError::Llm(ref msg)) if msg.contains("no judge LLM provider") => {
+                return Ok(mock_response_f3(skill, soft_defs, agent_output));
+            }
+            Err(err) => return Err(err),
+        };
     parse_soft_grader_response(text)
 }
 
@@ -142,29 +130,6 @@ pub async fn grade_soft_labels_with_self_consistency(
     Ok(aggregate_soft_responses(&samples))
 }
 
-pub async fn grade(
-    config: &LlmConfig,
-    skill: SkillId,
-    criteria_defs: &[CriterionDef],
-    system_prompt: &str,
-    user_prompt: &str,
-    agent_output: &str,
-) -> Result<GraderLlmResponse, ValidatorError> {
-    if config.mock {
-        return Ok(mock_response(skill, criteria_defs, agent_output));
-    }
-
-    let text = match routing::call_judge_with_fallback(config, skill, system_prompt, user_prompt).await
-    {
-        Ok(text) => text,
-        Err(ValidatorError::Llm(ref msg)) if msg.contains("no judge LLM provider") => {
-            return Ok(mock_response(skill, criteria_defs, agent_output));
-        }
-        Err(err) => return Err(err),
-    };
-    parse_grader_response(text)
-}
-
 pub(crate) fn mock_response_f3(
     skill: SkillId,
     soft_defs: &[&CriterionDef],
@@ -185,51 +150,20 @@ pub(crate) fn mock_response_f3(
     }
 }
 
-fn mock_response(
-    skill: SkillId,
-    criteria_defs: &[CriterionDef],
-    agent_output: &str,
-) -> GraderLlmResponse {
-    let mock_fail = agent_output.len() < 20 || agent_output.contains("error");
-    let mock_gap = "mock: output too short or contains error";
-
-    let criteria = criteria_defs
-        .iter()
-        .map(|def| {
-            if mock_fail {
-                LlmCriterionResponse {
-                    id: def.id.to_string(),
-                    passed: false,
-                    score: def.weight / 2,
-                    gap: Some(mock_gap.to_string()),
-                }
-            } else {
-                LlmCriterionResponse {
-                    id: def.id.to_string(),
-                    passed: true,
-                    score: def.weight,
-                    gap: None,
-                }
-            }
-        })
-        .collect();
-
-    GraderLlmResponse {
-        criteria,
-        explanation: format!("Mock evaluation for skill {}", skill),
-    }
-}
-
 pub(crate) fn parse_soft_label(value: &str) -> Result<SoftLabel, ValidatorError> {
     match value {
         "strong" => Ok(SoftLabel::Strong),
         "partial" => Ok(SoftLabel::Partial),
         "missing" => Ok(SoftLabel::Missing),
-        other => Err(ValidatorError::Parse(format!("unknown soft label: {other}"))),
+        other => Err(ValidatorError::Parse(format!(
+            "unknown soft label: {other}"
+        ))),
     }
 }
 
-pub(crate) fn parse_soft_grader_response(text: String) -> Result<SoftGraderLlmResponse, ValidatorError> {
+pub(crate) fn parse_soft_grader_response(
+    text: String,
+) -> Result<SoftGraderLlmResponse, ValidatorError> {
     let json_str = extract_json(&text)?;
     let parsed: serde_json::Value =
         serde_json::from_str(json_str).map_err(|e| ValidatorError::Parse(e.to_string()))?;
@@ -271,40 +205,6 @@ pub(crate) fn extract_json(text: &str) -> Result<&str, ValidatorError> {
     Ok(&text[json_start..json_end])
 }
 
-fn parse_grader_response(text: String) -> Result<GraderLlmResponse, ValidatorError> {
-    let json_str = extract_json(&text)?;
-    let parsed: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| ValidatorError::Parse(e.to_string()))?;
-
-    let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
-
-    let criteria = parsed["criteria"]
-        .as_array()
-        .ok_or_else(|| ValidatorError::Parse("Missing criteria array in LLM response".into()))?
-        .iter()
-        .map(|c| {
-            let id = c["id"]
-                .as_str()
-                .ok_or_else(|| ValidatorError::Parse("Criterion missing id".into()))?
-                .to_string();
-            let passed = c["passed"].as_bool().unwrap_or(false);
-            let score = c["score"].as_u64().unwrap_or(0) as u32;
-            let gap = c["gap"].as_str().map(|s| s.to_string());
-            Ok(LlmCriterionResponse {
-                id,
-                passed,
-                score,
-                gap,
-            })
-        })
-        .collect::<Result<Vec<_>, ValidatorError>>()?;
-
-    Ok(GraderLlmResponse {
-        criteria,
-        explanation,
-    })
-}
-
 pub(crate) fn record_provider_call(provider: crate::types::JudgeProvider) {
     record_judge_call(provider);
 }
@@ -315,8 +215,8 @@ mod tests {
     use crate::prompts;
     use crate::types::CriterionKind;
     use providers::{
-        build_claude_payload, build_cloudflare_payload, build_ollama_payload, build_openai_payload,
-        CLAUDE_JSON_PREFILL,
+        CLAUDE_JSON_PREFILL, build_claude_payload, build_cloudflare_payload, build_ollama_payload,
+        build_openai_payload,
     };
 
     fn judge_generation() -> &'static prompts::GenerationConfig {
@@ -326,7 +226,7 @@ mod tests {
     #[test]
     fn openai_payload_uses_temperature_zero_and_json_format() {
         let generation = judge_generation();
-        let payload = build_openai_payload("system", "user", None);
+        let payload = build_openai_payload("system", "user", None, true);
         assert_eq!(payload["temperature"], generation.temperature);
         assert_eq!(payload["max_tokens"], generation.max_tokens);
         assert_eq!(payload["response_format"]["type"], "json_object");
@@ -335,7 +235,7 @@ mod tests {
     #[test]
     fn claude_payload_uses_temperature_zero_and_json_prefill() {
         let generation = judge_generation();
-        let payload = build_claude_payload("system", "user", None);
+        let payload = build_claude_payload("system", "user", None, true);
         assert_eq!(payload["temperature"], generation.temperature);
         assert_eq!(payload["max_tokens"], generation.max_tokens);
         let messages = payload["messages"].as_array().expect("messages array");
@@ -346,7 +246,7 @@ mod tests {
     #[test]
     fn cloudflare_payload_uses_temperature_zero() {
         let generation = judge_generation();
-        let payload = build_cloudflare_payload("system", "user");
+        let payload = build_cloudflare_payload("system", "user", true);
         assert_eq!(payload["temperature"], generation.temperature);
         let system = payload["messages"][0]["content"]
             .as_str()
@@ -392,7 +292,7 @@ mod tests {
     #[test]
     fn ollama_payload_uses_temperature_zero_and_json_format() {
         let generation = judge_generation();
-        let payload = build_ollama_payload("test-model", "system", "user");
+        let payload = build_ollama_payload("test-model", "system", "user", true);
         assert_eq!(payload["format"], "json");
         assert_eq!(payload["options"]["temperature"], generation.temperature);
     }

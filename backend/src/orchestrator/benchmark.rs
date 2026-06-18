@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::orchestrator::executor::execute_agent;
-use crate::validator::{evaluate_task_v2, V2Outcome};
+use crate::validator::{V2Outcome, evaluate_task_v2};
 
 fn v2_prompt(skill: &str) -> Option<&'static str> {
     match skill {
@@ -32,7 +32,16 @@ async fn evaluate_benchmark_skill(
     processing_time_ms: u64,
     config: &Config,
 ) -> Option<(u32, u64, serde_json::Value)> {
-    match evaluate_task_v2(skill, prompt, agent_output, processing_time_ms, None, config).await {
+    match evaluate_task_v2(
+        skill,
+        prompt,
+        agent_output,
+        processing_time_ms,
+        None,
+        config,
+    )
+    .await
+    {
         V2Outcome::Ok(out) => {
             let rubric_json =
                 serde_json::to_value(&out.criteria).unwrap_or(serde_json::Value::Null);
@@ -46,17 +55,11 @@ async fn evaluate_benchmark_skill(
             None
         }
         V2Outcome::FixtureInvalid(err) => {
-            eprintln!(
-                "invalid fixture for skill '{}': {}",
-                skill, err
-            );
+            eprintln!("invalid fixture for skill '{}': {}", skill, err);
             None
         }
         V2Outcome::FixtureMissing(path) => {
-            eprintln!(
-                "fixture missing for skill '{}' ({}), skipping",
-                skill, path
-            );
+            eprintln!("fixture missing for skill '{}' ({}), skipping", skill, path);
             None
         }
         V2Outcome::EngineError(err) => {
@@ -77,15 +80,16 @@ pub fn start_benchmark_background(
     config: Config,
 ) {
     tokio::spawn(async move {
-        println!("Starting background benchmark for agent {}", agent_public_key);
+        println!(
+            "Starting background benchmark for agent {}",
+            agent_public_key
+        );
 
         // 1. Set agent status to benchmarking
-        let _ = sqlx::query(
-            "UPDATE agents SET status = 'benchmarking' WHERE public_key = ?"
-        )
-        .bind(&agent_public_key)
-        .execute(&pool)
-        .await;
+        let _ = sqlx::query("UPDATE agents SET status = 'benchmarking' WHERE public_key = ?")
+            .bind(&agent_public_key)
+            .execute(&pool)
+            .await;
 
         let mut total_score = 0;
         let mut skill_count = 0;
@@ -166,7 +170,7 @@ pub fn start_benchmark_background(
             let _ = sqlx::query(
                 "INSERT INTO reputations (id, agent_public_key, skill, score) 
                  VALUES (?, ?, ?, ?) 
-                 ON DUPLICATE KEY UPDATE score = ?"
+                 ON DUPLICATE KEY UPDATE score = ?",
             )
             .bind(reputation_id)
             .bind(&agent_public_key)
@@ -195,7 +199,7 @@ pub fn start_benchmark_background(
         );
 
         let _ = sqlx::query(
-            "UPDATE agents SET status = 'active', recommended_price_motes = ? WHERE public_key = ?"
+            "UPDATE agents SET status = 'active', recommended_price_motes = ? WHERE public_key = ?",
         )
         .bind(avg_price)
         .bind(&agent_public_key)

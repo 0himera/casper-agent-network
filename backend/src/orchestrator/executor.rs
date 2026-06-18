@@ -27,8 +27,10 @@ pub async fn execute_agent(
     let output = if is_hosted {
         // Hosted agent: platform executes the LLM directly using system prompt
         let sys_prompt = system_prompt.unwrap_or("You are a helpful AI assistant.");
-        
-        if let (Some(account_id), Some(api_token)) = (&config.cloudflare_account_id, &config.cloudflare_api_token) {
+
+        if let (Some(account_id), Some(api_token)) =
+            (&config.cloudflare_account_id, &config.cloudflare_api_token)
+        {
             let client = reqwest::Client::new();
             let payload = json!({
                 "messages": [
@@ -42,7 +44,8 @@ pub async fn execute_agent(
                 account_id
             );
 
-            let res = client.post(&url)
+            let res = client
+                .post(&url)
                 .bearer_auth(api_token)
                 .json(&payload)
                 .send()
@@ -63,7 +66,8 @@ pub async fn execute_agent(
                 ]
             });
 
-            let res = client.post("https://api.openai.com/v1/chat/completions")
+            let res = client
+                .post("https://api.openai.com/v1/chat/completions")
                 .bearer_auth(key)
                 .json(&payload)
                 .send()
@@ -85,7 +89,8 @@ pub async fn execute_agent(
                 ]
             });
 
-            let res = client.post("https://api.anthropic.com/v1/messages")
+            let res = client
+                .post("https://api.anthropic.com/v1/messages")
                 .header("x-api-key", key)
                 .header("anthropic-version", "2023-06-01")
                 .json(&payload)
@@ -110,14 +115,18 @@ pub async fn execute_agent(
                 }
             });
 
-            let res = client.post(format!("{}/api/generate", ollama_url))
+            let res = client
+                .post(format!("{}/api/generate", ollama_url))
                 .json(&payload)
                 .send()
                 .await?;
 
             let res_json: serde_json::Value = res.json().await?;
-            println!("Ollama hosted agent response received. Model: {}", res_json["model"]);
-            
+            println!(
+                "Ollama hosted agent response received. Model: {}",
+                res_json["model"]
+            );
+
             let output_text = if let Some(thinking) = res_json["thinking"].as_str() {
                 if !thinking.is_empty() {
                     thinking.to_string()
@@ -173,7 +182,7 @@ pub async fn execute_agent(
         };
 
         let res_json: serde_json::Value = res.json().await?;
-        
+
         if let Some(content) = res_json["choices"][0]["message"]["content"].as_str() {
             content.to_string()
         } else if let Some(result) = res_json["result"].as_str() {

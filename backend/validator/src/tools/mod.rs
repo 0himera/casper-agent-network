@@ -55,7 +55,9 @@ mod tests {
     use std::path::PathBuf;
 
     fn load_fixture(name: &str) -> serde_json::Value {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures").join(name);
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(name);
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     }
 
@@ -80,7 +82,10 @@ mod tests {
     fn all_known_tools_are_routed() {
         for name in KNOWN_TOOLS {
             let result = run_tool(name, &serde_json::json!({}), "output");
-            assert_ne!(result.details.get("error"), Some(&serde_json::json!("unknown tool")));
+            assert_ne!(
+                result.details.get("error"),
+                Some(&serde_json::json!("unknown tool"))
+            );
             assert_eq!(result.tool, *name);
         }
     }

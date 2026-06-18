@@ -1,11 +1,11 @@
+use crate::casper::contract::CasperClient;
+use crate::db::DbPool;
 use axum::{
-    http::{HeaderMap, StatusCode},
     Json,
+    http::{HeaderMap, StatusCode},
 };
 use serde::Deserialize;
 use serde_json::json;
-use crate::casper::contract::CasperClient;
-use crate::db::DbPool;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -42,41 +42,67 @@ pub async fn verify_payment(
 
     let x_payment_str = match x_payment_val.to_str() {
         Ok(s) => s,
-        Err(_) => return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid X-Payment header format" })))),
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid X-Payment header format" })),
+            ));
+        }
     };
 
     // 2. Decode base64 header
-    let decoded_bytes = match hex::decode(x_payment_str)
-        .or_else(|_| base64_decode(x_payment_str)) {
-            Ok(b) => b,
-            Err(_) => return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Failed to decode X-Payment header" })))),
+    let decoded_bytes = match hex::decode(x_payment_str).or_else(|_| base64_decode(x_payment_str)) {
+        Ok(b) => b,
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Failed to decode X-Payment header" })),
+            ));
+        }
     };
 
     let x_payment: XPaymentHeader = match serde_json::from_slice(&decoded_bytes) {
         Ok(xp) => xp,
-        Err(_) => return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid X-Payment JSON structure" })))),
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid X-Payment JSON structure" })),
+            ));
+        }
     };
 
     let deploy_hash = &x_payment.payload.txid;
 
     // 3. Prevent replay attacks - check if deploy has already been spent
-    let already_spent: Option<(String,)> = sqlx::query_as(
-        "SELECT deploy_hash FROM spent_payments WHERE deploy_hash = ?"
-    )
-    .bind(deploy_hash)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))?;
+    let already_spent: Option<(String,)> =
+        sqlx::query_as("SELECT deploy_hash FROM spent_payments WHERE deploy_hash = ?")
+            .bind(deploy_hash)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            })?;
 
     if already_spent.is_some() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Payment proof already spent" }))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Payment proof already spent" })),
+        ));
     }
 
     // 4. Verify on-chain payment proof
     let is_verified = casper_client
         .verify_payment_proof(deploy_hash, expected_amount_motes, merchant_pubkey)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e })),
+            )
+        })?;
 
     if !is_verified {
         return Err(make_402_challenge(expected_amount_motes, merchant_pubkey));
@@ -87,7 +113,12 @@ pub async fn verify_payment(
         .bind(deploy_hash)
         .execute(pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     Ok(())
 }

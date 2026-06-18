@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Agent {
@@ -34,6 +34,7 @@ pub struct Task {
     pub prompt: String,
     pub deadline: u64,
     pub result_signature: Option<String>,
+    pub validator_audit: Option<serde_json::Value>,
     pub timestamp: DateTime<Utc>,
 }
 
