@@ -15,7 +15,10 @@ import {
   Hash,
   PublicKey,
   SessionBuilder,
-  Key
+  Key,
+  RpcClient,
+  HttpHandler,
+  Transaction
 } from 'casper-js-sdk';
 
 const server = new McpServer({
@@ -295,6 +298,136 @@ server.tool(
     } catch (err: any) {
       return {
         content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 11. get_signing_instructions
+server.tool(
+  "get_signing_instructions",
+  {},
+  async () => {
+    const instructions = `
+# How to Sign Casper v5 Transactions Locally
+
+To interact with the Casper Agent Network securely, you must sign transactions locally using your private PEM key before broadcasting.
+
+### Node.js Example
+
+\`\`\`javascript
+import { Transaction, PrivateKey } from 'casper-js-sdk';
+import fs from 'fs';
+
+// 1. Get the unsigned transaction JSON from MCP (e.g. from \`submit_execution_result\`)
+const unsignedTxJson = /* get transaction JSON */;
+
+// 2. Load the transaction object
+const transaction = Transaction.fromJSON(unsignedTxJson);
+
+// 3. Load your private key from PEM file
+const privateKeyPem = fs.readFileSync('./keys/secret_key.pem', 'utf8');
+const privateKey = PrivateKey.fromPem(privateKeyPem);
+
+// 4. Sign the transaction locally
+transaction.sign(privateKey);
+
+// 5. Export the signed transaction JSON to send to broadcast_transaction tool
+const signedTxJson = transaction.toJSON();
+\`\`\`
+
+Once signed, call the \`broadcast_transaction\` tool in this MCP server to submit it to the blockchain.
+`;
+    return {
+      content: [{ type: "text", text: instructions }]
+    };
+  }
+);
+
+// 12. broadcast_transaction
+server.tool(
+  "broadcast_transaction",
+  {
+    signedTransaction: z.any().describe("The JSON object of the signed Casper transaction"),
+  },
+  async ({ signedTransaction }) => {
+    try {
+      const transaction = Transaction.fromJSON(signedTransaction);
+      const rpcHandler = new HttpHandler(config.nodeUrl);
+      const rpcClient = new RpcClient(rpcHandler);
+      
+      const result = await rpcClient.putTransaction(transaction);
+      return {
+        content: [{ 
+          type: "text", 
+          text: JSON.stringify({
+            success: true,
+            transactionHash: result.transactionHash
+          }, null, 2)
+        }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error broadcasting transaction: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 13. get_task_details
+server.tool(
+  "get_task_details",
+  {
+    taskId: z.string().describe("Task ID to fetch details for"),
+  },
+  async ({ taskId }) => {
+    try {
+      const taskRepo = AppDataSource.getRepository(TaskEntity);
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return {
+          content: [{ type: "text", text: `Task not found: ${taskId}` }],
+          isError: true
+        };
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify(task, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error fetching task: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 14. get_assigned_tasks
+server.tool(
+  "get_assigned_tasks",
+  {
+    agentPublicKey: z.string().describe("Public key of the agent to fetch tasks for"),
+  },
+  async ({ agentPublicKey }) => {
+    try {
+      const taskRepo = AppDataSource.getRepository(TaskEntity);
+      const tasks = await taskRepo.find({
+        where: {
+          assigned_agent_public_key: agentPublicKey,
+          status: 'InProgress'
+        },
+        order: { timestamp: 'DESC' }
+      });
+      // Filter out tasks that already have a result submitted
+      const activeTasks = tasks.filter(t => !t.result_hash);
+      return {
+        content: [{ type: "text", text: JSON.stringify(activeTasks, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error fetching assigned tasks: ${err.message}` }],
         isError: true
       };
     }
