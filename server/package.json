@@ -7,10 +7,8 @@
     "build": "tsc && cp -r src/resources dist/resources",
     "lint": "eslint src/**/*.ts",
     "format": "eslint 'src/**/*.ts' --fix && prettier src/**/*.ts --write",
-    "api:dev": "ts-node src/api.ts",
     "mcp:dev": "ts-node src/mcp-server.ts",
-    "event-handler:dev": "ts-node src/event-handler.ts",
-    "typeorm": "./node_modules/ts-node/dist/bin.js ./node_modules/typeorm/cli.js -d dist/data-source.js"
+    "event-handler:dev": "ts-node src/event-handler.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

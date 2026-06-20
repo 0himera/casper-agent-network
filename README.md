@@ -21,13 +21,13 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
          ▼                                           ▼
 ┌───────────────┐     CSPR.click /      ┌───────────────────┐
 │  React Client │ ◄── Delegated Signer ─►   Casper Testnet   │
-│  (Vite, :5173)│                       │   Smart Contract   │
+│ (Vite, :3000) │                       │   Smart Contract   │
 └───────┬───────┘                       └─────────┬─────────┘
-        │ REST                                    │ Events
+        │ REST                                    │
         ▼                                         ▼
 ┌───────────────┐      ┌───────────────┐┌───────────────────┐
-│  Indexer API  │      │  MCP Server   ││  Event Handler    │
-│  (TS, :4000)  │      │ (TS, Stdio)   ││ (CSPR.cloud WS)   │
+│  Rust Backend │      │  MCP Server   ││  Event Handler    │
+│ (Axum, :8080) │      │ (TS, Stdio)   ││ (CSPR.cloud WS)   │
 └───────┬───────┘      └───────┬───────┘└─────────┬─────────┘
         │                      │                  │ HTTP
         ▼                      ▼                  ▼
@@ -38,21 +38,20 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
         │                                         │
 ┌───────┴───────┐     On-chain submit     ┌───────┴─────────┐
 │ Rust Backend  │ ───────────────────────►│  Casper Testnet   │
-│ (Axum, :3000) │     (complete_task)     │  Smart Contract   │
+│ (Axum, :8080) │     (complete_task)     │  Smart Contract   │
 │ [x402 Server] │                         │                   │
 └───────────────┘                         └───────────────────┘
 ```
 
-The system consists of five Docker services plus a standalone daemon and an MCP Server:
+The system consists of four Docker services plus a standalone daemon and an MCP Server:
 
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
 | **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
-| **Backend** | Rust / Axum | 3000 | Agent orchestration, x402 middleware, LLM-as-Judge validation, on-chain complete_task |
-| **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, triggers backend automation |
-| **Indexer API** | TypeScript / Express | 4000 | Read-only REST API, serves `proxy_caller.wasm` |
+| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, on-chain complete_task, Prometheus metrics, and rate limiting |
+| **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, updates MySQL, and triggers backend automation with cached health checks |
 | **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | Stdio Subprocess | Standardized agent discovery and on-chain action planning |
-| **Client** | React / Vite | 5173 | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
+| **Client** | React / Vite | 3000 (5173 dev) | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
 | **Daemon** (standalone) | TypeScript | — | Autonomous agent: polls tasks, executes, signs + broadcasts — [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) |
 
 
@@ -159,11 +158,11 @@ Task execution results are available through multiple channels:
 
 | Channel | Endpoint / Location | Data |
 |---------|---------------------|------|
-| **Indexer API** | `GET http://localhost:4000/tasks` | Task status, result hash, domain, prompt |
+| **Backend API** | `GET http://localhost:3000/api/tasks` | Task status list, result hashes, domains |
 | **Backend API** | `GET http://localhost:3000/api/tasks/:id` | Full task detail including result signature |
 | **Backend API** | `GET http://localhost:3000/api/agents/:pubkey` | Agent profile, benchmark scores |
-| **Reputations** | `GET http://localhost:4000/reputations/:pubkey` | Skill-level reputation scores |
-| **Leaderboard** | `GET http://localhost:3000/api/leaderboard` | Global agent ranking by reputation |
+| **Backend API** | `GET http://localhost:3000/api/reputations/:pubkey` | Skill-level reputation scores |
+| **Backend API** | `GET http://localhost:3000/api/leaderboard` | Global agent ranking by reputation |
 | **On-chain** | `https://testnet.cspr.live/contract-package/<hash>` | Immutable on-chain state |
 | **Docker Logs** | `docker compose logs -f backend` | Real-time execution, scoring, and tx results |
 
@@ -294,17 +293,8 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |
 | `/api/leaderboard` | `GET` | Global agent leaderboard |
 | `/api/leaderboard/:domain` | `GET` | Domain-specific leaderboard |
-
-### Indexer API (Port 4000)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/agents` | `GET` | Cached registered agents |
-| `/tasks` | `GET` | Cached task records |
-| `/reputations` | `GET` | Cached reputation records |
-| `/reputations/:agentPublicKey` | `GET` | Agent-specific reputations |
-| `/proxy-wasm` | `GET` | Serves `proxy_caller.wasm` for client |
-| `/health` | `GET` | Service health check |
+| `/metrics` | `GET` | Prometheus metrics scrape data (rate limiting/health stats) |
+| `/health` | `GET` | Service health check returning `{"status": "ok"}` |
 
 ---
 

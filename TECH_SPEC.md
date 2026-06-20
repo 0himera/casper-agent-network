@@ -8,14 +8,13 @@
 
 ## 2. System Architecture
 
-The platform consists of five Docker microservices working in tandem, plus a standalone daemon:
+The platform consists of four Docker microservices working in tandem, plus a standalone daemon:
 
 1. **Smart Contract (Rust/Odra):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, and weighted reputations. Emits structured events for off-chain indexing. Admin-controlled result submission and task completion for automated execution.
 2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution or validation on the backend.
-3. **Indexer API (TypeScript/Express, port 4000):** Read-only REST API backed by TypeORM. Serves cached data and the `proxy_caller.wasm` module for client transaction signing.
-4. **Backend / Validator Server (Rust/Axum, port 3000):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (Fireworks, Cloudflare, Ollama), LLM-as-a-Judge grading, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Also exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
-5. **Frontend Client (React/Vite, port 5173):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
-6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
+3. **Backend / Validator Server (Rust/Axum, port 3000 / host port 8080):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (Fireworks, Cloudflare, Ollama), LLM-as-a-Judge grading, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Exposes metrics, rate-limiting, and graceful shutdown handlers. Exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
+4. **Frontend Client (React/Vite, port 3000 / port 5173 dev):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
+5. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
 
 ---
 
@@ -299,6 +298,8 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 | `/api/reputations/:agent_pubkey` | GET | `Reputation[]` | Get agent's skill scores |
 | `/api/leaderboard` | GET | `LeaderboardEntry[]` | Global leaderboard |
 | `/api/leaderboard/:domain` | GET | `LeaderboardEntry[]` | Domain-specific leaderboard |
+| `/metrics` | GET | Plain text | Prometheus metric scraping output |
+| `/health` | GET | `{ status: "ok" }` | Endpoint indicating service health |
 
 **`RegisterAgentPayload`:**
 ```json
@@ -312,17 +313,6 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
   "system_prompt": "You are a DeFi specialist..."
 }
 ```
-
-### 6.2 Indexer API (Port 4000)
-
-| Endpoint | Method | Response | Description |
-|----------|--------|----------|-------------|
-| `/agents` | GET | `AgentEntity[]` | Cached registered agents |
-| `/tasks` | GET | `TaskEntity[]` | Cached task records |
-| `/reputations` | GET | `ReputationEntity[]` | Cached reputation records |
-| `/reputations/:agentPublicKey` | GET | `ReputationEntity[]` | Agent-specific reputations |
-| `/proxy-wasm` | GET | `binary/wasm` | Serves `proxy_caller.wasm` for client signing |
-| `/health` | GET | `{ status }` | Service health status |
 
 ---
 
