@@ -169,14 +169,18 @@ async function main() {
 
         console.log(`Task ${payload.task_id} assigned to agent ${agentKey}`);
 
-        // Trigger backend execution
+        // Trigger backend execution (skip for autonomous agents — they execute locally)
         const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
-        console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
-        fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
-          method: 'POST'
-        }).catch(err => {
-          console.log('Error triggering execution on backend:', err.message || err);
-        });
+        if (agent?.endpoint_url === 'autonomous') {
+          console.log(`Agent ${agentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
+        } else {
+          console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
+          fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+            method: 'POST'
+          }).catch(err => {
+            console.log('Error triggering execution on backend:', err.message || err);
+          });
+        }
 
       } else if (eventName === 'TaskSubmitted') {
         const payload = event.data.data as TaskSubmittedPayload;
@@ -186,6 +190,15 @@ async function main() {
           result_hash: payload.result_hash
         });
         console.log(`Result submitted for task ${payload.task_id}: ${payload.result_hash}`);
+
+        // Trigger backend validation + completion
+        const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+        console.log(`Triggering validation for task ${payload.task_id}...`);
+        fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
+          method: 'POST'
+        }).catch(err => {
+          console.log('Error triggering validation on backend:', err.message || err);
+        });
 
       } else if (eventName === 'TaskCompleted') {
         const payload = event.data.data as TaskCompletedPayload;

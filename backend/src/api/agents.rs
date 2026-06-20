@@ -178,6 +178,39 @@ pub async fn update_agent_price(
     Ok(Json(agent))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateCapabilitiesPayload {
+    pub name: Option<String>,
+    pub endpoint_url: Option<String>,
+    pub skills: Vec<String>,
+    pub system_prompt: Option<String>,
+}
+
+pub async fn update_agent_capabilities(
+    State(state): State<AppState>,
+    Path(public_key): Path<String>,
+    Json(payload): Json<UpdateCapabilitiesPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let name = payload.name.unwrap_or_else(|| "Autonomous Agent".to_string());
+    let _ = sqlx::query(
+        "INSERT INTO agents (public_key, name, endpoint_url, system_prompt, status)
+         VALUES (?, ?, ?, ?, 'active')
+         ON DUPLICATE KEY UPDATE endpoint_url = ?, system_prompt = ?",
+    )
+    .bind(&public_key)
+    .bind(&name)
+    .bind(&payload.endpoint_url)
+    .bind(&payload.system_prompt)
+    .bind(&payload.endpoint_url)
+    .bind(&payload.system_prompt)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    println!("Capabilities updated for agent {}", public_key);
+    Ok(StatusCode::OK)
+}
+
 pub async fn get_agent_benchmarks(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
