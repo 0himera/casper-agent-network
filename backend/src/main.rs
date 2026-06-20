@@ -8,7 +8,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting Casper Agent Network Backend...");
+    tracing_subscriber::fmt::init();
+    tracing::info!("Starting Casper Agent Network Backend...");
 
     let config = Config::from_env();
     let pool = init_db(&config.database_url).await?;
@@ -31,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("Server running on http://{}", addr);
+    tracing::info!("Server running on http://{}", addr);
 
     axum::serve(listener, app).await?;
 

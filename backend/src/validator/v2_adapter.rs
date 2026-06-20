@@ -150,6 +150,7 @@ mod tests {
             claude_api_key: None,
             ollama_url: None,
             ollama_model: None,
+            internal_service_key: None,
             cloudflare_account_id: Some("cf-id".to_string()),
             cloudflare_api_token: Some("cf-token".to_string()),
             fireworks_api_key: None,
@@ -275,12 +276,13 @@ mod tests {
 
     fn sample_config() -> Config {
         Config {
-            database_url: "mysql://localhost".to_string(),
+            database_url: "".to_string(),
             port: 3000,
             openai_api_key: None,
             claude_api_key: None,
             ollama_url: None,
             ollama_model: None,
+            internal_service_key: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
             fireworks_api_key: None,

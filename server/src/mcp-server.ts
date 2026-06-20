@@ -1,10 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { AppDataSource } from './data-source';
-import { AgentEntity } from "./entity/agent.entity";
-import { TaskEntity } from "./entity/task.entity";
-import { ReputationEntity } from "./entity/reputation.entity";
+import { pool } from './db';
+import { RowDataPacket } from 'mysql2';
 import { config } from './config';
 import fs from 'fs';
 import path from 'path';
@@ -80,8 +78,7 @@ server.tool(
   "list_agents",
   {},
   async () => {
-    const agentRepo = AppDataSource.getRepository(AgentEntity);
-    const agents = await agentRepo.find({ order: { timestamp: 'DESC' } });
+    const [agents] = await pool.query('SELECT * FROM agents ORDER BY timestamp DESC');
     return {
       content: [{ type: "text", text: JSON.stringify(agents, null, 2) }]
     };
@@ -95,8 +92,8 @@ server.tool(
     agentPublicKey: z.string().describe("Casper public key of the agent"),
   },
   async ({ agentPublicKey }) => {
-    const agentRepo = AppDataSource.getRepository(AgentEntity);
-    const agent = await agentRepo.findOne({ where: { public_key: agentPublicKey } });
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [agentPublicKey]);
+    const agent = rows[0];
     if (!agent) {
       return {
         content: [{ type: "text", text: `Agent not found: ${agentPublicKey}` }],
@@ -117,10 +114,8 @@ server.tool(
     skill: z.string().describe("Skill domain name (e.g. defi_analysis, code_review)"),
   },
   async ({ agentPublicKey, skill }) => {
-    const reputationRepo = AppDataSource.getRepository(ReputationEntity);
-    const reputation = await reputationRepo.findOne({
-      where: { agent_public_key: agentPublicKey, skill }
-    });
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM reputations WHERE agent_public_key = ? AND skill = ?', [agentPublicKey, skill]);
+    const reputation = rows[0];
     if (!reputation) {
       return {
         content: [{ type: "text", text: `No reputation score for agent ${agentPublicKey} on skill ${skill}` }]
@@ -139,13 +134,12 @@ server.tool(
     domain: z.string().optional().describe("Optional skill domain filter"),
   },
   async ({ domain }) => {
-    const reputationRepo = AppDataSource.getRepository(ReputationEntity);
-    const query = reputationRepo.createQueryBuilder("reputation")
-      .orderBy("reputation.score", "DESC");
+    let items;
     if (domain) {
-      query.where("reputation.skill = :domain", { domain });
+      [items] = await pool.query('SELECT * FROM reputations WHERE skill = ? ORDER BY score DESC', [domain]);
+    } else {
+      [items] = await pool.query('SELECT * FROM reputations ORDER BY score DESC');
     }
-    const items = await query.getMany();
     return {
       content: [{ type: "text", text: JSON.stringify(items, null, 2) }]
     };
@@ -157,11 +151,7 @@ server.tool(
   "find_open_tasks",
   {},
   async () => {
-    const taskRepo = AppDataSource.getRepository(TaskEntity);
-    const tasks = await taskRepo.find({
-      where: { status: "Open" },
-      order: { timestamp: 'DESC' }
-    });
+    const [tasks] = await pool.query('SELECT * FROM tasks WHERE status = "Open" ORDER BY timestamp DESC');
     return {
       content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }]
     };
@@ -384,8 +374,8 @@ server.tool(
   },
   async ({ taskId }) => {
     try {
-      const taskRepo = AppDataSource.getRepository(TaskEntity);
-      const task = await taskRepo.findOne({ where: { id: taskId } });
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+      const task = rows[0];
       if (!task) {
         return {
           content: [{ type: "text", text: `Task not found: ${taskId}` }],
@@ -412,14 +402,7 @@ server.tool(
   },
   async ({ agentPublicKey }) => {
     try {
-      const taskRepo = AppDataSource.getRepository(TaskEntity);
-      const tasks = await taskRepo.find({
-        where: {
-          assigned_agent_public_key: agentPublicKey,
-          status: 'InProgress'
-        },
-        order: { timestamp: 'DESC' }
-      });
+      const [tasks] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE assigned_agent_public_key = ? AND status = "InProgress" ORDER BY timestamp DESC', [agentPublicKey]);
       // Filter out tasks that already have a result submitted
       const activeTasks = tasks.filter(t => !t.result_hash);
       return {
@@ -435,7 +418,7 @@ server.tool(
 );
 
 async function main() {
-  await AppDataSource.initialize();
+  // await AppDataSource.initialize();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

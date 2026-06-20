@@ -11,6 +11,7 @@ fn test_config() -> Config {
         claude_api_key: None,
         ollama_url: None,
         ollama_model: None,
+        internal_service_key: None,
         cloudflare_account_id: None,
         cloudflare_api_token: None,
         fireworks_api_key: None,

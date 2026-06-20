@@ -6,14 +6,14 @@ use sqlx::mysql::MySqlPoolOptions;
 pub type DbPool = MySqlPool;
 
 pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
-    println!("Connecting to database at {}...", database_url);
+    tracing::info!("Connecting to database at {}...", database_url);
 
     let pool = MySqlPoolOptions::new()
         .max_connections(5)
         .connect(database_url)
         .await?;
 
-    println!("Connected to database. Running migrations/schema setup...");
+    tracing::info!("Connected to database. Running migrations/schema setup...");
 
     // Create tables in correct dependency order
     sqlx::query(
@@ -117,6 +117,6 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-    println!("Database schema successfully checked/initialized.");
+    tracing::info!("Database schema successfully checked/initialized.");
     Ok(pool)
 }

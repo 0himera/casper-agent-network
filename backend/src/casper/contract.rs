@@ -232,8 +232,7 @@ impl CasperClient {
                 let amount: u64 = amount_str.parse().unwrap_or(0);
 
                 if amount >= expected_amount_motes
-                    && (to.to_lowercase() == merchant_pubkey.to_lowercase()
-                        || merchant_pubkey.to_lowercase().contains(&to.to_lowercase()))
+                    && to.to_lowercase() == merchant_pubkey.to_lowercase()
                 {
                     return Ok(true);
                 }

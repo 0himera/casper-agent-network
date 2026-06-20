@@ -80,7 +80,7 @@ async fn evaluate_task_legacy(
     processing_time_ms: u64,
     config: &Config,
 ) -> Result<EvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
-    println!("Validator pipeline: legacy");
+    tracing::info!("Validator pipeline: legacy");
 
     // Choose rubric system prompt
     let rubric_prompt = match domain {
@@ -335,7 +335,7 @@ Return JSON format exactly matching:
             .await?;
 
         let res_json: serde_json::Value = res.json().await?;
-        println!(
+        tracing::info!(
             "Ollama validator response received. Model: {}",
             res_json["model"]
         );
@@ -362,7 +362,7 @@ Return JSON format exactly matching:
         (total, scores, reasoning)
     } else {
         // 4. Fallback Mock Evaluator (if no API keys configured)
-        println!("WARNING: No LLM API key set. Running in Mock Evaluator mode.");
+        tracing::info!("WARNING: No LLM API key set. Running in Mock Evaluator mode.");
 
         let total = if agent_result.contains("error") || agent_result.len() < 20 {
             55
@@ -428,6 +428,7 @@ mod tests {
             claude_api_key: None,
             ollama_url: None,
             ollama_model: None,
+            internal_service_key: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
             fireworks_api_key: None,

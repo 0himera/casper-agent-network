@@ -48,22 +48,22 @@ async fn evaluate_benchmark_skill(
             Some((out.total, out.recommended_price_motes, rubric_json))
         }
         V2Outcome::Unsupported => {
-            eprintln!(
+            tracing::error!(
                 "skill '{}' is not supported by the v2 evaluator, skipping",
                 skill
             );
             None
         }
         V2Outcome::FixtureInvalid(err) => {
-            eprintln!("invalid fixture for skill '{}': {}", skill, err);
+            tracing::error!("invalid fixture for skill '{}': {}", skill, err);
             None
         }
         V2Outcome::FixtureMissing(path) => {
-            eprintln!("fixture missing for skill '{}' ({}), skipping", skill, path);
+            tracing::error!("fixture missing for skill '{}' ({}), skipping", skill, path);
             None
         }
         V2Outcome::EngineError(err) => {
-            eprintln!("v2 eval failed for skill '{}': {}", skill, err);
+            tracing::error!("v2 eval failed for skill '{}': {}", skill, err);
             None
         }
     }
@@ -80,7 +80,7 @@ pub fn start_benchmark_background(
     config: Config,
 ) {
     tokio::spawn(async move {
-        println!(
+        tracing::info!(
             "Starting background benchmark for agent {}",
             agent_public_key
         );
@@ -99,7 +99,7 @@ pub fn start_benchmark_background(
             // v2-only: skill без v2-промпта (например "code_review") не поддерживается — пропускаем
             // до запуска агента, чтобы не тратить вызов на неоцениваемый skill.
             let Some(prompt) = v2_prompt(skill) else {
-                eprintln!(
+                tracing::error!(
                     "skill '{}' is not supported by the v2 evaluator, skipping benchmark",
                     skill
                 );
@@ -107,7 +107,7 @@ pub fn start_benchmark_background(
             };
 
             // Execute the agent task
-            println!(
+            tracing::info!(
                 "Executing benchmark task for skill '{}' on agent {}",
                 skill, agent_public_key
             );
@@ -124,7 +124,7 @@ pub fn start_benchmark_background(
             {
                 Ok(res) => res,
                 Err(err) => {
-                    eprintln!(
+                    tracing::error!(
                         "Failed to execute benchmark for agent {}: {}",
                         agent_public_key, err
                     );
@@ -133,7 +133,7 @@ pub fn start_benchmark_background(
             };
 
             // Evaluate results via the v2 LLM-as-Judge engine (no legacy fallback)
-            println!(
+            tracing::info!(
                 "Evaluating benchmark response for skill '{}' on agent {}",
                 skill, agent_public_key
             );
@@ -193,7 +193,7 @@ pub fn start_benchmark_background(
             0
         };
 
-        println!(
+        tracing::info!(
             "Benchmark completed for agent {}. Avg score: {}, Rec Price: {} motes",
             agent_public_key, avg_score, avg_price
         );

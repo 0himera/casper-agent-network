@@ -1,8 +1,9 @@
 import { config } from './config';
 import WebSocket from 'ws';
-import { AppDataSource } from "./data-source";
+import { pool } from "./db";
 import { CSPRCloudAPIClient } from "./cspr-cloud/api-client";
 import { formatDate } from "./utils";
+import { RowDataPacket } from 'mysql2';
 import { 
   ContractEvent, 
   AgentRegisteredPayload, 
@@ -15,13 +16,25 @@ import {
   RecommendedPriceUpdatedPayload,
   TaskCancelledPayload
 } from "./events";
-import { AgentEntity } from "./entity/agent.entity";
-import { TaskEntity } from "./entity/task.entity";
-import { ReputationEntity } from "./entity/reputation.entity";
+
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      return res;
+    } catch (err: any) {
+      console.log(`Fetch failed (attempt ${i + 1}/${retries}):`, err.message);
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+}
 
 async function main() {
-  await AppDataSource.initialize();
-  console.log('Database initialized successfully.');
+  console.log('Database initialized successfully via mysql2 pool.');
 
   const ws = new WebSocket(
       `${config.csprCloudStreamingUrl}/contract-events?contract_package_hash=${config.contractPackageHash}`,
@@ -47,6 +60,12 @@ async function main() {
     }
   }, config.pingCheckIntervalInMilliseconds);
 
+  const internalServiceKey = process.env.INTERNAL_SERVICE_KEY || 'default_internal_key';
+  const fetchHeaders = {
+    'Content-Type': 'application/json',
+    'Authorization': internalServiceKey
+  };
+
   ws.on('message', async (data: Buffer) => {
     const rawData = data.toString();
 
@@ -67,9 +86,7 @@ async function main() {
 
       if (eventName === 'AgentRegistered') {
         const payload = event.data.data as AgentRegisteredPayload;
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
-
-        // Resolve public key to human-readable format if needed, otherwise use the address
+        
         let publicKey = payload.agent;
         try {
           const account = await csprCloudClient.getAccount(payload.agent);
@@ -78,34 +95,26 @@ async function main() {
           console.log('Could not resolve account via CSPR.cloud, using raw address');
         }
 
-        let agent = await agentRepo.findOne({ where: { public_key: publicKey } });
+        const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [publicKey]);
+        const agent = rows[0];
+
         if (!agent) {
-          agent = agentRepo.create({
-            public_key: publicKey,
-            name: payload.name,
-            description: '',
-            metadata_uri: '',
-            active_jobs: 0,
-            timestamp: new Date(timestamp)
-          });
-          await agentRepo.save(agent);
+          await pool.execute(
+            'INSERT INTO agents (public_key, name, description, metadata_uri, active_jobs, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [publicKey, payload.name, '', '', 0, 'active', new Date(timestamp)]
+          );
           console.log(`Agent registered: ${payload.name} (${publicKey})`);
         } else {
-          // If the agent already exists, we do NOT overwrite status, endpoint_url, api_key, system_prompt.
-          // We only update name, metadata_uri (if empty), and timestamp.
-          agent.name = payload.name;
-          if (!agent.metadata_uri) {
-            agent.metadata_uri = '';
-          }
-          agent.timestamp = new Date(timestamp);
-          await agentRepo.save(agent);
+          await pool.execute(
+            'UPDATE agents SET name = ?, metadata_uri = IF(metadata_uri = "", "", metadata_uri), timestamp = ? WHERE public_key = ?',
+            [payload.name, new Date(timestamp), publicKey]
+          );
           console.log(`Agent already exists, updated metadata: ${payload.name} (${publicKey})`);
         }
 
       } else if (eventName === 'TaskCreated') {
         const payload = event.data.data as TaskCreatedPayload;
-        const taskRepo = AppDataSource.getRepository(TaskEntity);
-
+        
         let creatorKey = payload.creator;
         try {
           const account = await csprCloudClient.getAccount(payload.creator);
@@ -114,69 +123,55 @@ async function main() {
 
         const deadlineVal = payload.deadline ? payload.deadline.toString() : '0';
 
-        let task = await taskRepo.findOne({ where: { id: payload.task_id } });
+        const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [payload.task_id]);
+        const task = rows[0];
+
         if (!task) {
-          task = taskRepo.create({
-            id: payload.task_id,
-            creator_public_key: creatorKey,
-            budget_motes: payload.budget,
-            status: 'Open',
-            transaction_hash: deployHash,
-            domain: 'defi_analysis',
-            prompt: '',
-            deadline: deadlineVal,
-            timestamp: new Date(timestamp)
-          });
-          await taskRepo.save(task);
+          await pool.execute(
+            'INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, prompt, deadline, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [payload.task_id, creatorKey, payload.budget, 'Open', deployHash, 'defi_analysis', '', deadlineVal, new Date(timestamp)]
+          );
           console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes, deadline ${deadlineVal}`);
         } else {
-          if (!task.transaction_hash) {
-            task.transaction_hash = deployHash;
-          }
-          if (!task.creator_public_key) {
-            task.creator_public_key = creatorKey;
-          }
-          if (deadlineVal !== '0') {
-            task.deadline = deadlineVal;
-          }
-          await taskRepo.save(task);
+          await pool.execute(
+            'UPDATE tasks SET transaction_hash = IFNULL(transaction_hash, ?), creator_public_key = IFNULL(creator_public_key, ?), deadline = IF(deadline = "0" OR deadline = 0, ?, deadline) WHERE id = ?',
+            [deployHash, creatorKey, deadlineVal, payload.task_id]
+          );
           console.log(`Task ${payload.task_id} already exists, updated transaction hash/creator/deadline`);
         }
 
       } else if (eventName === 'TaskAssigned') {
         const payload = event.data.data as TaskAssignedPayload;
-        const taskRepo = AppDataSource.getRepository(TaskEntity);
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
-
+        
         let agentKey = payload.agent;
         try {
           const account = await csprCloudClient.getAccount(payload.agent);
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
-        // Update task status and assigned agent
-        await taskRepo.update(payload.task_id, {
-          assigned_agent_public_key: agentKey,
-          status: 'InProgress'
-        });
+        await pool.execute(
+          'UPDATE tasks SET assigned_agent_public_key = ?, status = "InProgress" WHERE id = ?',
+          [agentKey, payload.task_id]
+        );
 
-        // Increment active jobs for agent
-        const agent = await agentRepo.findOneBy({ public_key: agentKey });
-        if (agent) {
-          agent.active_jobs += 1;
-          await agentRepo.save(agent);
-        }
+        await pool.execute(
+          'UPDATE agents SET active_jobs = active_jobs + 1 WHERE public_key = ?',
+          [agentKey]
+        );
 
         console.log(`Task ${payload.task_id} assigned to agent ${agentKey}`);
 
-        // Trigger backend execution (skip for autonomous agents — they execute locally)
+        const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [agentKey]);
+        const agent = agentRows[0];
+
         const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
         if (agent?.endpoint_url === 'autonomous') {
           console.log(`Agent ${agentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
         } else {
           console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
-          fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
-            method: 'POST'
+          fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+            method: 'POST',
+            headers: fetchHeaders
           }).catch(err => {
             console.log('Error triggering execution on backend:', err.message || err);
           });
@@ -184,46 +179,43 @@ async function main() {
 
       } else if (eventName === 'TaskSubmitted') {
         const payload = event.data.data as TaskSubmittedPayload;
-        const taskRepo = AppDataSource.getRepository(TaskEntity);
-
-        await taskRepo.update(payload.task_id, {
-          result_hash: payload.result_hash
-        });
+        
+        await pool.execute(
+          'UPDATE tasks SET result_hash = ? WHERE id = ?',
+          [payload.result_hash, payload.task_id]
+        );
         console.log(`Result submitted for task ${payload.task_id}: ${payload.result_hash}`);
 
-        // Trigger backend validation + completion
         const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
         console.log(`Triggering validation for task ${payload.task_id}...`);
-        fetch(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
-          method: 'POST'
+        fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
+          method: 'POST',
+          headers: fetchHeaders
         }).catch(err => {
           console.log('Error triggering validation on backend:', err.message || err);
         });
 
       } else if (eventName === 'TaskCompleted') {
         const payload = event.data.data as TaskCompletedPayload;
-        const taskRepo = AppDataSource.getRepository(TaskEntity);
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
+        
+        const [taskRows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [payload.task_id]);
+        const task = taskRows[0];
 
-        const task = await taskRepo.findOneBy({ id: payload.task_id });
         if (task) {
-          task.status = 'Completed';
-          await taskRepo.save(task);
+          await pool.execute('UPDATE tasks SET status = "Completed" WHERE id = ?', [payload.task_id]);
 
           if (task.assigned_agent_public_key) {
-            const agent = await agentRepo.findOneBy({ public_key: task.assigned_agent_public_key });
-            if (agent && agent.active_jobs > 0) {
-              agent.active_jobs -= 1;
-              await agentRepo.save(agent);
-            }
+            await pool.execute(
+              'UPDATE agents SET active_jobs = GREATEST(0, active_jobs - 1) WHERE public_key = ?',
+              [task.assigned_agent_public_key]
+            );
           }
         }
         console.log(`Task ${payload.task_id} marked as completed`);
 
       } else if (eventName === 'ScoreUpdated') {
         const payload = event.data.data as ScoreUpdatedPayload;
-        const reputationRepo = AppDataSource.getRepository(ReputationEntity);
-
+        
         let agentKey = payload.agent;
         try {
           const account = await csprCloudClient.getAccount(payload.agent);
@@ -231,70 +223,66 @@ async function main() {
         } catch (e) {}
 
         const reputationId = `${agentKey}_${payload.skill}`;
-        let reputation = await reputationRepo.findOneBy({ id: reputationId });
+        const [repRows] = await pool.query<RowDataPacket[]>('SELECT * FROM reputations WHERE id = ?', [reputationId]);
+        const reputation = repRows[0];
 
         if (reputation) {
-          reputation.score = payload.new_score;
-          reputation.timestamp = new Date(timestamp);
-          await reputationRepo.save(reputation);
+          await pool.execute(
+            'UPDATE reputations SET score = ?, timestamp = ? WHERE id = ?',
+            [payload.new_score, new Date(timestamp), reputationId]
+          );
         } else {
-          reputation = reputationRepo.create({
-            id: reputationId,
-            agent_public_key: agentKey,
-            skill: payload.skill,
-            score: payload.new_score,
-            timestamp: new Date(timestamp)
-          });
-          await reputationRepo.save(reputation);
+          await pool.execute(
+            'INSERT INTO reputations (id, agent_public_key, skill, score, timestamp) VALUES (?, ?, ?, ?, ?)',
+            [reputationId, agentKey, payload.skill, payload.new_score, new Date(timestamp)]
+          );
         }
         console.log(`Reputation updated for agent ${agentKey} in skill ${payload.skill}: ${payload.new_score}`);
 
       } else if (eventName === 'PriceUpdated') {
         const payload = event.data.data as PriceUpdatedPayload;
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
-
+        
         let agentKey = payload.agent;
         try {
           const account = await csprCloudClient.getAccount(payload.agent);
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
-        await agentRepo.update(agentKey, {
-          custom_price_motes: payload.custom_price
-        });
+        await pool.execute(
+          'UPDATE agents SET custom_price_motes = ? WHERE public_key = ?',
+          [payload.custom_price, agentKey]
+        );
         console.log(`On-chain custom price updated for agent ${agentKey}: ${payload.custom_price} motes`);
 
       } else if (eventName === 'RecommendedPriceUpdated') {
         const payload = event.data.data as RecommendedPriceUpdatedPayload;
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
-
+        
         let agentKey = payload.agent;
         try {
           const account = await csprCloudClient.getAccount(payload.agent);
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
-        await agentRepo.update(agentKey, {
-          recommended_price_motes: payload.recommended_price
-        });
+        await pool.execute(
+          'UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?',
+          [payload.recommended_price, agentKey]
+        );
         console.log(`On-chain recommended price updated for agent ${agentKey}: ${payload.recommended_price} motes`);
 
       } else if (eventName === 'TaskCancelled') {
         const payload = event.data.data as TaskCancelledPayload;
-        const taskRepo = AppDataSource.getRepository(TaskEntity);
-        const agentRepo = AppDataSource.getRepository(AgentEntity);
+        
+        const [taskRows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [payload.task_id]);
+        const task = taskRows[0];
 
-        const task = await taskRepo.findOneBy({ id: payload.task_id });
         if (task) {
-          task.status = 'Cancelled';
-          await taskRepo.save(task);
+          await pool.execute('UPDATE tasks SET status = "Cancelled" WHERE id = ?', [payload.task_id]);
 
           if (task.assigned_agent_public_key) {
-            const agent = await agentRepo.findOneBy({ public_key: task.assigned_agent_public_key });
-            if (agent && agent.active_jobs > 0) {
-              agent.active_jobs -= 1;
-              await agentRepo.save(agent);
-            }
+            await pool.execute(
+              'UPDATE agents SET active_jobs = GREATEST(0, active_jobs - 1) WHERE public_key = ?',
+              [task.assigned_agent_public_key]
+            );
           }
           console.log(`Task ${payload.task_id} marked as cancelled in DB`);
         }

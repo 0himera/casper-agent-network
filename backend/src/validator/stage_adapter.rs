@@ -143,7 +143,7 @@ pub async fn evaluate_task_stage(
             .await
             .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
 
-    println!("{}", format_validator_eval_log(&stats));
+    tracing::info!("{}", format_validator_eval_log(&stats));
     let _ = judge_call_count();
 
     Ok(map_stage_output_to_evaluation(
@@ -168,6 +168,7 @@ mod tests {
             claude_api_key: None,
             ollama_url: None,
             ollama_model: None,
+            internal_service_key: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
             fireworks_api_key: None,

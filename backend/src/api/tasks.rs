@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::env as std_env;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::api::AppState;
 use crate::config::Config;
@@ -88,7 +88,15 @@ pub async fn create_or_update_task(
 pub async fn execute_task_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if let Some(expected_key) = &state.config.internal_service_key {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+        if auth_header != Some(expected_key.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
     // 1. Fetch task details
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
         .bind(&id)
@@ -120,7 +128,7 @@ pub async fn execute_task_handler(
 
     // Skip autonomous agents — they execute locally and submit_result on-chain themselves
     if agent.endpoint_url.as_deref() == Some("autonomous") {
-        println!("Agent is autonomous, skipping backend execution for task {}", id);
+        tracing::info!("Agent is autonomous, skipping backend execution for task {}", id);
         return Ok(StatusCode::OK);
     }
 
@@ -128,7 +136,7 @@ pub async fn execute_task_handler(
     let pool = state.pool.clone();
     let config = state.config.clone();
     tokio::spawn(async move {
-        println!("Background execution started for task {}", task.id);
+        tracing::info!("Background execution started for task {}", task.id);
 
         let exec_res = match execute_agent(
             &task.domain,
@@ -143,7 +151,7 @@ pub async fn execute_task_handler(
         {
             Ok(res) => res,
             Err(err) => {
-                eprintln!("Failed to execute agent for task {}: {}", task.id, err);
+                tracing::error!("Failed to execute agent for task {}: {}", task.id, err);
                 return;
             }
         };
@@ -209,14 +217,22 @@ pub async fn raw_result_handler(
         .execute(&state.pool)
         .await;
 
-    println!("Raw result saved for task {} from agent {}", id, agent_pubkey);
+    tracing::info!("Raw result saved for task {} from agent {}", id, agent_pubkey);
     Ok(StatusCode::OK)
 }
 
 pub async fn validate_task_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if let Some(expected_key) = &state.config.internal_service_key {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+        if auth_header != Some(expected_key.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
         .bind(&id)
         .fetch_optional(&state.pool)
@@ -262,7 +278,7 @@ async fn validate_and_complete(
     let eval_res = match evaluate_task(domain, prompt, output, processing_time_ms, config).await {
         Ok(res) => res,
         Err(err) => {
-            eprintln!("Failed to evaluate task {}: {}", task_id, err);
+            tracing::error!("Failed to evaluate task {}: {}", task_id, err);
             return;
         }
     };
@@ -312,7 +328,7 @@ async fn validate_and_complete(
     .execute(pool)
     .await;
 
-    println!(
+    tracing::info!(
         "Task {} validated. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...",
         task_id, score, weight, result_hash
     );
@@ -341,20 +357,20 @@ async fn validate_and_complete(
         cmd.env("CONTRACT_HASH", format!("hash-{}", package_hash));
     }
 
-    match cmd.status() {
+    match cmd.status().await {
         Ok(status) => {
             if status.success() {
-                println!("✅ Successfully completed task {} on-chain!", task_id);
+                tracing::info!("✅ Successfully completed task {} on-chain!", task_id);
                 let _ = sqlx::query("UPDATE tasks SET status = 'Completed' WHERE id = ?")
                     .bind(task_id)
                     .execute(pool)
                     .await;
             } else {
-                eprintln!("❌ On-chain transaction failed for task {}: {:?}", task_id, status);
+                tracing::error!("❌ On-chain transaction failed for task {}: {:?}", task_id, status);
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to execute on-chain CLI tool: {}", e);
+            tracing::error!("❌ Failed to execute on-chain CLI tool: {}", e);
         }
     }
 }

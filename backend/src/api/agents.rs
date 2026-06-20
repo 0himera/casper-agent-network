@@ -189,8 +189,16 @@ pub struct UpdateCapabilitiesPayload {
 pub async fn update_agent_capabilities(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    headers: HeaderMap,
     Json(payload): Json<UpdateCapabilitiesPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if let Some(expected_key) = &state.config.internal_service_key {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+        if auth_header != Some(expected_key.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
     let name = payload.name.unwrap_or_else(|| "Autonomous Agent".to_string());
     let _ = sqlx::query(
         "INSERT INTO agents (public_key, name, endpoint_url, system_prompt, status)
@@ -207,7 +215,7 @@ pub async fn update_agent_capabilities(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    println!("Capabilities updated for agent {}", public_key);
+    tracing::info!("Capabilities updated for agent {}", public_key);
     Ok(StatusCode::OK)
 }
 
