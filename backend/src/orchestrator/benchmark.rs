@@ -1,71 +1,32 @@
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::orchestrator::executor::execute_agent;
-use crate::validator::{V2Outcome, evaluate_task_v2};
+use crate::validator::{
+    build_benchmark_llm_config, evaluate_benchmark_skill_stage, warn_serpapi_if_needed,
+};
 
-fn v2_prompt(skill: &str) -> Option<&'static str> {
-    match skill {
-        "defi_yield_routing" | "defi_analysis" => Some(
-            "Allocate 10,000 CSPR across Casper liquidity pools minimizing impermanent loss risk. Pools data is provided. Show per-pool allocation summing to 10,000 CSPR, fee-adjusted APY math, and impermanent loss reasoning.",
-        ),
-        "defi_protocol_risk" => Some(
-            "Analyze protocol risk based on recent transaction revert patterns. Classify the protocol as Safe or High Risk against the revert-rate threshold and list concrete mitigation steps.",
-        ),
-        "rwa_appraisal" => Some(
-            "Determine a fair gold price for an on-chain oracle update from the provided external sources. Filter outliers, justify source quality, and describe the price-derivation algorithm.",
-        ),
-        "rwa_compliance" => Some(
-            "Assess issuer compliance risk from the provided news items and recommend a collateral-factor adjustment. Separate real threats from FUD and give a remediation plan.",
-        ),
+/// Normalize input to the current benchmark domain contract.
+pub(crate) fn normalize_benchmark_domain(input: &str) -> Option<&'static str> {
+    match input {
+        "defi" => Some("defi"),
+        "rwa" => Some("rwa"),
+        "other" => Some("other"),
         _ => None,
     }
 }
 
-/// Оценивает benchmark-skill только через v2-движок (validator-engine).
-///
-/// Legacy-fallback удалён: неподдержанные/без фикстуры skill пропускаются (`None`),
-/// а не оцениваются устаревшим эвалюатором.
-async fn evaluate_benchmark_skill(
-    skill: &str,
-    prompt: &str,
-    agent_output: &str,
-    processing_time_ms: u64,
-    config: &Config,
-) -> Option<(u32, u64, serde_json::Value)> {
-    match evaluate_task_v2(
-        skill,
-        prompt,
-        agent_output,
-        processing_time_ms,
-        None,
-        config,
-    )
-    .await
-    {
-        V2Outcome::Ok(out) => {
-            let rubric_json =
-                serde_json::to_value(&out.criteria).unwrap_or(serde_json::Value::Null);
-            Some((out.total, out.recommended_price_motes, rubric_json))
-        }
-        V2Outcome::Unsupported => {
-            eprintln!(
-                "skill '{}' is not supported by the v2 evaluator, skipping",
-                skill
-            );
-            None
-        }
-        V2Outcome::FixtureInvalid(err) => {
-            eprintln!("invalid fixture for skill '{}': {}", skill, err);
-            None
-        }
-        V2Outcome::FixtureMissing(path) => {
-            eprintln!("fixture missing for skill '{}' ({}), skipping", skill, path);
-            None
-        }
-        V2Outcome::EngineError(err) => {
-            eprintln!("v2 eval failed for skill '{}': {}", skill, err);
-            None
-        }
+fn benchmark_prompt(domain: &str) -> Option<&'static str> {
+    match domain {
+        "defi" => Some(
+            "Analyze a DeFi opportunity on Casper. Recommend an allocation strategy, explain expected yield, identify protocol and liquidity risks, and give concrete risk mitigation steps.",
+        ),
+        "rwa" => Some(
+            "Evaluate a real-world asset oracle update. Assess source quality, identify outliers or compliance risks, explain the valuation logic, and recommend any collateral-factor adjustment.",
+        ),
+        "other" => Some(
+            "Answer the user's analytical task clearly and safely. State assumptions, provide actionable reasoning, identify material risks, and avoid unsupported claims.",
+        ),
+        _ => None,
     }
 }
 
@@ -81,9 +42,11 @@ pub fn start_benchmark_background(
 ) {
     tokio::spawn(async move {
         println!(
-            "Starting background benchmark for agent {}",
+            "Starting background benchmark for agent {} (stage pipeline)",
             agent_public_key
         );
+
+        warn_serpapi_if_needed(&build_benchmark_llm_config(&config));
 
         // 1. Set agent status to benchmarking
         let _ = sqlx::query("UPDATE agents SET status = 'benchmarking' WHERE public_key = ?")
@@ -96,23 +59,24 @@ pub fn start_benchmark_background(
         let mut total_recommended_price_motes = 0u64;
 
         for skill in &skills {
-            // v2-only: skill без v2-промпта (например "code_review") не поддерживается — пропускаем
-            // до запуска агента, чтобы не тратить вызов на неоцениваемый skill.
-            let Some(prompt) = v2_prompt(skill) else {
+            let Some(domain) = normalize_benchmark_domain(skill) else {
                 eprintln!(
-                    "skill '{}' is not supported by the v2 evaluator, skipping benchmark",
+                    "domain '{}' is not supported by benchmark, skipping",
                     skill
                 );
                 continue;
             };
+            let Some(prompt) = benchmark_prompt(domain) else {
+                eprintln!("domain '{}' has no benchmark prompt, skipping", domain);
+                continue;
+            };
 
-            // Execute the agent task
             println!(
-                "Executing benchmark task for skill '{}' on agent {}",
-                skill, agent_public_key
+                "Executing benchmark task for domain '{}' on agent {}",
+                domain, agent_public_key
             );
             let exec_res = match execute_agent(
-                skill,
+                domain,
                 prompt,
                 endpoint_url.as_deref(),
                 api_key.as_deref(),
@@ -132,13 +96,12 @@ pub fn start_benchmark_background(
                 }
             };
 
-            // Evaluate results via the v2 LLM-as-Judge engine (no legacy fallback)
             println!(
-                "Evaluating benchmark response for skill '{}' on agent {}",
-                skill, agent_public_key
+                "Evaluating benchmark response for domain '{}' on agent {} (stage pipeline)",
+                domain, agent_public_key
             );
-            let Some((score, recommended_price_motes, rubric_json)) = evaluate_benchmark_skill(
-                skill,
+            let Some(eval) = evaluate_benchmark_skill_stage(
+                domain,
                 prompt,
                 &exec_res.output,
                 exec_res.processing_time_ms,
@@ -149,24 +112,22 @@ pub fn start_benchmark_background(
                 continue;
             };
 
-            total_score += score;
-            total_recommended_price_motes += recommended_price_motes;
+            total_score += eval.score;
+            total_recommended_price_motes += eval.recommended_price_motes;
             skill_count += 1;
 
-            // Save benchmark run to database
             let _ = sqlx::query(
                 "INSERT INTO benchmark_runs (agent_public_key, domain, score, result, rubric_scores) VALUES (?, ?, ?, ?, ?)"
             )
             .bind(&agent_public_key)
-            .bind(skill)
-            .bind(score as i32)
+            .bind(domain)
+            .bind(eval.score as i32)
             .bind(&exec_res.output)
-            .bind(rubric_json)
+            .bind(eval.rubric_json)
             .execute(&pool)
             .await;
 
-            // Update/Insert reputation score for skill
-            let reputation_id = format!("{}_{}", agent_public_key, skill);
+            let reputation_id = format!("{}_{}", agent_public_key, domain);
             let _ = sqlx::query(
                 "INSERT INTO reputations (id, agent_public_key, skill, score) 
                  VALUES (?, ?, ?, ?) 
@@ -174,14 +135,13 @@ pub fn start_benchmark_background(
             )
             .bind(reputation_id)
             .bind(&agent_public_key)
-            .bind(skill)
-            .bind(score as i32)
-            .bind(score as i32)
+            .bind(domain)
+            .bind(eval.score as i32)
+            .bind(eval.score as i32)
             .execute(&pool)
             .await;
         }
 
-        // 2. Finalize: Set status to active, update recommended price
         let avg_score = if skill_count > 0 {
             total_score / skill_count
         } else {
@@ -206,4 +166,18 @@ pub fn start_benchmark_background(
         .execute(&pool)
         .await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_benchmark_domain_accepts_only_current_domains() {
+        assert_eq!(normalize_benchmark_domain("defi"), Some("defi"));
+        assert_eq!(normalize_benchmark_domain("rwa"), Some("rwa"));
+        assert_eq!(normalize_benchmark_domain("other"), Some("other"));
+        assert_eq!(normalize_benchmark_domain("legacy_skill"), None);
+        assert_eq!(normalize_benchmark_domain("unsupported"), None);
+    }
 }

@@ -22,13 +22,9 @@ pub struct EvaluationResult {
 
 // Base prices in motes (1 CSPR = 1,000,000,000 motes)
 const BASE_DEFI_PRICE: u64 = 5_000_000_000; // 5 CSPR
-const BASE_CODE_PRICE: u64 = 10_000_000_000; // 10 CSPR
 
-pub(crate) fn recommended_price_motes(domain: &str, total: u32, processing_time_ms: u64) -> u64 {
-    let base_price = match domain {
-        "code_review" => BASE_CODE_PRICE,
-        _ => BASE_DEFI_PRICE,
-    };
+pub(crate) fn recommended_price_motes(_domain: &str, total: u32, processing_time_ms: u64) -> u64 {
+    let base_price = BASE_DEFI_PRICE;
 
     let speed_multiplier = if processing_time_ms < 5000 {
         1.2
@@ -83,33 +79,7 @@ async fn evaluate_task_legacy(
     println!("Validator pipeline: legacy");
 
     // Choose rubric system prompt
-    let rubric_prompt = match domain {
-        "code_review" => {
-            r#"
-You are an expert code auditor. Evaluate the agent's code review response.
-Rate the following dimensions:
-1. safety_or_security (0-30): Vulnerability analysis, reentrancy, access control.
-2. depth_or_quality (0-25): Best practices, design patterns, gas efficiency.
-3. sources_or_testing (0-20): Test scenario suggestions, fuzzing recommendations.
-4. actionability_or_explanation (0-15): Actionable refactoring examples and code blocks.
-5. presentation (0-10): Clear structure, severity labeling.
-
-Return JSON format exactly matching:
-{
-  "scores": {
-    "accuracy_or_safety": N,
-    "depth_or_quality": N,
-    "sources_or_testing": N,
-    "actionability_or_explanation": N,
-    "presentation": N
-  },
-  "total": SumOfAbove,
-  "reasoning": "Brief explanation of scores..."
-}
-"#
-        }
-        _ => {
-            r#"
+    let rubric_prompt = r#"
 You are an expert financial and data validator. Evaluate the agent's DeFi analysis response.
 Rate the following dimensions:
 1. accuracy_or_safety (0-30): Correctness of yield calculations, impermanent loss calculations.
@@ -130,9 +100,7 @@ Return JSON format exactly matching:
   "total": SumOfAbove,
   "reasoning": "Brief explanation of scores..."
 }
-"#
-        }
-    };
+"#;
 
     let user_content = format!(
         "Task Prompt: {}\n\nAgent Response: {}",

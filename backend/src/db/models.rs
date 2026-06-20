@@ -30,6 +30,7 @@ pub struct Task {
     pub metadata_uri: Option<String>,
     pub transaction_hash: String,
     pub domain: String,
+    /// Legacy F3-era field; persisted for API/DB compatibility. Stage scoring uses `domain` only.
     pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: u64,

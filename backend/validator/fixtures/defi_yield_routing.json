@@ -1,9 +1,0 @@
-{
-  "amount_cspr": 10000,
-  "gas_price_motes": 2500000000,
-  "pools": [
-    { "id": "cspr-usdt", "apy": 0.082, "tvl_usd": 1200000, "volume_24h_usd": 340000, "fee_bps": 30 },
-    { "id": "cspr-eth",  "apy": 0.061, "tvl_usd": 800000,  "volume_24h_usd": 150000, "fee_bps": 30 },
-    { "id": "cspr-wbtc", "apy": 0.114, "tvl_usd": 250000,  "volume_24h_usd": 60000,  "fee_bps": 50 }
-  ]
-}

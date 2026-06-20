@@ -21,6 +21,7 @@ pub struct CreateOrUpdateTaskPayload {
     pub budget_motes: u64,
     pub transaction_hash: String,
     pub domain: String,
+    /// Legacy F3-era field; persisted for API/DB compatibility. Stage scoring uses `domain` only.
     pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: Option<u64>,
@@ -160,7 +161,6 @@ pub async fn execute_task_handler(
 
         // Calculate weight based on reputation.md multi-dimensional weight formula
         let base_price = match task.domain.as_str() {
-            "code_review" => 10_000_000_000f64,
             "rwa_valuation" => 15_000_000_000f64,
             "data_analysis" => 2_000_000_000f64,
             _ => 5_000_000_000f64, // defi_analysis
@@ -169,7 +169,6 @@ pub async fn execute_task_handler(
         let economic_weight = (ratio + 1.0).log2() + 1.0;
 
         let complexity_weight = match task.domain.as_str() {
-            "code_review" => 3.0,
             "rwa_valuation" => 2.5,
             "defi_analysis" => 2.0,
             "data_analysis" => 1.5,

@@ -33,10 +33,6 @@ pub fn should_skip_factuality(
         return Some("factuality disabled".to_string());
     }
 
-    if domain == "code_review" {
-        return Some("factuality disabled for code_review".to_string());
-    }
-
     let char_count = agent_output.chars().count() as u32;
     if char_count < factuality_config.min_chars_for_factcheck {
         return Some(format!(
@@ -362,17 +358,13 @@ mod tests {
     }
 
     #[test]
-    fn skip_rules_cover_disabled_short_and_code_review() {
+    fn skip_rules_cover_disabled_and_short_answers() {
         let config = factuality_config();
         assert!(
             should_skip_factuality("defi_analysis", "x".repeat(250).as_str(), &config, false)
                 .is_some()
         );
         assert!(should_skip_factuality("defi_analysis", "short", &config, true).is_some());
-        assert!(
-            should_skip_factuality("code_review", "x".repeat(250).as_str(), &config, true)
-                .is_some()
-        );
         assert!(
             should_skip_factuality("defi_analysis", "x".repeat(250).as_str(), &config, true)
                 .is_none()

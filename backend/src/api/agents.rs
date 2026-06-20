@@ -1,7 +1,7 @@
 use crate::api::AppState;
 use crate::api::x402::verify_payment;
 use crate::db::models::Agent;
-use crate::orchestrator::benchmark::start_benchmark_background;
+use crate::orchestrator::benchmark::{normalize_benchmark_domain, start_benchmark_background};
 use axum::{
     Json,
     extract::{Path, State},
@@ -125,9 +125,13 @@ pub async fn register_agent(
 
     // 3. Start benchmarking in background
     let skills = if payload.skills.is_empty() {
-        vec!["defi_analysis".to_string()]
+        vec!["defi".to_string()]
     } else {
-        payload.skills
+        payload
+            .skills
+            .iter()
+            .filter_map(|skill| normalize_benchmark_domain(skill).map(str::to_string))
+            .collect()
     };
 
     start_benchmark_background(

@@ -2,9 +2,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::prompts;
-use crate::types::{JudgeCascadeMode, JudgeProvider, LlmConfig, SkillId, ValidatorError};
+use crate::types::{JudgeCascadeMode, JudgeProvider, LlmConfig, ValidatorError};
 
-use super::extract_json;
 use super::providers::{call_custom, call_provider, custom_provider_available, provider_available};
 use super::record_provider_call;
 
@@ -24,7 +23,7 @@ pub fn resolve_effective_cascade(config: &LlmConfig) -> JudgeCascadeMode {
 
 pub fn provider_chain(
     cascade: JudgeCascadeMode,
-    skill_override: Option<JudgeProvider>,
+    provider_override: Option<JudgeProvider>,
 ) -> Vec<JudgeProvider> {
     let base = match cascade {
         JudgeCascadeMode::ApiFirst => vec![
@@ -41,7 +40,7 @@ pub fn provider_chain(
         ],
     };
 
-    if let Some(first) = skill_override {
+    if let Some(first) = provider_override {
         let mut chain = vec![first];
         for provider in base {
             if provider != first {
@@ -60,40 +59,6 @@ fn resolve_timeout_ms(config: &LlmConfig) -> u64 {
         .or_else(|| prompts::judge_routing().ok().map(|r| r.default_timeout_ms))
         .unwrap_or(15_000)
 }
-
-fn skill_from_routing_key(routing_key: &str) -> Option<SkillId> {
-    match routing_key {
-        "defi_yield_routing" => Some(SkillId::DefiYieldRouting),
-        "defi_protocol_risk" => Some(SkillId::DefiProtocolRisk),
-        "rwa_appraisal" => Some(SkillId::RwaAppraisal),
-        "rwa_compliance" => Some(SkillId::RwaCompliance),
-        _ => None,
-    }
-}
-
-fn skill_provider_override(skill: SkillId) -> Option<JudgeProvider> {
-    prompts::skill_judge_config(skill)
-        .ok()
-        .flatten()
-        .and_then(|c| c.provider)
-}
-
-fn skill_model_override(skill: SkillId) -> Option<String> {
-    prompts::skill_judge_config(skill)
-        .ok()
-        .flatten()
-        .and_then(|c| c.model)
-}
-
-fn routing_provider_override(routing_key: &str) -> Option<JudgeProvider> {
-    skill_from_routing_key(routing_key).and_then(skill_provider_override)
-}
-
-fn routing_model_override(routing_key: &str) -> Option<String> {
-    skill_from_routing_key(routing_key).and_then(skill_model_override)
-}
-
-type ResponseValidator = fn(&str) -> Result<(), ValidatorError>;
 
 fn base_delay_ms() -> u64 {
     std::env::var("STAGE_LLM_REQUEST_DELAY_MS")
@@ -149,7 +114,6 @@ async fn call_judge_impl_once(
     routing_key: &str,
     system_prompt: &str,
     user_prompt: &str,
-    validate: Option<ResponseValidator>,
 ) -> Result<String, ValidatorError> {
     let try_custom_first = config.provider.as_ref().is_some_and(|provider| {
         matches!(
@@ -162,15 +126,7 @@ async fn call_judge_impl_once(
 
     if try_custom_first && custom_provider_available(config) {
         match call_custom(config, system_prompt, user_prompt, json_mode).await {
-            Ok(text) => {
-                let accepted = match validate {
-                    Some(validator) => validator(&text).is_ok(),
-                    None => true,
-                };
-                if accepted {
-                    return Ok(text);
-                }
-            }
+            Ok(text) => return Ok(text),
             Err(ValidatorError::RateLimited(msg)) => {
                 return Err(ValidatorError::RateLimited(msg));
             }
@@ -180,11 +136,9 @@ async fn call_judge_impl_once(
     }
 
     let cascade = resolve_effective_cascade(config);
-    let skill_override = routing_provider_override(routing_key);
-    let chain = provider_chain(cascade, skill_override);
+    let chain = provider_chain(cascade, None);
     let timeout_ms = resolve_timeout_ms(config);
-    let model_override = routing_model_override(routing_key);
-    let model_ref = model_override.as_deref();
+    let model_ref = config.custom_model.as_deref();
 
     let mut last_error: Option<ValidatorError> = None;
     let mut fallback_from: Option<JudgeProvider> = None;
@@ -207,33 +161,14 @@ async fn call_judge_impl_once(
 
         match result {
             Ok(Ok(text)) => {
-                if let Some(validator) = validate {
-                    match validator(&text) {
-                        Ok(()) => {
-                            record_provider_call(provider);
-                            if fallback_from.is_some() {
-                                eprintln!(
-                                    "judge LLM: used {:?} after fallback from {:?}",
-                                    provider, fallback_from
-                                );
-                            }
-                            return Ok(text);
-                        }
-                        Err(parse_err) => {
-                            fallback_from.get_or_insert(provider);
-                            last_error = Some(parse_err);
-                        }
-                    }
-                } else {
-                    record_provider_call(provider);
-                    if fallback_from.is_some() {
-                        eprintln!(
-                            "judge LLM: used {:?} after fallback from {:?}",
-                            provider, fallback_from
-                        );
-                    }
-                    return Ok(text);
+                record_provider_call(provider);
+                if fallback_from.is_some() {
+                    eprintln!(
+                        "judge LLM: used {:?} after fallback from {:?}",
+                        provider, fallback_from
+                    );
                 }
+                return Ok(text);
             }
             Ok(Err(ValidatorError::RateLimited(msg))) => {
                 return Err(ValidatorError::RateLimited(msg));
@@ -261,7 +196,6 @@ async fn call_judge_impl(
     routing_key: &str,
     system_prompt: &str,
     user_prompt: &str,
-    validate: Option<ResponseValidator>,
 ) -> Result<String, ValidatorError> {
     let is_stage = routing_key.starts_with("stage_") && !config.mock;
     let mut rate_limit_retries = 0u32;
@@ -269,8 +203,7 @@ async fn call_judge_impl(
     loop {
         maybe_delay_stage_request(config, routing_key).await;
 
-        match call_judge_impl_once(config, routing_key, system_prompt, user_prompt, validate).await
-        {
+        match call_judge_impl_once(config, routing_key, system_prompt, user_prompt).await {
             Ok(text) => return Ok(text),
             Err(ValidatorError::RateLimited(msg))
                 if is_stage && rate_limit_retries < STAGE_RATE_LIMIT_MAX_RETRIES =>
@@ -295,37 +228,7 @@ pub async fn call_judge_raw(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, ValidatorError> {
-    call_judge_impl(config, routing_key, system_prompt, user_prompt, None).await
-}
-
-pub async fn call_judge_with_fallback(
-    config: &LlmConfig,
-    skill: SkillId,
-    system_prompt: &str,
-    user_prompt: &str,
-) -> Result<String, ValidatorError> {
-    call_judge_impl(
-        config,
-        skill.as_str(),
-        system_prompt,
-        user_prompt,
-        Some(validate_judge_json),
-    )
-    .await
-}
-
-fn validate_judge_json(text: &str) -> Result<(), ValidatorError> {
-    let json_str = extract_json(text)?;
-    let parsed: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| ValidatorError::Parse(e.to_string()))?;
-
-    if !parsed["criteria"].is_array() {
-        return Err(ValidatorError::Parse(
-            "Missing criteria array in LLM response".into(),
-        ));
-    }
-
-    Ok(())
+    call_judge_impl(config, routing_key, system_prompt, user_prompt).await
 }
 
 #[cfg(test)]
@@ -361,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn skill_override_puts_provider_first_without_duplicate() {
+    fn provider_override_puts_provider_first_without_duplicate() {
         let chain = provider_chain(JudgeCascadeMode::LocalFirst, Some(JudgeProvider::Openai));
         assert_eq!(chain[0], JudgeProvider::Openai);
         assert_eq!(
@@ -371,16 +274,6 @@ mod tests {
                 .count(),
             1
         );
-        assert!(!chain.contains(&JudgeProvider::Ollama) || chain[0] != JudgeProvider::Ollama);
-    }
-
-    #[test]
-    fn call_judge_raw_is_exported_and_skill_from_routing_key_works() {
-        assert_eq!(
-            skill_from_routing_key("defi_yield_routing"),
-            Some(SkillId::DefiYieldRouting)
-        );
-        assert_eq!(skill_from_routing_key("stage_refusal"), None);
     }
 
     #[test]

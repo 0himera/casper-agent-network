@@ -741,24 +741,17 @@ mod tests {
     }
 
     #[test]
-    fn mock_factuality_skips_code_review() {
+    fn mock_factuality_runs_for_other_domain() {
         let output = evaluate_stage_pipeline_mock_with_factuality_and_search(
-            "code_review",
-            "Review contract",
+            "other",
+            "Analyze the request",
             "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
             true,
             None,
         );
 
         assert_eq!(output.stages.len(), 5);
-        assert!(output.stages[4].skipped_due_to_gate);
-        assert!(
-            output.stages[4]
-                .reason
-                .as_deref()
-                .unwrap_or("")
-                .contains("code_review")
-        );
+        assert!(!output.stages[4].skipped_due_to_gate);
     }
 
     #[test]

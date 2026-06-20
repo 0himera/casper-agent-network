@@ -196,17 +196,15 @@ VALIDATOR_PIPELINE=stage VALIDATOR_MOCK_LLM=1 cargo test --lib validator::
 | [`../src/api/tasks.rs`](../src/api/tasks.rs) | Live `/execute` handler |
 | `documentation/` | Internal design docs (**gitignored**, local only) |
 
-## Parallel paths (unchanged)
+## Parallel paths
 
 | Path | Used for |
 |------|----------|
-| **Stage pipeline** | Live `/execute` when `VALIDATOR_PIPELINE=stage` |
-| **Legacy judge** | Live `/execute` when `VALIDATOR_PIPELINE=legacy` (default) |
-| **F3 / v2 grader** | Benchmark and fixture E2E only — not live `/execute` |
+| **Stage pipeline** | Benchmark (always) and live `/execute` when `VALIDATOR_PIPELINE=stage` |
+| **Legacy judge** | Live `/execute` rollback when `VALIDATOR_PIPELINE=legacy` (default) |
 
 ## Limitations
 
 - Factuality adds latency (search + per-claim LLM calls).
 - Real search depends on SerpAPI quota and key.
 - Default pipeline remains **legacy** until ops sets `VALIDATOR_PIPELINE=stage`.
-- Benchmark F3 path is a separate line; migrating it is a future product decision.

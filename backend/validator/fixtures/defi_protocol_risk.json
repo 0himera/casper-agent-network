@@ -1,9 +1,0 @@
-{
-  "window_hours": 6,
-  "total_transactions": 12500,
-  "reverted_transactions": 1875,
-  "revert_rate": 0.15,
-  "anomaly_threshold": 0.10,
-  "recent_spike": true,
-  "protocol_tvl_usd": 45000000
-}
