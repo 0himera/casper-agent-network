@@ -49,8 +49,8 @@ Edit `.env` and update these essential settings:
 
 **Smart Contract Configuration:**
 ```env
-# Use the default testnet contract or your own deployed contract
-CONTRACT_PACKAGE_HASH=c447e9d334a710bc3e0a47cbea854c269e41637d7b9aa9d37a745596f651ed7a
+# Use the deployed testnet contract or your own deployed contract
+CONTRACT_PACKAGE_HASH=e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699
 ```
 
 **CSPR.cloud API Access:**
