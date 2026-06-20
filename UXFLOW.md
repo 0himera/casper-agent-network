@@ -94,52 +94,61 @@ sequenceDiagram
 
 ---
 
-## 4. Flow C — Autonomous Agent Self-Registers and Accepts Tasks (Planned)
+## 4. Flow C — Autonomous Agent Self-Registers and Accepts Tasks (Implemented)
 
-A fully autonomous agent process runs 24/7 on its own server. It registers itself on-chain, listens for task assignments via CSPR.cloud WebSocket streaming, executes tasks, and submits results directly to the smart contract — **without ever touching our backend**.
+A fully autonomous agent process runs 24/7 on its own server. It registers itself on-chain, polls for assigned tasks via the MCP Server, executes them, and submits results directly to the smart contract — **paying its own gas with its own keypair**.
 
-This is how **Phoenix Zero** operates: an autonomous Node.js agent runs continuously, pushes oracle data to a Casper smart contract every 60 seconds, using its own keypair and casper-js-sdk.
+Our reference implementation lives in `../daemon/`. It was verified end-to-end on testnet: task `task_daemon_mqmhcaq8` went InProgress → Completed with on-chain `submit_result` + `complete_task`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Agent as Autonomous Agent (self-hosted)
+    actor Agent as Autonomous Agent (self-hosted daemon)
+    participant MCP as MCP Server (Stdio)
     participant SC as Smart Contract
-    participant Stream as CSPR.cloud WebSocket
     participant BE as Backend (Validator)
+    participant EH as Event Handler
 
     Note over Agent: Agent has its own secret_key.pem and CSPR balance
     Agent->>SC: register_agent(name, description) → Pays gas, on-chain registration
-    Agent->>Stream: Subscribe to contract-events (TaskAssigned)
+    Agent->>BE: POST /api/agents/:pubkey/capabilities (sync endpoint_url="autonomous")
 
-    loop Wait for tasks
-        Stream-->>Agent: Event: TaskAssigned(task_id, agent == my_key)
-        Agent->>API: GET /api/tasks/{task_id}/prompt → Fetch task text
-        Agent->>Agent: Execute LLM / tool logic locally
-        Agent->>API: POST /api/tasks/{task_id}/raw_result (Header: X-Agent-Pubkey)
-        Agent->>SC: submit_result(task_id, SHA-256 of output) → Pays gas
+    loop Poll for tasks (every 5s)
+        Agent->>MCP: get_assigned_tasks(agent_pubkey) → Returns full task with prompt
+        alt Task found and not yet worked
+            Agent->>Agent: Execute LLM / tool logic locally
+            rect rgb(238, 255, 238)
+                Note right of Agent: SHA-256 of output → result_hash
+            end
+            Agent->>BE: POST /api/tasks/{id}/raw_result (X-Agent-Pubkey header)
+            Agent->>Agent: Sign submit_result tx with casper-js-sdk
+            Agent->>SC: Broadcast submit_result → Pays gas
+        end
     end
 
-    Note over BE: Backend Event Handler sees TaskSubmitted
-    BE->>BE: Read agent's raw_result, run LLM-as-Judge validation
-    BE->>SC: complete_task(task_id, skill, score, weight)
-    SC->>SC: Release escrow → Agent receives CSPR
+    Note over EH: Event Handler receives TaskSubmitted
+    EH->>BE: POST /api/tasks/{id}/validate
+    BE->>BE: Read raw_result, run LLM-as-Judge validation
+    BE->>SC: complete_task(id, skill, score, weight) via CLI
+    SC-->>EH: Events: TaskCompleted, ScoreUpdated
+    EH->>BE: GET /api/tasks/{id}/leaderboard → Validate final score
+    Agent->>MCP: get_agent_stats(my_key) → Verify reputation & earnings
 ```
 
 **Casper tools used:**
-- **CSPR.cloud Streaming API** (`wss://streaming.testnet.cspr.cloud/contract-events?contract_package_hash=...`) — the same WebSocket our Event Handler already uses. An external agent subscribes the same way.
-- **casper-js-sdk** — the agent builds and signs `SessionBuilder` transactions with its PEM key, broadcasts via the Casper Node RPC.
-- **Persistent Sessions** — CSPR.cloud supports reconnection with a session header so the agent doesn't miss events during restarts.
+- **MCP Server** (`get_assigned_tasks`, `create_task`, `assign_task`) — the daemon builds/assigns its own tasks via unsigned TX JSON, signs + broadcasts via `casper-js-sdk`.
+- **casper-js-sdk** — the daemon builds `SessionBuilder` transactions with its PEM key, broadcasts via the Casper Node RPC.
+- **CSPR.cloud Streaming API** — the Event Handler (not the daemon) subscribes; daemon relies on MCP polling instead.
 
 **How competitors do this:**
 - **Phoenix Zero** runs a Node.js agent on DigitalOcean that calls `contract.update()` every 60 seconds autonomously using casper-contract SDK.
 - **CredMesh** gives agents credit to cover gas costs for self-execution, solving the "who pays gas for the worker" problem.
 
-**What we need to implement:**
-1. The `register_agent` and `submit_result` entrypoints already exist in the smart contract. We need a reference agent script (Node.js or Python) that demonstrates the subscribe → fetch → execute → submit flow autonomously.
-2. The agent needs to store the raw result somewhere the validator can fetch it.
-   - **Hackathon implementation:** Agent sends raw text to our API `POST /api/tasks/:id/raw_result`. The backend authenticates this without complex signatures by simply verifying the `X-Agent-Pubkey` header matches the on-chain assigned agent for that task.
-   - **Production roadmap:** Agent uploads the result to IPFS and includes the CID in the on-chain `submit_result` transaction. IPFS pinning can be slow (seconds/minutes), so the direct API approach is preferred for a fast hackathon demo.
+**What was implemented:**
+1. Reference daemon at `../daemon/src/index.ts` — polling loop, execution, raw_result POST, signing + broadcasting.
+2. Backend endpoints: `POST /api/tasks/:id/raw_result` (authenticated by `X-Agent-Pubkey` matching assigned agent), `POST /api/tasks/:id/validate` (triggered by event handler on `TaskSubmitted`), `POST /api/agents/:pubkey/capabilities` (off-chain metadata sync via upsert).
+3. Event handler: skips `TaskAssigned` for autonomous agents (no `endpoint_url` to call), triggers `/validate` on `TaskSubmitted`.
+4. Admin relayer: `validate_and_complete` calls `agent_network_submit_complete` CLI (idempotent — skips duplicate `submit_result`, runs `complete_task`) and updates DB status to `Completed`.
 
 ---
 
@@ -262,7 +271,7 @@ Each validator independently grades the output. The smart contract accepts `comp
 | **Escrow & payments** | ✅ On-chain escrow with auto-release | Simulated x402 | x402 for oracle queries | SDK-based | Credit lines |
 | **Agent discovery** | ✅ MCP Server (10 tools) + REST API | REST marketplace | N/A (single oracle) | MCP integration | N/A |
 | **Quality validation** | ✅ LLM-as-Judge + rubrics + reputation | Star ratings | N/A | N/A | N/A |
-| **Autonomous agent flow** | 🔜 Planned (Flow C above) | ❌ Human-driven | ✅ Autonomous Node.js agent | Planned | Agent credit |
+| **Autonomous agent flow** | ✅ Autonomous daemon script | ❌ Human-driven | ✅ Autonomous Node.js agent | Planned | Agent credit |
 | **x402 micropayments** | ✅ API-level access control | ✅ Core feature | ✅ $0.001/call | Planned | N/A |
 | **Result persistence** | ✅ MySQL + on-chain hash | Payment records only | On-chain state | N/A | N/A |
 | **Casper-native signing** | ✅ Delegated Signer (PEM, Ed25519/Secp256k1) | Simulated | casper-contract SDK | N/A | N/A |
@@ -273,8 +282,7 @@ Each validator independently grades the output. The smart contract accepts `comp
 
 | Phase | What | Casper Tools |
 |-------|------|-------------|
-| **Done** | Flow A (Human UI) + Flow B (MCP Client) + Flow D (x402) + LLM Validator | CSPR.click, MCP Server, CSPR.cloud Streaming, casper-js-sdk, Delegated Signer |
-| **Next** | Flow C — Reference autonomous agent script that subscribes to WebSocket events and self-executes tasks | CSPR.cloud Streaming API, casper-js-sdk SessionBuilder, PEM key signing |
+| **Done** | Flow A (Human UI) + Flow B (MCP Client) + Flow C (Autonomous Daemon) + Flow D (x402) + LLM Validator | CSPR.click, MCP Server, CSPR.cloud Streaming, casper-js-sdk, Delegated Signer |
 | **Next** | MCP tool `register_agent_profile` → returns unsigned TX for agent self-registration | MCP Server, casper-js-sdk |
 | **Future** | Flow E — Sandboxed execution for code_review skill | Docker / E2B integration |
 | **Future** | Weighted Keys for agent accounts (hot key + owner key) | Casper native multi-sig accounts |
