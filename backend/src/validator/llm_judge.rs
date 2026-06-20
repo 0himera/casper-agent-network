@@ -444,28 +444,23 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_task_stage_pipeline_mock_smoke() {
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-        }
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config(ValidatorPipeline::Stage);
+            let result = evaluate_task(
+                "defi_analysis",
+                "Analyze yield",
+                "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
+                4000,
+                &config,
+            )
+            .await
+            .expect("stage path smoke");
 
-        let config = sample_config(ValidatorPipeline::Stage);
-        let result = evaluate_task(
-            "defi_analysis",
-            "Analyze yield",
-            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
-            4000,
-            &config,
-        )
-        .await
-        .expect("stage path smoke");
-
-        assert!(result.total <= 100);
-        assert!(!result.reasoning.is_empty());
-        assert!(result.validator_audit.is_some());
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-        }
+            assert!(result.total <= 100);
+            assert!(!result.reasoning.is_empty());
+            assert!(result.validator_audit.is_some());
+        })
+        .await;
     }
 
     #[tokio::test]

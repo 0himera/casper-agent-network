@@ -23,58 +23,7 @@ pub enum V2Outcome {
 }
 
 fn map_config(config: &Config) -> LlmConfig {
-    let mock = std::env::var("VALIDATOR_MOCK_LLM")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-
-    fn env(key: &str) -> Option<String> {
-        std::env::var(key).ok().filter(|v| !v.is_empty())
-    }
-
-    let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
-        "local_first" => Some(validator_engine::JudgeCascadeMode::LocalFirst),
-        "api_first" => Some(validator_engine::JudgeCascadeMode::ApiFirst),
-        _ => None,
-    });
-
-    let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
-
-    let judge_self_consistency =
-        env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-
-    let mut custom_url = config.validator_url.clone();
-    let custom_api_key = config
-        .validator_api_key
-        .clone()
-        .or(config.fireworks_api_key.clone());
-    let custom_model = config
-        .validator_model
-        .clone()
-        .or(config.fireworks_model.clone());
-
-    if custom_url.is_none() && custom_api_key.is_some() {
-        custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
-    }
-
-    LlmConfig {
-        cloudflare_account_id: config.cloudflare_account_id.clone(),
-        cloudflare_api_token: config.cloudflare_api_token.clone(),
-        openai_api_key: config.openai_api_key.clone(),
-        openai_base_url: None,
-        claude_api_key: config.claude_api_key.clone(),
-        ollama_url: config.ollama_url.clone(),
-        ollama_model: config.ollama_model.clone(),
-        custom_url,
-        custom_api_key,
-        custom_model,
-        provider: config.validator_provider.clone(),
-        mock,
-        factuality_enabled: None,
-        serpapi_api_key: env("SERPAPI_API_KEY"),
-        judge_cascade,
-        judge_timeout_ms,
-        judge_self_consistency,
-    }
+    super::map_base_config(config)
 }
 
 fn resolve_fixture(
@@ -188,72 +137,60 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_task_v2_mock_llm_for_supported_skill() {
-        // SAFETY: test-only env mutation; no concurrent tests read this var.
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-        }
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config();
+            let agent_output = "Allocate 4,000 CSPR to cspr-usdt (8.2% APY, high TVL), 3,500 CSPR to cspr-eth (6.1% APY, moderate IL), and 2,500 CSPR to cspr-wbtc (11.4% APY, higher IL risk). Total: 10,000 CSPR. Network gas fees (~2.5 CSPR per swap) included. IL analysis shows cspr-usdt lowest volatility exposure.";
 
-        let config = sample_config();
-        let agent_output = "Allocate 4,000 CSPR to cspr-usdt (8.2% APY, high TVL), 3,500 CSPR to cspr-eth (6.1% APY, moderate IL), and 2,500 CSPR to cspr-wbtc (11.4% APY, higher IL risk). Total: 10,000 CSPR. Network gas fees (~2.5 CSPR per swap) included. IL analysis shows cspr-usdt lowest volatility exposure.";
+            let outcome = evaluate_task_v2(
+                "defi_yield_routing",
+                "Allocate 10,000 CSPR across Casper liquidity pools minimizing impermanent loss risk.",
+                agent_output,
+                4000,
+                None,
+                &config,
+            )
+            .await;
 
-        let outcome = evaluate_task_v2(
-            "defi_yield_routing",
-            "Allocate 10,000 CSPR across Casper liquidity pools minimizing impermanent loss risk.",
-            agent_output,
-            4000,
-            None,
-            &config,
-        )
+            match outcome {
+                V2Outcome::Ok(output) => {
+                    assert_eq!(output.criteria.len(), 5);
+                    assert_eq!(output.total, 100);
+                }
+                V2Outcome::FixtureMissing(path) => {
+                    panic!("fixture not found: {path}");
+                }
+                other => panic!("expected Ok, got {other:?}"),
+            }
+        })
         .await;
-
-        match outcome {
-            V2Outcome::Ok(output) => {
-                assert_eq!(output.criteria.len(), 5);
-                assert_eq!(output.total, 100);
-            }
-            V2Outcome::FixtureMissing(path) => {
-                panic!("fixture not found: {path}");
-            }
-            other => panic!("expected Ok, got {other:?}"),
-        }
-
-        // SAFETY: test-only env cleanup.
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-        }
     }
 
     #[tokio::test]
     async fn evaluate_task_v2_accepts_inline_fixture() {
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-        }
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config();
+            let fixture = serde_json::json!({
+                "amount_cspr": 10000,
+                "gas_price_motes": 2500000000u64,
+                "pools": [
+                    { "id": "cspr-usdt", "apy": 0.082, "fee_bps": 30 }
+                ]
+            });
+            let agent_output = "Allocate 4,000 CSPR to cspr-usdt (8.2% APY, high TVL), 3,500 CSPR to cspr-eth (6.1% APY, moderate IL), and 2,500 CSPR to cspr-wbtc (11.4% APY, higher IL risk). Total: 10,000 CSPR. Network gas fees (~2.5 CSPR per swap) included. IL analysis shows cspr-usdt lowest volatility exposure.";
 
-        let config = sample_config();
-        let fixture = serde_json::json!({
-            "amount_cspr": 10000,
-            "gas_price_motes": 2500000000u64,
-            "pools": [
-                { "id": "cspr-usdt", "apy": 0.082, "fee_bps": 30 }
-            ]
-        });
-        let agent_output = "Allocate 4,000 CSPR to cspr-usdt (8.2% APY, high TVL), 3,500 CSPR to cspr-eth (6.1% APY, moderate IL), and 2,500 CSPR to cspr-wbtc (11.4% APY, higher IL risk). Total: 10,000 CSPR. Network gas fees (~2.5 CSPR per swap) included. IL analysis shows cspr-usdt lowest volatility exposure.";
+            let outcome = evaluate_task_v2(
+                "defi_yield_routing",
+                "Allocate 10,000 CSPR",
+                agent_output,
+                4000,
+                Some(fixture),
+                &config,
+            )
+            .await;
 
-        let outcome = evaluate_task_v2(
-            "defi_yield_routing",
-            "Allocate 10,000 CSPR",
-            agent_output,
-            4000,
-            Some(fixture),
-            &config,
-        )
+            assert!(matches!(outcome, V2Outcome::Ok(_)));
+        })
         .await;
-
-        assert!(matches!(outcome, V2Outcome::Ok(_)));
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-        }
     }
 
     #[tokio::test]

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.7.5"
+axum = "0.8.0"
 tokio = { version = "1.38", features = ["full"] }
 sqlx = { version = "0.7.4", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
 serde = { version = "1.0.203", features = ["derive"] }
@@ -19,3 +19,9 @@ validator-engine = { path = "validator" }
 base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower_governor = "0.8.0"
+axum-prometheus = "0.10.0"
+metrics = "0.24.6"
+metrics-exporter-prometheus = "0.18.3"
+[dev-dependencies]
+temp-env = { version = "0.3", features = ["async_closure"] }

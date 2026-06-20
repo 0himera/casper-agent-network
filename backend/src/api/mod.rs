@@ -27,6 +27,7 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
     };
 
     Router::new()
+        .route("/health", get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }))
         .route("/api/agents", get(agents::get_agents))
         .route("/api/agents/:public_key", get(agents::get_agent))
         .route("/api/agents/register", post(agents::register_agent))

@@ -9,61 +9,7 @@ use super::llm_judge::{EvaluationResult, RubricScores, recommended_price_motes};
 
 /// Maps backend `Config` to `validator-engine` `LlmConfig` for the stage pipeline.
 pub fn map_config(config: &Config) -> LlmConfig {
-    let mock = std::env::var("VALIDATOR_MOCK_LLM")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-
-    fn env(key: &str) -> Option<String> {
-        std::env::var(key).ok().filter(|v| !v.is_empty())
-    }
-
-    let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
-        "local_first" => Some(validator_engine::JudgeCascadeMode::LocalFirst),
-        "api_first" => Some(validator_engine::JudgeCascadeMode::ApiFirst),
-        _ => None,
-    });
-
-    let judge_timeout_ms = env("VALIDATOR_JUDGE_TIMEOUT_MS").and_then(|v| v.parse().ok());
-
-    let judge_self_consistency =
-        env("VALIDATOR_JUDGE_SELF_CONSISTENCY").map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-
-    let factuality_enabled =
-        env("VALIDATOR_FACTUALITY").map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-
-    let mut custom_url = config.validator_url.clone();
-    let custom_api_key = config
-        .validator_api_key
-        .clone()
-        .or(config.fireworks_api_key.clone());
-    let custom_model = config
-        .validator_model
-        .clone()
-        .or(config.fireworks_model.clone());
-
-    if custom_url.is_none() && custom_api_key.is_some() {
-        custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
-    }
-
-    LlmConfig {
-        cloudflare_account_id: config.cloudflare_account_id.clone(),
-        cloudflare_api_token: config.cloudflare_api_token.clone(),
-        openai_api_key: config.openai_api_key.clone(),
-        openai_base_url: env("OPENAI_BASE_URL"),
-        claude_api_key: config.claude_api_key.clone(),
-        ollama_url: config.ollama_url.clone(),
-        ollama_model: config.ollama_model.clone(),
-        custom_url,
-        custom_api_key,
-        custom_model,
-        provider: config.validator_provider.clone(),
-        mock,
-        factuality_enabled,
-        serpapi_api_key: env("SERPAPI_API_KEY"),
-        judge_cascade,
-        judge_timeout_ms,
-        judge_self_consistency,
-    }
+    super::map_base_config(config)
 }
 
 fn placeholder_rubric_scores() -> RubricScores {
@@ -184,16 +130,10 @@ mod tests {
 
     #[test]
     fn map_config_reads_factuality_flag_from_env() {
-        unsafe {
-            std::env::set_var("VALIDATOR_FACTUALITY", "1");
-        }
-
-        let llm = map_config(&sample_config(ValidatorPipeline::Stage));
-        assert_eq!(llm.factuality_enabled, Some(true));
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_FACTUALITY");
-        }
+        temp_env::with_var("VALIDATOR_FACTUALITY", Some("1"), || {
+            let llm = map_config(&sample_config(ValidatorPipeline::Stage));
+            assert_eq!(llm.factuality_enabled, Some(true));
+        });
     }
 
     #[test]
@@ -256,54 +196,48 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_task_stage_mock_returns_audit_json() {
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-        }
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config(ValidatorPipeline::Stage);
+            let result = evaluate_task_stage(
+                "defi_analysis",
+                "Analyze yield",
+                "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
+                4000,
+                &config,
+            )
+            .await
+            .expect("stage mock eval");
 
-        let config = sample_config(ValidatorPipeline::Stage);
-        let result = evaluate_task_stage(
-            "defi_analysis",
-            "Analyze yield",
-            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
-            4000,
-            &config,
-        )
-        .await
-        .expect("stage mock eval");
-
-        assert!(result.total <= 100);
-        assert!(!result.reasoning.is_empty());
-        assert!(result.validator_audit.is_some());
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-        }
+            assert!(result.total <= 100);
+            assert!(!result.reasoning.is_empty());
+            assert!(result.validator_audit.is_some());
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn evaluate_task_stage_factuality_mock_includes_factuality_stage() {
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-            std::env::set_var("VALIDATOR_FACTUALITY", "1");
-        }
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("VALIDATOR_FACTUALITY", Some("1")),
+            ],
+            async {
+                let config = sample_config(ValidatorPipeline::Stage);
+                let result = evaluate_task_stage(
+                    "defi_analysis",
+                    "Analyze yield",
+                    "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
+                    4000,
+                    &config,
+                )
+                .await
+                .expect("stage factuality mock eval");
 
-        let config = sample_config(ValidatorPipeline::Stage);
-        let result = evaluate_task_stage(
-            "defi_analysis",
-            "Analyze yield",
-            "MOCK_FACT_SUPPORTED: CSPR can be staked on the network. DeFi pools expose users to smart contract risk and should be evaluated carefully before allocation because capital can be lost due to exploits or market volatility in live markets.",
-            4000,
-            &config,
+                let audit = result.validator_audit.expect("audit json");
+                assert_eq!(audit["stats"]["factuality_enabled"], true);
+            },
         )
-        .await
-        .expect("stage factuality mock eval");
-
-        let audit = result.validator_audit.expect("audit json");
-        assert_eq!(audit["stats"]["factuality_enabled"], true);
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-            std::env::remove_var("VALIDATOR_FACTUALITY");
-        }
+        .await;
     }
 }

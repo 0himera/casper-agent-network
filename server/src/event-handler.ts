@@ -33,6 +33,28 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
   }
 }
 
+let lastHealthCheckTime = 0;
+let lastHealthCheckResult = false;
+const HEALTH_CACHE_TTL_MS = 5000;
+
+async function checkBackendHealth(): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastHealthCheckTime < HEALTH_CACHE_TTL_MS) {
+    return lastHealthCheckResult;
+  }
+
+  const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+  try {
+    const res = await fetch(`${rustBackendUrl}/health`, { signal: AbortSignal.timeout(2000) });
+    lastHealthCheckResult = res.ok;
+  } catch (err: any) {
+    console.log('Backend health check failed:', err.message || err);
+    lastHealthCheckResult = false;
+  }
+  lastHealthCheckTime = now;
+  return lastHealthCheckResult;
+}
+
 async function main() {
   console.log('Database initialized successfully via mysql2 pool.');
 
@@ -168,13 +190,18 @@ async function main() {
         if (agent?.endpoint_url === 'autonomous') {
           console.log(`Agent ${agentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
         } else {
-          console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
-          fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
-            method: 'POST',
-            headers: fetchHeaders
-          }).catch(err => {
-            console.log('Error triggering execution on backend:', err.message || err);
-          });
+          const isHealthy = await checkBackendHealth();
+          if (!isHealthy) {
+            console.log(`Backend is unhealthy. Skipping automated execution for task ${payload.task_id}.`);
+          } else {
+            console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
+            fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+              method: 'POST',
+              headers: fetchHeaders
+            }).catch(err => {
+              console.log('Error triggering execution on backend:', err.message || err);
+            });
+          }
         }
 
       } else if (eventName === 'TaskSubmitted') {
@@ -186,14 +213,19 @@ async function main() {
         );
         console.log(`Result submitted for task ${payload.task_id}: ${payload.result_hash}`);
 
-        const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
-        console.log(`Triggering validation for task ${payload.task_id}...`);
-        fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
-          method: 'POST',
-          headers: fetchHeaders
-        }).catch(err => {
-          console.log('Error triggering validation on backend:', err.message || err);
-        });
+        const isHealthy = await checkBackendHealth();
+        if (!isHealthy) {
+          console.log(`Backend is unhealthy. Skipping automated validation for task ${payload.task_id}.`);
+        } else {
+          const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+          console.log(`Triggering validation for task ${payload.task_id}...`);
+          fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
+            method: 'POST',
+            headers: fetchHeaders
+          }).catch(err => {
+            console.log('Error triggering validation on backend:', err.message || err);
+          });
+        }
 
       } else if (eventName === 'TaskCompleted') {
         const payload = event.data.data as TaskCompletedPayload;

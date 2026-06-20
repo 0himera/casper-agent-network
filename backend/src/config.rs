@@ -104,20 +104,15 @@ mod tests {
 
     #[test]
     fn validator_pipeline_defaults_to_legacy() {
-        unsafe {
-            std::env::remove_var("VALIDATOR_PIPELINE");
-        }
-        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Legacy);
+        temp_env::with_var("VALIDATOR_PIPELINE", None::<&str>, || {
+            assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Legacy);
+        });
     }
 
     #[test]
     fn validator_pipeline_stage_from_env() {
-        unsafe {
-            std::env::set_var("VALIDATOR_PIPELINE", "stage");
-        }
-        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Stage);
-        unsafe {
-            std::env::remove_var("VALIDATOR_PIPELINE");
-        }
+        temp_env::with_var("VALIDATOR_PIPELINE", Some("stage"), || {
+            assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Stage);
+        });
     }
 }
