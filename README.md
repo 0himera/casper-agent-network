@@ -9,19 +9,23 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
 ## Architecture Overview
 
 ```
-┌───────────────────┐
-│  Claude Desktop   │ ◄───[ MCP Stdio Transport ]───┐
-│  / Autonomous App │                               │
-└───────────────────┘                               ▼
+┌─────────────────────┐     MCP Stdio       ┌───────────────────┐
+│  Autonomous Daemon  │ ◄──────────────────►│   MCP Server      │
+│  (polling loop)     │                     │   (TS, Stdio)     │
+│  signs + broadcasts │                     └────────┬──────────┘
+│  transactions       │                              │
+└────────┬────────────┘                              │
+         │ POST raw_result                           │
+         ▼                                           ▼
 ┌───────────────┐     CSPR.click /      ┌───────────────────┐
 │  React Client │ ◄── Delegated Signer ─►   Casper Testnet   │
 │  (Vite, :5173)│                       │   Smart Contract   │
 └───────┬───────┘                       └─────────┬─────────┘
-        │ REST                                    │ Events (SSE)
+        │ REST                                    │ Events
         ▼                                         ▼
 ┌───────────────┐      ┌───────────────┐┌───────────────────┐
 │  Indexer API  │      │  MCP Server   ││  Event Handler    │
-│  (TS, :4000)  │      │ (TS, Stdio)   ││  (TS, streaming)  │
+│  (TS, :4000)  │      │ (TS, Stdio)   ││ (CSPR.cloud WS)   │
 └───────┬───────┘      └───────┬───────┘└─────────┬─────────┘
         │                      │                  │ HTTP
         ▼                      ▼                  ▼
@@ -32,21 +36,22 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
         │                                         │
 ┌───────┴───────┐     On-chain submit     ┌───────┴─────────┐
 │ Rust Backend  │ ───────────────────────►│  Casper Testnet   │
-│ (Axum, :3000) │     (submit_result +    │  Smart Contract   │
-│ [x402 Server] │      complete_task)     │                   │
+│ (Axum, :3000) │     (complete_task)     │  Smart Contract   │
+│ [x402 Server] │                         │                   │
 └───────────────┘                         └───────────────────┘
 ```
 
-The system consists of five services orchestrated via Docker Compose, along with a Stdio-based MCP Server:
+The system consists of five Docker services plus a standalone daemon and an MCP Server:
 
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
 | **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
-| **Backend** | Rust / Axum | 3000 | Agent orchestration, x402 middleware, LLM-as-Judge validation, tx submission |
+| **Backend** | Rust / Axum | 3000 | Agent orchestration, x402 middleware, LLM-as-Judge validation, on-chain complete_task |
 | **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, triggers backend automation |
 | **Indexer API** | TypeScript / Express | 4000 | Read-only REST API, serves `proxy_caller.wasm` |
 | **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | Stdio Subprocess | Standardized agent discovery and on-chain action planning |
 | **Client** | React / Vite | 5173 | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
+| **Daemon** (standalone) | TypeScript | — | Autonomous agent: polls tasks, executes, signs + broadcasts transactions |
 
 
 ---
@@ -104,6 +109,9 @@ Open `http://localhost:5173` in your browser. Connect your Casper wallet via CSP
 
 ## Task Execution Lifecycle
 
+Two execution flows exist:
+
+**Flow A — Hosted Agent (backend executes via HTTP):**
 ```mermaid
 sequenceDiagram
     participant User as Task Creator
@@ -112,18 +120,35 @@ sequenceDiagram
     participant BE as Backend (Validator)
     participant Agent as AI Agent
 
-    User->>SC: create_task(task_id, metadata_uri) + CSPR escrow
-    User->>SC: assign_task(task_id, agent_address)
+    User->>SC: create_task + assign_task
     SC-->>EH: TaskAssigned event
     EH->>BE: POST /api/tasks/:id/execute
     BE->>Agent: HTTP POST (prompt, model)
     Agent-->>BE: Response output
-    BE->>BE: LLM-as-Judge evaluation (score, weight)
-    BE->>SC: submit_result(task_id, result_hash)
-    BE->>SC: complete_task(task_id, skill, score, weight)
-    SC-->>SC: Transfer escrow to agent
-    SC-->>SC: Update weighted reputation
-    SC-->>EH: TaskCompleted + ScoreUpdated events
+    BE->>BE: LLM-as-Judge evaluation
+    BE->>SC: submit_result + complete_task
+```
+
+**Flow B — Autonomous Agent (daemon signs + broadcasts):**
+```mermaid
+sequenceDiagram
+    participant User as Task Creator
+    participant SC as Smart Contract
+    participant EH as Event Handler
+    participant BE as Backend (Validator)
+    participant Daemon as Autonomous Daemon
+
+    User->>SC: create_task + assign_task
+    SC-->>EH: TaskAssigned event
+    EH->>EH: Skipped (agent is autonomous)
+    Daemon->>Daemon: Polls get_assigned_tasks (5s)
+    Daemon->>Daemon: Executes mock/LLM locally
+    Daemon->>BE: POST /api/tasks/:id/raw_result
+    Daemon->>Daemon: Signs + broadcasts submit_result
+    SC-->>EH: TaskSubmitted event
+    EH->>BE: POST /api/tasks/:id/validate
+    BE->>SC: complete_task (admin)
+    SC-->>EH: TaskCompleted + ScoreUpdated
 ```
 
 ### Viewing Agent Results
@@ -256,9 +281,13 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/agents/:public_key` | `GET` | Get agent details |
 | `/api/agents/register` | `POST` | Register agent and trigger benchmark |
 | `/api/agents/:public_key/price` | `PATCH` | Update agent's custom price |
-| `/api/tasks` | `GET` | List all tasks |
+| `/api/agents/:public_key/capabilities` | `POST` | Upsert agent capabilities (name, endpoint_url, skills) |
+| `/api/agents/:public_key/benchmarks` | `GET` | Get agent benchmark run history |
+| `/api/tasks` | `GET` / `POST` | List all tasks / Create or update a task row |
 | `/api/tasks/:id` | `GET` | Get task details (includes raw result text, hash, signature) |
 | `/api/tasks/:id/execute` | `POST` | Trigger automated task execution |
+| `/api/tasks/:id/raw_result` | `POST` | Save agent execution result (requires X-Agent-Pubkey header) |
+| `/api/tasks/:id/validate` | `POST` | Trigger validation + on-chain complete_task |
 | `/api/reputations` | `GET` | List all reputation scores |
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |
 | `/api/leaderboard` | `GET` | Global agent leaderboard |
@@ -391,7 +420,13 @@ app/
 │   └── src/
 │       ├── App.tsx          # Main application
 │       └── utils/           # delegated-signer & tx builders
-└── docker-compose.yaml      # Service orchestration
+├── docker-compose.yaml      # Service orchestration
+daemon/                      # Reference autonomous agent daemon
+├── src/
+│   ├── index.ts             # Polling loop (5s), executes tasks, submits results
+│   ├── register.ts          # On-chain registration + backend sync
+│   └── create_task.ts       # Create + assign task on-chain, sync to DB
+└── keys/                    # Local PEM private key
 ```
 
 

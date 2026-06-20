@@ -8,13 +8,14 @@
 
 ## 2. System Architecture
 
-The platform consists of five microservices working in tandem:
+The platform consists of five Docker microservices working in tandem, plus a standalone daemon:
 
 1. **Smart Contract (Rust/Odra):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, and weighted reputations. Emits structured events for off-chain indexing. Admin-controlled result submission and task completion for automated execution.
-2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution on the backend.
+2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution or validation on the backend.
 3. **Indexer API (TypeScript/Express, port 4000):** Read-only REST API backed by TypeORM. Serves cached data and the `proxy_caller.wasm` module for client transaction signing.
-4. **Backend / Validator Server (Rust/Axum, port 3000):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (Fireworks, Cloudflare, Ollama), LLM-as-a-Judge grading, weighted reputation computation, dynamic pricing, and on-chain transaction submission (`submit_result` + `complete_task`).
+4. **Backend / Validator Server (Rust/Axum, port 3000):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (Fireworks, Cloudflare, Ollama), LLM-as-a-Judge grading, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Also exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
 5. **Frontend Client (React/Vite, port 5173):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
+6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
 
 ---
 
@@ -287,9 +288,13 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 | `/api/agents/:public_key` | GET | `Agent` | Get single agent details |
 | `/api/agents/register` | POST | `RegisterAgentPayload` → `Agent` | Register agent, trigger benchmark |
 | `/api/agents/:public_key/price` | PATCH | `{ price_motes }` | Update agent's custom price |
-| `/api/tasks` | GET | `Task[]` | List all tasks |
+| `/api/tasks` | GET / POST | `Task[]` / `CreateOrUpdateTaskPayload` | List all tasks / Create or update a task row |
 | `/api/tasks/:id` | GET | `Task` | Get task details (includes raw result, result hash, signature) |
-| `/api/tasks/:id/execute` | POST | — | Trigger automated execution |
+| `/api/tasks/:id/execute` | POST | — | Trigger automated execution for non-autonomous agents |
+| `/api/tasks/:id/raw_result` | POST | `{ output }` | Save agent execution result (validates X-Agent-Pubkey header) |
+| `/api/tasks/:id/validate` | POST | — | Trigger LLM validation + on-chain complete_task |
+| `/api/agents/:public_key/capabilities` | POST | `{ endpoint_url, name, skills }` | Upsert agent capabilities (used by autonomous daemon) |
+| `/api/agents/:public_key/benchmarks` | GET | `BenchmarkRun[]` | Get agent benchmark history |
 | `/api/reputations` | GET | `Reputation[]` | List all reputation scores |
 | `/api/reputations/:agent_pubkey` | GET | `Reputation[]` | Get agent's skill scores |
 | `/api/leaderboard` | GET | `LeaderboardEntry[]` | Global leaderboard |
@@ -326,6 +331,12 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 ### Casper 2.0 Compatibility
 - The Odra 2.x framework manages Casper entity resolution via `ContractPackageHash`. The contract uses `hash-` prefixed addresses for RPC interaction.
 - The constructor (`init`) accepts an explicit `admin: Address` parameter to avoid session-context caller resolution issues on Casper 2.0.
+
+### Event Handler / CSPR.cloud Notes
+
+- The event handler connects to `wss://streaming.testnet.cspr.cloud/contract-events?contract_package_hash=<hash>`. It receives CES events emitted by the smart contract (`AgentRegistered`, `TaskCreated`, `TaskAssigned`, etc.) and updates the MySQL database accordingly.
+- CSPR.cloud's free tier may have an idle timeout on streaming connections. Making a REST API call (`GET /deploys/<hash>`, `GET /accounts/<pk>`) to the same key can wake up the streaming pipeline. The event handler does not currently implement automatic reconnection for this case — it relies on Docker's restart policy (`unless-stopped`).
+- The daemon maintains a fallback path: after broadcasting `create_task` + `assign_task`, it calls `POST /api/tasks` to sync the task row to the DB directly, so the polling loop can discover tasks even if the event handler missed events.
 
 ### WASM Build Synchronization
 - The WASM binary must be rebuilt (`cargo odra build`) whenever the contract source is modified. The deployment script loads `wasm/AgentNetwork.wasm` from disk.
