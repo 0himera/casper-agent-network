@@ -345,6 +345,10 @@ async fn validate_and_complete(
         Ok(status) => {
             if status.success() {
                 println!("✅ Successfully completed task {} on-chain!", task_id);
+                let _ = sqlx::query("UPDATE tasks SET status = 'Completed' WHERE id = ?")
+                    .bind(task_id)
+                    .execute(pool)
+                    .await;
             } else {
                 eprintln!("❌ On-chain transaction failed for task {}: {:?}", task_id, status);
             }

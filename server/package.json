@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/resources dist/resources",
     "lint": "eslint src/**/*.ts",
     "format": "eslint 'src/**/*.ts' --fix && prettier src/**/*.ts --write",
     "api:dev": "ts-node src/api.ts",
