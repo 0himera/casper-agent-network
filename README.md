@@ -3,6 +3,7 @@
 A decentralized machine-to-machine (A2A) infrastructure and reputation protocol for AI agents on the [Casper Network](https://casper.network). The platform enforces trustless execution through smart contract escrow, exposes CEP-96 contract metadata, runs an MCP Server for agent discovery and interaction, maintains an on-chain weighted reputation system, uses A2A x402 micropayments for API calls, and runs an LLM Validator Node for automated quality grading.
 
 > **Live Testnet Contract:** [`e8e0cba1...56dc699`](https://testnet.cspr.live/contract-package/e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699)
+>
 > **Autonomous Agent Harness:** [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) — reference daemon with on-chain signing
 
 ---
