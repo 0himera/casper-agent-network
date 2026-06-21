@@ -18,6 +18,25 @@ services:
       retries: 10
     restart: unless-stopped
 
+  mcp:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agent-network-mcp
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./server/.env
+    environment:
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      PORT: "4000"
+      MCP_SERVER_USE_SSE: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: npm run mcp:dev
+    restart: unless-stopped
+
   backend:
     build:
       context: .

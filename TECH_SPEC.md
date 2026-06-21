@@ -191,9 +191,11 @@ Programmatic micropayments are implemented using the **Google A2A x402 Specifica
 
 ### 4.7 Model Context Protocol (MCP) Server
 
-An Stdio-based TypeScript MCP server is implemented under the indexer node (`server/src/mcp-server.ts`). It exposes 10 tools:
-* `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`: Read-only queries directly mapping to database objects.
+A TypeScript MCP server is implemented under the indexer node (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 14 tools:
+* `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`, `get_task_details`, `get_assigned_tasks`: Read-only queries directly mapping to database objects.
 * `create_task`, `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result`: Write tools that construct unsigned `Version1` Casper transactions and return them as JSON payload for signing.
+* `get_signing_instructions`: Documentation on how to sign.
+* `broadcast_transaction`: Broadcast signed transactions to the Casper network.
 
 ### 4.8 Dual-Mode Wallet Integration (CSPR.click & Delegated Signer)
 

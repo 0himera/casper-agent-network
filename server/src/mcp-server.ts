@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import { z } from "zod";
 import { pool } from './db';
 import { RowDataPacket } from 'mysql2';
@@ -418,9 +420,36 @@ server.tool(
 );
 
 async function main() {
-  // await AppDataSource.initialize();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const useSse = process.env.MCP_SERVER_USE_SSE === "true" || process.argv.includes("--sse");
+
+  if (useSse) {
+    const app = express();
+    app.use(express.json());
+
+    let transport: SSEServerTransport | null = null;
+
+    app.get("/sse", async (req, res) => {
+      console.log("New SSE connection established");
+      transport = new SSEServerTransport("/message", res);
+      await server.connect(transport);
+    });
+
+    app.post("/message", async (req, res) => {
+      if (!transport) {
+        return res.status(400).send("SSE connection not established");
+      }
+      await transport.handlePostMessage(req, res);
+    });
+
+    const port = process.env.PORT || 4000;
+    app.listen(port, () => {
+      console.log(`MCP SSE Server listening on port ${port}`);
+    });
+  } else {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("MCP Server running via Stdio");
+  }
 }
 
 main().catch((error) => {
