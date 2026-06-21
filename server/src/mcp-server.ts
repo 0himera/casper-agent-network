@@ -424,7 +424,6 @@ async function main() {
 
   if (useSse) {
     const app = express();
-    app.use(express.json());
 
     let transport: SSEServerTransport | null = null;
 
