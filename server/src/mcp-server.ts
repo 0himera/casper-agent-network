@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import { z } from "zod";
-import { AppDataSource } from './data-source';
-import { AgentEntity } from "./entity/agent.entity";
-import { TaskEntity } from "./entity/task.entity";
-import { ReputationEntity } from "./entity/reputation.entity";
+import { pool } from './db';
+import { RowDataPacket } from 'mysql2';
 import { config } from './config';
 import fs from 'fs';
 import path from 'path';
@@ -15,7 +15,10 @@ import {
   Hash,
   PublicKey,
   SessionBuilder,
-  Key
+  Key,
+  RpcClient,
+  HttpHandler,
+  Transaction
 } from 'casper-js-sdk';
 
 const server = new McpServer({
@@ -77,8 +80,7 @@ server.tool(
   "list_agents",
   {},
   async () => {
-    const agentRepo = AppDataSource.getRepository(AgentEntity);
-    const agents = await agentRepo.find({ order: { timestamp: 'DESC' } });
+    const [agents] = await pool.query('SELECT * FROM agents ORDER BY timestamp DESC');
     return {
       content: [{ type: "text", text: JSON.stringify(agents, null, 2) }]
     };
@@ -92,8 +94,8 @@ server.tool(
     agentPublicKey: z.string().describe("Casper public key of the agent"),
   },
   async ({ agentPublicKey }) => {
-    const agentRepo = AppDataSource.getRepository(AgentEntity);
-    const agent = await agentRepo.findOne({ where: { public_key: agentPublicKey } });
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [agentPublicKey]);
+    const agent = rows[0];
     if (!agent) {
       return {
         content: [{ type: "text", text: `Agent not found: ${agentPublicKey}` }],
@@ -114,10 +116,8 @@ server.tool(
     skill: z.string().describe("Skill domain name (e.g. defi_analysis, code_review)"),
   },
   async ({ agentPublicKey, skill }) => {
-    const reputationRepo = AppDataSource.getRepository(ReputationEntity);
-    const reputation = await reputationRepo.findOne({
-      where: { agent_public_key: agentPublicKey, skill }
-    });
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM reputations WHERE agent_public_key = ? AND skill = ?', [agentPublicKey, skill]);
+    const reputation = rows[0];
     if (!reputation) {
       return {
         content: [{ type: "text", text: `No reputation score for agent ${agentPublicKey} on skill ${skill}` }]
@@ -136,13 +136,12 @@ server.tool(
     domain: z.string().optional().describe("Optional skill domain filter"),
   },
   async ({ domain }) => {
-    const reputationRepo = AppDataSource.getRepository(ReputationEntity);
-    const query = reputationRepo.createQueryBuilder("reputation")
-      .orderBy("reputation.score", "DESC");
+    let items;
     if (domain) {
-      query.where("reputation.skill = :domain", { domain });
+      [items] = await pool.query('SELECT * FROM reputations WHERE skill = ? ORDER BY score DESC', [domain]);
+    } else {
+      [items] = await pool.query('SELECT * FROM reputations ORDER BY score DESC');
     }
-    const items = await query.getMany();
     return {
       content: [{ type: "text", text: JSON.stringify(items, null, 2) }]
     };
@@ -154,11 +153,7 @@ server.tool(
   "find_open_tasks",
   {},
   async () => {
-    const taskRepo = AppDataSource.getRepository(TaskEntity);
-    const tasks = await taskRepo.find({
-      where: { status: "Open" },
-      order: { timestamp: 'DESC' }
-    });
+    const [tasks] = await pool.query('SELECT * FROM tasks WHERE status = "Open" ORDER BY timestamp DESC');
     return {
       content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }]
     };
@@ -301,10 +296,159 @@ server.tool(
   }
 );
 
+// 11. get_signing_instructions
+server.tool(
+  "get_signing_instructions",
+  {},
+  async () => {
+    const instructions = `
+# How to Sign Casper v5 Transactions Locally
+
+To interact with the Casper Agent Network securely, you must sign transactions locally using your private PEM key before broadcasting.
+
+### Node.js Example
+
+\`\`\`javascript
+import { Transaction, PrivateKey } from 'casper-js-sdk';
+import fs from 'fs';
+
+// 1. Get the unsigned transaction JSON from MCP (e.g. from \`submit_execution_result\`)
+const unsignedTxJson = /* get transaction JSON */;
+
+// 2. Load the transaction object
+const transaction = Transaction.fromJSON(unsignedTxJson);
+
+// 3. Load your private key from PEM file
+const privateKeyPem = fs.readFileSync('./keys/secret_key.pem', 'utf8');
+const privateKey = PrivateKey.fromPem(privateKeyPem);
+
+// 4. Sign the transaction locally
+transaction.sign(privateKey);
+
+// 5. Export the signed transaction JSON to send to broadcast_transaction tool
+const signedTxJson = transaction.toJSON();
+\`\`\`
+
+Once signed, call the \`broadcast_transaction\` tool in this MCP server to submit it to the blockchain.
+`;
+    return {
+      content: [{ type: "text", text: instructions }]
+    };
+  }
+);
+
+// 12. broadcast_transaction
+server.tool(
+  "broadcast_transaction",
+  {
+    signedTransaction: z.any().describe("The JSON object of the signed Casper transaction"),
+  },
+  async ({ signedTransaction }) => {
+    try {
+      const transaction = Transaction.fromJSON(signedTransaction);
+      const rpcHandler = new HttpHandler(config.nodeUrl);
+      const rpcClient = new RpcClient(rpcHandler);
+      
+      const result = await rpcClient.putTransaction(transaction);
+      return {
+        content: [{ 
+          type: "text", 
+          text: JSON.stringify({
+            success: true,
+            transactionHash: result.transactionHash
+          }, null, 2)
+        }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error broadcasting transaction: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 13. get_task_details
+server.tool(
+  "get_task_details",
+  {
+    taskId: z.string().describe("Task ID to fetch details for"),
+  },
+  async ({ taskId }) => {
+    try {
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+      const task = rows[0];
+      if (!task) {
+        return {
+          content: [{ type: "text", text: `Task not found: ${taskId}` }],
+          isError: true
+        };
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify(task, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error fetching task: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 14. get_assigned_tasks
+server.tool(
+  "get_assigned_tasks",
+  {
+    agentPublicKey: z.string().describe("Public key of the agent to fetch tasks for"),
+  },
+  async ({ agentPublicKey }) => {
+    try {
+      const [tasks] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE assigned_agent_public_key = ? AND status = "InProgress" ORDER BY timestamp DESC', [agentPublicKey]);
+      // Filter out tasks that already have a result submitted
+      const activeTasks = tasks.filter(t => !t.result_hash);
+      return {
+        content: [{ type: "text", text: JSON.stringify(activeTasks, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error fetching assigned tasks: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 async function main() {
-  await AppDataSource.initialize();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const useSse = process.env.MCP_SERVER_USE_SSE === "true" || process.argv.includes("--sse");
+
+  if (useSse) {
+    const app = express();
+
+    let transport: SSEServerTransport | null = null;
+
+    app.get("/sse", async (req, res) => {
+      console.log("New SSE connection established");
+      transport = new SSEServerTransport("/message", res);
+      await server.connect(transport);
+    });
+
+    app.post("/message", async (req, res) => {
+      if (!transport) {
+        return res.status(400).send("SSE connection not established");
+      }
+      await transport.handlePostMessage(req, res);
+    });
+
+    const port = process.env.PORT || 4000;
+    app.listen(port, () => {
+      console.log(`MCP SSE Server listening on port ${port}`);
+    });
+  } else {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("MCP Server running via Stdio");
+  }
 }
 
 main().catch((error) => {

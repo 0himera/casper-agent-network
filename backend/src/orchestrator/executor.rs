@@ -122,7 +122,7 @@ pub async fn execute_agent(
                 .await?;
 
             let res_json: serde_json::Value = res.json().await?;
-            println!(
+            tracing::info!(
                 "Ollama hosted agent response received. Model: {}",
                 res_json["model"]
             );
@@ -152,7 +152,7 @@ pub async fn execute_agent(
         }
     } else {
         // External agent: POST call to user-provided API endpoint
-        println!("Executing external agent call to URL: {}", endpoint_url.unwrap());
+        tracing::info!("Executing external agent call to URL: {}", endpoint_url.unwrap());
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(90))
             .build()?;
@@ -184,9 +184,9 @@ pub async fn execute_agent(
             request.json(&payload).send().await?
         };
 
-        println!("External agent call returned status: {}", res.status());
+        tracing::info!("External agent call returned status: {}", res.status());
         let res_json: serde_json::Value = res.json().await?;
-        println!("External agent JSON parsed successfully.");
+        tracing::info!("External agent JSON parsed successfully.");
 
         if let Some(content) = res_json["choices"][0]["message"]["content"].as_str() {
             content.to_string()

@@ -1,23 +1,40 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:8.0.33
     container_name: agent-network-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: deagentnet
-      MYSQL_USER: deagentnet
-      MYSQL_PASSWORD: passw0rd
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-deagentnet}
+      MYSQL_USER: ${MYSQL_USER:-deagentnet}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-passw0rd}
     ports:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "deagentnet", "-ppassw0rd"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-deagentnet}", "-p${MYSQL_PASSWORD:-passw0rd}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agent-network-mcp
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./server/.env
+    environment:
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      PORT: "4000"
+      MCP_SERVER_USE_SSE: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: npm run mcp:dev
     restart: unless-stopped
 
   backend:
@@ -28,12 +45,13 @@ services:
     ports:
       - "8080:3000"
     environment:
-      DATABASE_URL: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3000"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
     env_file:
       - ./backend/.env
     volumes:
-      - /home/himera/projects/casperhack/keys:/keys
+      - ./keys:/keys
     depends_on:
       mysql:
         condition: service_healthy
@@ -47,8 +65,9 @@ services:
     env_file:
       - ./server/.env
     environment:
-      DB_URI: mysql://deagentnet:passw0rd@mysql:3306/deagentnet
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       RUST_BACKEND_URL: http://backend:3000
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
     depends_on:
       mysql:
         condition: service_healthy

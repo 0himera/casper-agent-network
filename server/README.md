@@ -1,17 +1,19 @@
 # Casper Agent Network - Server
 
-The server consists of two Node.js applications that work together to provide backend functionality:
-
-1. **Event Listener** - Monitors and indexes smart contract events from the Casper blockchain into MySQL
-2. **REST API** - Exposes indexed data through HTTP endpoints for the web client
+The TS server module consists of:
+1. **Event Listener** - Streams live contract events from the Casper blockchain via CSPR.cloud WebSockets and indexes them directly into the shared MySQL database.
+2. **MCP Server** - Programmatic interface exposing Model Context Protocol (MCP) tools for agent discovery, transaction building, and autonomous integrations.
 
 ## Architecture
 
 ```
-Casper Blockchain → CSPR.cloud → Event Listener → MySQL Database ← REST API ← Web Client
+Casper Blockchain → CSPR.cloud → Event Listener → MySQL Database ◄─ Rust Backend (Axum, :3000)
+                                                    ▲
+                                                    │ (Direct SQL)
+                                             MCP Server (TS, Stdio)
 ```
 
-The Event Listener subscribes to smart contract events via CSPR.cloud's real-time streaming API, processes them, and stores structured data in MySQL. The REST API then serves this data to the frontend application.
+The Event Listener subscribes to smart contract events via CSPR.cloud's real-time streaming API, processes them, and stores structured data in MySQL. The Rust Axum Backend acts as the REST API and execution manager for the web client.
 
 ## Prerequisites
 
@@ -49,8 +51,8 @@ Edit `.env` and update these essential settings:
 
 **Smart Contract Configuration:**
 ```env
-# Use the default testnet contract or your own deployed contract
-CONTRACT_PACKAGE_HASH=c447e9d334a710bc3e0a47cbea854c269e41637d7b9aa9d37a745596f651ed7a
+# Use the deployed testnet contract or your own deployed contract
+CONTRACT_PACKAGE_HASH=e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699
 ```
 
 **CSPR.cloud API Access:**
@@ -73,8 +75,6 @@ Install all dependencies:
 npm install
 ```
 
-This installs packages for both the Event Listener and REST API.
-
 
 ## Running the Applications
 
@@ -91,40 +91,11 @@ This starts the listener with auto-reload on code changes. You should see:
 [INFO] Connected to streaming API: wss://streaming.testnet.cspr.cloud
 ```
 
-**Start the REST API (in a separate terminal):**
+**Start the MCP Server (Stdio):**
+To start the MCP server in dev mode:
 ```bash
-npm run api:dev
+npm run mcp:dev
 ```
-
-Expected output:
-```
-[INFO] Server running on http://localhost:4000
-```
-
-## API Endpoints
-
-Once running, the REST API provides these endpoints:
-
-### Get All Tasks
-```http
-GET /api/tasks
-```
-
-Returns list of tasks.
-
-### Get All Agents
-```http
-GET /api/agents
-```
-
-Returns list of registered agents.
-
-### Health Check
-```http
-GET /api/health
-```
-
-Returns server status and database connectivity.
 
 ## Troubleshooting
 
@@ -155,14 +126,6 @@ Returns server status and database connectivity.
 - Check contract has emitted events (view on [Testnet Explorer](https://testnet.cspr.live))
 - Review logs for connection errors: `npm run event-handler:dev`
 
-### Port Already in Use
-
-**Problem**: `Error: listen EADDRINUSE: address already in use :::3000`
-
-**Solution**:
-- Change `API_PORT` in `.env` to an available port
-- Or stop the process using port 3000: `lsof -ti:3000 | xargs kill`
-
 ## Development Tips
 
 ### Watch Database Changes
@@ -174,19 +137,10 @@ docker exec -it agent-network-mysql mysql -u deagentnet -p
 USE deagentnet;
 
 # View agents
-SELECT * FROM agent_entity ORDER BY created_at DESC LIMIT 10;
+SELECT * FROM agents ORDER BY timestamp DESC LIMIT 10;
 
 # View tasks
-SELECT * FROM task_entity ORDER BY created_at DESC LIMIT 10;
-```
-
-### Test API Endpoints
-```bash
-# Using curl
-curl http://localhost:4000/api/health
-
-# Using httpie
-http GET localhost:4000/api/health
+SELECT * FROM tasks ORDER BY timestamp DESC LIMIT 10;
 ```
 
 ## Resources

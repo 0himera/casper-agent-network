@@ -8,6 +8,7 @@ pub struct Agent {
     pub description: Option<String>,
     pub metadata_uri: Option<String>,
     pub endpoint_url: Option<String>,
+    #[serde(skip_serializing)]
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub active_jobs: i32,

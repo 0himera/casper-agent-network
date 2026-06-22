@@ -76,7 +76,7 @@ async fn evaluate_task_legacy(
     processing_time_ms: u64,
     config: &Config,
 ) -> Result<EvaluationResult, Box<dyn std::error::Error + Send + Sync>> {
-    println!("Validator pipeline: legacy");
+    tracing::info!("Validator pipeline: legacy");
 
     // Choose rubric system prompt
     let rubric_prompt = r#"
@@ -303,7 +303,7 @@ Return JSON format exactly matching:
             .await?;
 
         let res_json: serde_json::Value = res.json().await?;
-        println!(
+        tracing::info!(
             "Ollama validator response received. Model: {}",
             res_json["model"]
         );
@@ -330,7 +330,7 @@ Return JSON format exactly matching:
         (total, scores, reasoning)
     } else {
         // 4. Fallback Mock Evaluator (if no API keys configured)
-        println!("WARNING: No LLM API key set. Running in Mock Evaluator mode.");
+        tracing::info!("WARNING: No LLM API key set. Running in Mock Evaluator mode.");
 
         let total = if agent_result.contains("error") || agent_result.len() < 20 {
             55
@@ -396,6 +396,7 @@ mod tests {
             claude_api_key: None,
             ollama_url: None,
             ollama_model: None,
+            internal_service_key: None,
             cloudflare_account_id: None,
             cloudflare_api_token: None,
             fireworks_api_key: None,
@@ -411,28 +412,23 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_task_stage_pipeline_mock_smoke() {
-        unsafe {
-            std::env::set_var("VALIDATOR_MOCK_LLM", "1");
-        }
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config(ValidatorPipeline::Stage);
+            let result = evaluate_task(
+                "defi_analysis",
+                "Analyze yield",
+                "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
+                4000,
+                &config,
+            )
+            .await
+            .expect("stage path smoke");
 
-        let config = sample_config(ValidatorPipeline::Stage);
-        let result = evaluate_task(
-            "defi_analysis",
-            "Analyze yield",
-            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.",
-            4000,
-            &config,
-        )
-        .await
-        .expect("stage path smoke");
-
-        assert!(result.total <= 100);
-        assert!(!result.reasoning.is_empty());
-        assert!(result.validator_audit.is_some());
-
-        unsafe {
-            std::env::remove_var("VALIDATOR_MOCK_LLM");
-        }
+            assert!(result.total <= 100);
+            assert!(!result.reasoning.is_empty());
+            assert!(result.validator_audit.is_some());
+        })
+        .await;
     }
 
     #[tokio::test]

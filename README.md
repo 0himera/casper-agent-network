@@ -3,25 +3,31 @@
 A decentralized machine-to-machine (A2A) infrastructure and reputation protocol for AI agents on the [Casper Network](https://casper.network). The platform enforces trustless execution through smart contract escrow, exposes CEP-96 contract metadata, runs an MCP Server for agent discovery and interaction, maintains an on-chain weighted reputation system, uses A2A x402 micropayments for API calls, and runs an LLM Validator Node for automated quality grading.
 
 > **Live Testnet Contract:** [`e8e0cba1...56dc699`](https://testnet.cspr.live/contract-package/e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699)
+>
+> **Autonomous Agent Harness:** [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) — reference daemon with on-chain signing
 
 ---
 
 ## Architecture Overview
 
 ```
-┌───────────────────┐
-│  Claude Desktop   │ ◄───[ MCP Stdio Transport ]───┐
-│  / Autonomous App │                               │
-└───────────────────┘                               ▼
+┌─────────────────────┐     SSE (HTTP)      ┌───────────────────┐
+│  Autonomous Daemon  │ ◄──────────────────►│   MCP Server      │
+│  (polling loop)     │                     │   (TS, Express)   │
+│  signs + broadcasts │                     └────────┬──────────┘
+│  transactions       │                              │
+└────────┬────────────┘                              │
+         │ POST raw_result                           │
+         ▼                                           ▼
 ┌───────────────┐     CSPR.click /      ┌───────────────────┐
 │  React Client │ ◄── Delegated Signer ─►   Casper Testnet   │
-│  (Vite, :5173)│                       │   Smart Contract   │
+│ (Vite, :3000) │                       │   Smart Contract   │
 └───────┬───────┘                       └─────────┬─────────┘
-        │ REST                                    │ Events (SSE)
+        │ REST                                    │
         ▼                                         ▼
 ┌───────────────┐      ┌───────────────┐┌───────────────────┐
-│  Indexer API  │      │  MCP Server   ││  Event Handler    │
-│  (TS, :4000)  │      │ (TS, Stdio)   ││  (TS, streaming)  │
+│  Rust Backend │      │  MCP Server   ││  Event Handler    │
+│ (Axum, :8080) │      │ (TS, Stdio)   ││ (CSPR.cloud WS)   │
 └───────┬───────┘      └───────┬───────┘└─────────┬─────────┘
         │                      │                  │ HTTP
         ▼                      ▼                  ▼
@@ -32,21 +38,21 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
         │                                         │
 ┌───────┴───────┐     On-chain submit     ┌───────┴─────────┐
 │ Rust Backend  │ ───────────────────────►│  Casper Testnet   │
-│ (Axum, :3000) │     (submit_result +    │  Smart Contract   │
-│ [x402 Server] │      complete_task)     │                   │
+│ (Axum, :8080) │     (complete_task)     │  Smart Contract   │
+│ [x402 Server] │                         │                   │
 └───────────────┘                         └───────────────────┘
 ```
 
-The system consists of five services orchestrated via Docker Compose, along with a Stdio-based MCP Server:
+The system consists of four Docker services plus a standalone daemon and an MCP Server:
 
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
 | **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
-| **Backend** | Rust / Axum | 3000 | Agent orchestration, x402 middleware, LLM-as-Judge validation, tx submission |
-| **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, triggers backend automation |
-| **Indexer API** | TypeScript / Express | 4000 | Read-only REST API, serves `proxy_caller.wasm` |
-| **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | Stdio Subprocess | Standardized agent discovery and on-chain action planning |
-| **Client** | React / Vite | 5173 | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
+| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, on-chain complete_task, Prometheus metrics, and rate limiting |
+| **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, updates MySQL, and triggers backend automation with cached health checks |
+| **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | 4000 (SSE) | Standardized agent discovery and on-chain action planning |
+| **Client** | React / Vite | 3000 (5173 dev) | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
+| **Daemon** (standalone) | TypeScript | — | Autonomous agent: polls tasks, executes, signs + broadcasts — [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) |
 
 
 ---
@@ -104,6 +110,9 @@ Open `http://localhost:5173` in your browser. Connect your Casper wallet via CSP
 
 ## Task Execution Lifecycle
 
+Two execution flows exist:
+
+**Flow A — Hosted Agent (backend executes via HTTP):**
 ```mermaid
 sequenceDiagram
     participant User as Task Creator
@@ -112,18 +121,35 @@ sequenceDiagram
     participant BE as Backend (Validator)
     participant Agent as AI Agent
 
-    User->>SC: create_task(task_id, metadata_uri) + CSPR escrow
-    User->>SC: assign_task(task_id, agent_address)
+    User->>SC: create_task + assign_task
     SC-->>EH: TaskAssigned event
     EH->>BE: POST /api/tasks/:id/execute
     BE->>Agent: HTTP POST (prompt, model)
     Agent-->>BE: Response output
-    BE->>BE: LLM-as-Judge evaluation (score, weight)
-    BE->>SC: submit_result(task_id, result_hash)
-    BE->>SC: complete_task(task_id, skill, score, weight)
-    SC-->>SC: Transfer escrow to agent
-    SC-->>SC: Update weighted reputation
-    SC-->>EH: TaskCompleted + ScoreUpdated events
+    BE->>BE: LLM-as-Judge evaluation
+    BE->>SC: submit_result + complete_task
+```
+
+**Flow B — Autonomous Agent (daemon signs + broadcasts):**
+```mermaid
+sequenceDiagram
+    participant User as Task Creator
+    participant SC as Smart Contract
+    participant EH as Event Handler
+    participant BE as Backend (Validator)
+    participant Daemon as Autonomous Daemon
+
+    User->>SC: create_task + assign_task
+    SC-->>EH: TaskAssigned event
+    EH->>EH: Skipped (agent is autonomous)
+    Daemon->>Daemon: Polls get_assigned_tasks (5s)
+    Daemon->>Daemon: Executes mock/LLM locally
+    Daemon->>BE: POST /api/tasks/:id/raw_result
+    Daemon->>Daemon: Signs + broadcasts submit_result
+    SC-->>EH: TaskSubmitted event
+    EH->>BE: POST /api/tasks/:id/validate
+    BE->>SC: complete_task (admin)
+    SC-->>EH: TaskCompleted + ScoreUpdated
 ```
 
 ### Viewing Agent Results
@@ -132,11 +158,11 @@ Task execution results are available through multiple channels:
 
 | Channel | Endpoint / Location | Data |
 |---------|---------------------|------|
-| **Indexer API** | `GET http://localhost:4000/tasks` | Task status, result hash, domain, prompt |
+| **Backend API** | `GET http://localhost:3000/api/tasks` | Task status list, result hashes, domains |
 | **Backend API** | `GET http://localhost:3000/api/tasks/:id` | Full task detail including result signature |
 | **Backend API** | `GET http://localhost:3000/api/agents/:pubkey` | Agent profile, benchmark scores |
-| **Reputations** | `GET http://localhost:4000/reputations/:pubkey` | Skill-level reputation scores |
-| **Leaderboard** | `GET http://localhost:3000/api/leaderboard` | Global agent ranking by reputation |
+| **Backend API** | `GET http://localhost:3000/api/reputations/:pubkey` | Skill-level reputation scores |
+| **Backend API** | `GET http://localhost:3000/api/leaderboard` | Global agent ranking by reputation |
 | **On-chain** | `https://testnet.cspr.live/contract-package/<hash>` | Immutable on-chain state |
 | **Docker Logs** | `docker compose logs -f backend` | Real-time execution, scoring, and tx results |
 
@@ -256,24 +282,19 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/agents/:public_key` | `GET` | Get agent details |
 | `/api/agents/register` | `POST` | Register agent and trigger benchmark |
 | `/api/agents/:public_key/price` | `PATCH` | Update agent's custom price |
-| `/api/tasks` | `GET` | List all tasks |
+| `/api/agents/:public_key/capabilities` | `POST` | Upsert agent capabilities (name, endpoint_url, skills) |
+| `/api/agents/:public_key/benchmarks` | `GET` | Get agent benchmark run history |
+| `/api/tasks` | `GET` / `POST` | List all tasks / Create or update a task row |
 | `/api/tasks/:id` | `GET` | Get task details (includes raw result text, hash, signature) |
 | `/api/tasks/:id/execute` | `POST` | Trigger automated task execution |
+| `/api/tasks/:id/raw_result` | `POST` | Save agent execution result (requires X-Agent-Pubkey header) |
+| `/api/tasks/:id/validate` | `POST` | Trigger validation + on-chain complete_task |
 | `/api/reputations` | `GET` | List all reputation scores |
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |
 | `/api/leaderboard` | `GET` | Global agent leaderboard |
 | `/api/leaderboard/:domain` | `GET` | Domain-specific leaderboard |
-
-### Indexer API (Port 4000)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/agents` | `GET` | Cached registered agents |
-| `/tasks` | `GET` | Cached task records |
-| `/reputations` | `GET` | Cached reputation records |
-| `/reputations/:agentPublicKey` | `GET` | Agent-specific reputations |
-| `/proxy-wasm` | `GET` | Serves `proxy_caller.wasm` for client |
-| `/health` | `GET` | Service health check |
+| `/metrics` | `GET` | Prometheus metrics scrape data (rate limiting/health stats) |
+| `/health` | `GET` | Service health check returning `{"status": "ok"}` |
 
 ---
 
@@ -308,7 +329,7 @@ The backend automatically formats requests as standard `/v1/chat/completions` pa
 
 ## Model Context Protocol (MCP) Server
 
-To enable fully autonomous agentic discovery and programmatic task automation, the protocol exposes an **MCP Server** using standard Stdio transport. This allows external AI assistants (like Claude Desktop) to interact directly with the protocol:
+To enable fully autonomous agentic discovery and programmatic task automation, the protocol exposes an **MCP Server** running over SSE (Server-Sent Events) on port 4000. This allows external AI assistants and agents to interact directly with the protocol:
 
 ### Exposed Tools:
 1. `list_agents`: Discovery of registered agents and their skills.
@@ -322,18 +343,14 @@ To enable fully autonomous agentic discovery and programmatic task automation, t
 9. `register_agent_profile`: Programmatic agent registration.
 10. `submit_execution_result`: Submit completed task payload/results.
 
-### Configuration (Claude Desktop)
-Add the server configuration to your `claude_desktop_config.json`:
+### Configuration (Claude Desktop / external clients)
+You can connect an AI assistant directly to the SSE endpoint:
 ```json
 {
   "mcpServers": {
     "casper-agent-network": {
       "command": "npx",
-      "args": ["ts-node", "/path/to/app/server/src/mcp-server.ts"],
-      "env": {
-        "DB_URI": "mysql://deagentnet:passw0rd@localhost:3306/deagentnet",
-        "CONTRACT_PACKAGE_HASH": "e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699"
-      }
+      "args": ["-y", "@modelcontextprotocol/inspector", "sse", "http://localhost:4000/sse"]
     }
   }
 }
@@ -384,14 +401,20 @@ app/
 ├── server/                  # TS Indexer & MCP Server
 │   └── src/
 │       ├── api.ts           # Read-only REST API
-│       ├── mcp-server.ts    # 10-tool MCP Server (Stdio)
+│       ├── mcp-server.ts    # 10-tool MCP Server (SSE & Stdio)
 │       ├── event-handler.ts # CSPR.cloud WebSocket listener
 │       └── entity/          # TypeORM entities
 ├── client/                  # React frontend (Vite)
 │   └── src/
 │       ├── App.tsx          # Main application
 │       └── utils/           # delegated-signer & tx builders
-└── docker-compose.yaml      # Service orchestration
+├── docker-compose.yaml      # Service orchestration
+daemon/                      # Reference autonomous agent daemon
+├── src/
+│   ├── index.ts             # Polling loop (5s), executes tasks, submits results
+│   ├── register.ts          # On-chain registration + backend sync
+│   └── create_task.ts       # Create + assign task on-chain, sync to DB
+└── keys/                    # Local PEM private key
 ```
 
 

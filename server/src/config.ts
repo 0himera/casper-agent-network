@@ -9,6 +9,7 @@ interface Config {
   csprCloudStreamingUrl: string;
   csprCloudAccessKey: string;
   contractPackageHash: string;
+  nodeUrl: string;
   dbURI: string;
   pingCheckIntervalInMilliseconds: number;
 }
@@ -19,6 +20,7 @@ export const config: Config = {
   csprCloudStreamingUrl: process.env.CSPR_CLOUD_STREAMING_URL as string,
   csprCloudAccessKey: process.env.CSPR_CLOUD_ACCESS_KEY as string,
   contractPackageHash: process.env.CONTRACT_PACKAGE_HASH as string,
+  nodeUrl: process.env.CASPER_NODE_URL || 'https://node.testnet.casper.network/rpc',
   dbURI: process.env.DB_URI as string,
   pingCheckIntervalInMilliseconds: 60000,
 };

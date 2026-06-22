@@ -1,15 +1,17 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::env as std_env;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::api::AppState;
+use crate::config::Config;
+use crate::db::DbPool;
 use crate::db::models::{Agent, Task};
 use crate::orchestrator::executor::execute_agent;
 use crate::validator::evaluate_task;
@@ -87,7 +89,15 @@ pub async fn create_or_update_task(
 pub async fn execute_task_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if let Some(expected_key) = &state.config.internal_service_key {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+        if auth_header != Some(expected_key.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
     // 1. Fetch task details
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
         .bind(&id)
@@ -117,11 +127,18 @@ pub async fn execute_task_handler(
             "Assigned agent not found".to_string(),
         ))?;
 
-    // 4. Spawn background execution task
-    tokio::spawn(async move {
-        println!("Background execution started for task {}", task.id);
+    // Skip autonomous agents — they execute locally and submit_result on-chain themselves
+    if agent.endpoint_url.as_deref() == Some("autonomous") {
+        tracing::info!("Agent is autonomous, skipping backend execution for task {}", id);
+        return Ok(StatusCode::OK);
+    }
 
-        // Execute the agent task
+    // Spawn background execution for hosted/external agents
+    let pool = state.pool.clone();
+    let config = state.config.clone();
+    tokio::spawn(async move {
+        tracing::info!("Background execution started for task {}", task.id);
+
         let exec_res = match execute_agent(
             &task.domain,
             &task.prompt,
@@ -129,149 +146,232 @@ pub async fn execute_task_handler(
             agent.api_key.as_deref(),
             agent.model.as_deref(),
             agent.system_prompt.as_deref(),
-            &state.config,
+            &config,
         )
         .await
         {
             Ok(res) => res,
             Err(err) => {
-                eprintln!("Failed to execute agent for task {}: {}", task.id, err);
+                tracing::error!("Failed to execute agent for task {}: {}", task.id, err);
                 return;
             }
         };
 
-        // Evaluate results via LLM-as-Judge
-        let eval_res = match evaluate_task(
+        validate_and_complete(
+            &pool,
+            &config,
+            &task.id,
             &task.domain,
             &task.prompt,
+            task.budget_motes,
             &exec_res.output,
             exec_res.processing_time_ms,
-            &state.config,
         )
-        .await
-        {
-            Ok(res) => res,
-            Err(err) => {
-                eprintln!("Failed to evaluate task {}: {}", task.id, err);
-                return;
-            }
-        };
-
-        let score = eval_res.total;
-
-        // Calculate weight based on reputation.md multi-dimensional weight formula
-        let base_price = match task.domain.as_str() {
-            "rwa_valuation" => 15_000_000_000f64,
-            "data_analysis" => 2_000_000_000f64,
-            _ => 5_000_000_000f64, // defi_analysis
-        };
-        let ratio = (task.budget_motes as f64) / base_price;
-        let economic_weight = (ratio + 1.0).log2() + 1.0;
-
-        let complexity_weight = match task.domain.as_str() {
-            "rwa_valuation" => 2.5,
-            "defi_analysis" => 2.0,
-            "data_analysis" => 1.5,
-            _ => 1.0,
-        };
-
-        let competition_weight = 1.0;
-        let client_rep_weight = 1.0;
-        let recency_weight = 1.0;
-
-        let final_weight = economic_weight * 0.40
-            + complexity_weight * 0.25
-            + competition_weight * 0.15
-            + client_rep_weight * 0.15
-            + recency_weight * 0.05;
-
-        // Scale by 100 for integer precision on-chain
-        let weight = (final_weight * 100.0).round() as u32;
-        let weight = if weight == 0 { 1 } else { weight };
-
-        // Generate SHA-256 result hash
-        let mut hasher = Sha256::new();
-        hasher.update(exec_res.output.as_bytes());
-        let result_hash = hex::encode(hasher.finalize());
-
-        // Platform Proxy signature
-        let signature = format!("sig:platform_proxy:{}", result_hash);
-
-        // Update database with output, hash and signature
-        let _ = sqlx::query(
-            "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ?, validator_audit = ? WHERE id = ?",
-        )
-        .bind(&result_hash)
-        .bind(&signature)
-        .bind(&exec_res.output)
-        .bind(&eval_res.validator_audit)
-        .bind(&task.id)
-        .execute(&state.pool)
         .await;
-
-        println!(
-            "Task {} executed. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...",
-            task.id, score, weight, result_hash
-        );
-
-        // Call the on-chain CLI tool
-        let bin_path =
-            if std::path::Path::new("/usr/local/bin/agent_network_submit_complete").exists() {
-                "/usr/local/bin/agent_network_submit_complete"
-            } else {
-                "cargo"
-            };
-
-        let mut cmd = Command::new(bin_path);
-        if bin_path == "cargo" {
-            cmd.args(&[
-                "run",
-                "--bin",
-                "agent_network_submit_complete",
-                "--features",
-                "livenet",
-                "--",
-                &task.id,
-                &result_hash,
-                &task.domain,
-                &score.to_string(),
-                &weight.to_string(),
-            ])
-            .current_dir("../smart-contract");
-        } else {
-            cmd.args(&[
-                &task.id,
-                &result_hash,
-                &task.domain,
-                &score.to_string(),
-                &weight.to_string(),
-            ]);
-        }
-
-        // Pass CONTRACT_HASH env if configured
-        if let Ok(hash) = std_env::var("CONTRACT_HASH") {
-            cmd.env("CONTRACT_HASH", hash);
-        } else if let Ok(package_hash) = std_env::var("CONTRACT_PACKAGE_HASH") {
-            // Set hash address for livenet env
-            cmd.env("CONTRACT_HASH", format!("hash-{}", package_hash));
-        }
-
-        match cmd.status() {
-            Ok(status) => {
-                if status.success() {
-                    println!("✅ Successfully completed task {} on-chain!", task.id);
-                } else {
-                    eprintln!(
-                        "❌ On-chain transaction failed for task {} with status: {:?}",
-                        task.id, status
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to execute on-chain CLI tool: {}", e);
-            }
-        }
     });
 
     Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Deserialize)]
+pub struct RawResultPayload {
+    pub result: String,
+}
+
+pub async fn raw_result_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<RawResultPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let agent_pubkey = headers
+        .get("X-Agent-Pubkey")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((StatusCode::BAD_REQUEST, "Missing X-Agent-Pubkey header".into()))?;
+
+    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Task not found".into()))?;
+
+    if task.status != "InProgress" {
+        return Err((StatusCode::BAD_REQUEST, "Task is not in progress".into()));
+    }
+
+    match &task.assigned_agent_public_key {
+        Some(key) if key == agent_pubkey => {}
+        _ => return Err((StatusCode::FORBIDDEN, "Agent pubkey does not match assigned agent".into())),
+    }
+
+    let result_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(payload.result.as_bytes());
+        hex::encode(hasher.finalize())
+    };
+
+    let _ = sqlx::query("UPDATE tasks SET result = ?, result_hash = ? WHERE id = ?")
+        .bind(&payload.result)
+        .bind(&result_hash)
+        .bind(&id)
+        .execute(&state.pool)
+        .await;
+
+    tracing::info!("Raw result saved for task {} from agent {}", id, agent_pubkey);
+    Ok(StatusCode::OK)
+}
+
+pub async fn validate_task_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if let Some(expected_key) = &state.config.internal_service_key {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+        if auth_header != Some(expected_key.as_str()) {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
+    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Task not found".into()))?;
+
+    let result = task
+        .result
+        .as_ref()
+        .ok_or((StatusCode::BAD_REQUEST, "No raw result saved for task".into()))?;
+
+    let pool = state.pool.clone();
+    let config = state.config.clone();
+    let result = result.clone();
+    tokio::spawn(async move {
+        validate_and_complete(
+            &pool,
+            &config,
+            &task.id,
+            &task.domain,
+            &task.prompt,
+            task.budget_motes,
+            &result,
+            0,
+        )
+        .await;
+    });
+
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn validate_and_complete(
+    pool: &DbPool,
+    config: &Config,
+    task_id: &str,
+    domain: &str,
+    prompt: &str,
+    budget_motes: u64,
+    output: &str,
+    processing_time_ms: u64,
+) {
+    let eval_res = match evaluate_task(domain, prompt, output, processing_time_ms, config).await {
+        Ok(res) => res,
+        Err(err) => {
+            tracing::error!("Failed to evaluate task {}: {}", task_id, err);
+            return;
+        }
+    };
+
+    let score = eval_res.total;
+
+    let base_price = match domain {
+        "code_review" => 10_000_000_000f64,
+        "rwa_valuation" => 15_000_000_000f64,
+        "data_analysis" => 2_000_000_000f64,
+        _ => 5_000_000_000f64,
+    };
+    let ratio = (budget_motes as f64) / base_price;
+    let economic_weight = (ratio + 1.0).log2() + 1.0;
+
+    let complexity_weight = match domain {
+        "code_review" => 3.0,
+        "rwa_valuation" => 2.5,
+        "defi_analysis" => 2.0,
+        "data_analysis" => 1.5,
+        _ => 1.0,
+    };
+
+    let final_weight = economic_weight * 0.40
+        + complexity_weight * 0.25
+        + 1.0 * 0.15
+        + 1.0 * 0.15
+        + 1.0 * 0.05;
+
+    let weight = (final_weight * 100.0).round() as u32;
+    let weight = if weight == 0 { 1 } else { weight };
+
+    let mut hasher = Sha256::new();
+    hasher.update(output.as_bytes());
+    let result_hash = hex::encode(hasher.finalize());
+
+    let signature = format!("sig:platform_proxy:{}", result_hash);
+
+    let _ = sqlx::query(
+        "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ?, validator_audit = ? WHERE id = ?",
+    )
+    .bind(&result_hash)
+    .bind(&signature)
+    .bind(output)
+    .bind(&eval_res.validator_audit)
+    .bind(task_id)
+    .execute(pool)
+    .await;
+
+    tracing::info!(
+        "Task {} validated. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...",
+        task_id, score, weight, result_hash
+    );
+
+    let bin_path =
+        if std::path::Path::new("/usr/local/bin/agent_network_submit_complete").exists() {
+            "/usr/local/bin/agent_network_submit_complete"
+        } else {
+            "cargo"
+        };
+
+    let mut cmd = Command::new(bin_path);
+    if bin_path == "cargo" {
+        cmd.args([
+            "run", "--bin", "agent_network_submit_complete", "--features", "livenet", "--",
+            task_id, &result_hash, domain, &score.to_string(), &weight.to_string(),
+        ])
+        .current_dir("../smart-contract");
+    } else {
+        cmd.args([task_id, &result_hash, domain, &score.to_string(), &weight.to_string()]);
+    }
+
+    if let Ok(hash) = std_env::var("CONTRACT_HASH") {
+        cmd.env("CONTRACT_HASH", hash);
+    } else if let Ok(package_hash) = std_env::var("CONTRACT_PACKAGE_HASH") {
+        cmd.env("CONTRACT_HASH", format!("hash-{}", package_hash));
+    }
+
+    match cmd.status().await {
+        Ok(status) => {
+            if status.success() {
+                tracing::info!("✅ Successfully completed task {} on-chain!", task_id);
+                let _ = sqlx::query("UPDATE tasks SET status = 'Completed' WHERE id = ?")
+                    .bind(task_id)
+                    .execute(pool)
+                    .await;
+            } else {
+                tracing::error!("❌ On-chain transaction failed for task {}: {:?}", task_id, status);
+            }
+        }
+        Err(e) => {
+            tracing::error!("❌ Failed to execute on-chain CLI tool: {}", e);
+        }
+    }
 }

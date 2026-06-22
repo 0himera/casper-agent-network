@@ -39,9 +39,9 @@ pub struct Config {
     pub validator_api_key: Option<String>,
     pub validator_model: Option<String>,
     pub validator_provider: Option<String>,
-    /// `VALIDATOR_PIPELINE=stage` enables stage pipeline; default is legacy.
     pub validator_pipeline: ValidatorPipeline,
     pub admin_account: String,
+    pub internal_service_key: Option<String>,
 }
 
 impl Config {
@@ -74,6 +74,8 @@ impl Config {
             "ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8".to_string()
         });
 
+        let internal_service_key = env::var("INTERNAL_SERVICE_KEY").ok();
+
         Config {
             database_url,
             port,
@@ -91,6 +93,7 @@ impl Config {
             validator_provider,
             validator_pipeline,
             admin_account,
+            internal_service_key,
         }
     }
 }
@@ -101,20 +104,15 @@ mod tests {
 
     #[test]
     fn validator_pipeline_defaults_to_legacy() {
-        unsafe {
-            std::env::remove_var("VALIDATOR_PIPELINE");
-        }
-        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Legacy);
+        temp_env::with_var("VALIDATOR_PIPELINE", None::<&str>, || {
+            assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Legacy);
+        });
     }
 
     #[test]
     fn validator_pipeline_stage_from_env() {
-        unsafe {
-            std::env::set_var("VALIDATOR_PIPELINE", "stage");
-        }
-        assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Stage);
-        unsafe {
-            std::env::remove_var("VALIDATOR_PIPELINE");
-        }
+        temp_env::with_var("VALIDATOR_PIPELINE", Some("stage"), || {
+            assert_eq!(ValidatorPipeline::from_env(), ValidatorPipeline::Stage);
+        });
     }
 }

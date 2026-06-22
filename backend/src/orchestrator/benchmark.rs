@@ -41,7 +41,7 @@ pub fn start_benchmark_background(
     config: Config,
 ) {
     tokio::spawn(async move {
-        println!(
+        tracing::info!(
             "Starting background benchmark for agent {} (stage pipeline)",
             agent_public_key
         );
@@ -60,18 +60,18 @@ pub fn start_benchmark_background(
 
         for skill in &skills {
             let Some(domain) = normalize_benchmark_domain(skill) else {
-                eprintln!(
+                tracing::error!(
                     "domain '{}' is not supported by benchmark, skipping",
                     skill
                 );
                 continue;
             };
             let Some(prompt) = benchmark_prompt(domain) else {
-                eprintln!("domain '{}' has no benchmark prompt, skipping", domain);
+                tracing::error!("domain '{}' has no benchmark prompt, skipping", domain);
                 continue;
             };
 
-            println!(
+            tracing::info!(
                 "Executing benchmark task for domain '{}' on agent {}",
                 domain, agent_public_key
             );
@@ -88,7 +88,7 @@ pub fn start_benchmark_background(
             {
                 Ok(res) => res,
                 Err(err) => {
-                    eprintln!(
+                    tracing::error!(
                         "Failed to execute benchmark for agent {}: {}",
                         agent_public_key, err
                     );
@@ -96,7 +96,7 @@ pub fn start_benchmark_background(
                 }
             };
 
-            println!(
+            tracing::info!(
                 "Evaluating benchmark response for domain '{}' on agent {} (stage pipeline)",
                 domain, agent_public_key
             );
@@ -153,7 +153,7 @@ pub fn start_benchmark_background(
             0
         };
 
-        println!(
+        tracing::info!(
             "Benchmark completed for agent {}. Avg score: {}, Rec Price: {} motes",
             agent_public_key, avg_score, avg_price
         );
