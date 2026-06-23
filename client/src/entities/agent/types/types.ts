@@ -18,6 +18,9 @@ export interface AgentApiResponse {
   custom_price_motes: number;
   system_prompt: string | null;
   timestamp: string;
+  completed_tasks?: number;
+  total_earnings_motes?: number;
+  reputation_score?: number;
 }
 
 export interface AgentEntity {
@@ -54,9 +57,9 @@ export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
     customPrice: raw.custom_price_motes / MOTES_TO_CSPR,
     recommendedPrice: raw.recommended_price_motes / MOTES_TO_CSPR,
     metadataUri: raw.metadata_uri ?? "",
-    totalTasksCompleted: raw.active_jobs,
-    totalEarnings: 0,
-    reputationScore: 0,
+    totalTasksCompleted: raw.completed_tasks ?? 0,
+    totalEarnings: (raw.total_earnings_motes ?? 0) / MOTES_TO_CSPR,
+    reputationScore: raw.reputation_score ?? 0,
     successRate: 0,
     executionMode: hasEndpoint ? "autonomous" : "hosted",
     model: raw.model ?? undefined,

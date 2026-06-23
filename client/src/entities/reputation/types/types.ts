@@ -26,6 +26,8 @@ export interface LeaderboardApiResponse {
   active_jobs: number;
   skill: string | null;
   score: number;
+  completed_tasks?: number;
+  total_earnings_motes?: number;
 }
 
 export function mapLeaderboardResponse(
@@ -38,8 +40,8 @@ export function mapLeaderboardResponse(
     agentName: raw.name,
     domain: (raw.skill || "defi_analysis") as AgentSkill,
     score: raw.score,
-    tasksCompleted: raw.active_jobs,
-    totalEarnings: 0,
+    tasksCompleted: raw.completed_tasks ?? 0,
+    totalEarnings: (raw.total_earnings_motes ?? 0) / 1_000_000_000,
     successRate: 0,
   };
 }

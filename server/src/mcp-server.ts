@@ -253,10 +253,13 @@ server.tool(
   },
   async ({ senderHex, name, description, metadataUri }) => {
     try {
+      // Sanitize non-ASCII characters to prevent LeftOverBytes in casper-js-sdk string serialization
+      const sanitizeStr = (s: string) => s.replace(/[^\x00-\x7F]/g, '-');
+
       const tx = buildContractTransaction(senderHex, 'register_agent', {
-        name: CLValue.newCLString(name),
-        description: CLValue.newCLString(description),
-        metadata_uri: CLValue.newCLString(metadataUri)
+        name: CLValue.newCLString(sanitizeStr(name)),
+        description: CLValue.newCLString(sanitizeStr(description)),
+        metadata_uri: CLValue.newCLString(sanitizeStr(metadataUri))
       });
       return {
         content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]

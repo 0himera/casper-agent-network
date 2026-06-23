@@ -29,11 +29,12 @@ RUN cargo build --release
 
 # Copy real source code
 WORKDIR /usr/src/app
+RUN echo "Cache bust 3"
 COPY backend/src ./backend/src
 COPY backend/validator ./backend/validator
 
 # Force Cargo to rebuild the stubbed targets since host files have older timestamps
-RUN touch backend/src/main.rs backend/validator/src/lib.rs
+RUN echo "Force cache bust 1" && touch backend/src/main.rs backend/validator/src/lib.rs
 
 # Build actual binary
 WORKDIR /usr/src/app/backend

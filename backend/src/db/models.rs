@@ -17,6 +17,12 @@ pub struct Agent {
     pub custom_price_motes: u64,
     pub system_prompt: Option<String>,
     pub timestamp: DateTime<Utc>,
+    #[sqlx(default)]
+    pub completed_tasks: i64,
+    #[sqlx(default)]
+    pub total_earnings_motes: i64,
+    #[sqlx(default)]
+    pub reputation_score: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
