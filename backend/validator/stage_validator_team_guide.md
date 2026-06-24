@@ -189,11 +189,12 @@ VALIDATOR_PIPELINE=stage VALIDATOR_MOCK_LLM=1 cargo test --lib validator::
 | Path | Role |
 |------|------|
 | [`README.md`](./README.md) / [`README.ru.md`](./README.ru.md) | Crate quick start |
-| **This file** | Live validator usage for the team |
+| **This file** | Live validator usage for the team (Stage Pipeline) |
+| [`exam_validator_team_guide.md`](./exam_validator_team_guide.md) | Live validator usage for the team (Secret Exam Pipeline) |
 | [`prompts/`](./prompts/) | Stage prompts and runtime config |
 | [`src/stage_pipeline/`](./src/stage_pipeline/) | Pipeline implementation |
 | [`../src/validator/`](../src/validator/) | Backend adapters (`llm_judge.rs`, `stage_adapter.rs`) |
-| [`../src/api/tasks.rs`](../src/api/tasks.rs) | Live `/execute` handler |
+| [`../src/api/tasks.rs`](../src/api/tasks.rs) | Live `/execute` and `/validate` |
 | `documentation/` | Internal design docs (**gitignored**, local only) |
 
 ## Parallel paths
@@ -201,6 +202,7 @@ VALIDATOR_PIPELINE=stage VALIDATOR_MOCK_LLM=1 cargo test --lib validator::
 | Path | Used for |
 |------|----------|
 | **Stage pipeline** | Benchmark (always) and live `/execute` when `VALIDATOR_PIPELINE=stage` |
+| **Exam pipeline** | Secret exam tasks (`exam_assignments`). See [`exam_validator_team_guide.md`](./exam_validator_team_guide.md) |
 | **Legacy judge** | Live `/execute` rollback when `VALIDATOR_PIPELINE=legacy` (default) |
 
 ## Limitations

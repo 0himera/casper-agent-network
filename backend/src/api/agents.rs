@@ -203,7 +203,9 @@ pub async fn update_agent_capabilities(
         }
     }
 
-    let name = payload.name.unwrap_or_else(|| "Autonomous Agent".to_string());
+    let name = payload
+        .name
+        .unwrap_or_else(|| "Autonomous Agent".to_string());
     let _ = sqlx::query(
         "INSERT INTO agents (public_key, name, endpoint_url, system_prompt, status)
          VALUES (?, ?, ?, ?, 'active')

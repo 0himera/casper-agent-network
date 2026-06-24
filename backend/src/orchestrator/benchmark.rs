@@ -60,10 +60,7 @@ pub fn start_benchmark_background(
 
         for skill in &skills {
             let Some(domain) = normalize_benchmark_domain(skill) else {
-                tracing::error!(
-                    "domain '{}' is not supported by benchmark, skipping",
-                    skill
-                );
+                tracing::error!("domain '{}' is not supported by benchmark, skipping", skill);
                 continue;
             };
             let Some(prompt) = benchmark_prompt(domain) else {
@@ -73,7 +70,8 @@ pub fn start_benchmark_background(
 
             tracing::info!(
                 "Executing benchmark task for domain '{}' on agent {}",
-                domain, agent_public_key
+                domain,
+                agent_public_key
             );
             let exec_res = match execute_agent(
                 domain,
@@ -90,7 +88,8 @@ pub fn start_benchmark_background(
                 Err(err) => {
                     tracing::error!(
                         "Failed to execute benchmark for agent {}: {}",
-                        agent_public_key, err
+                        agent_public_key,
+                        err
                     );
                     continue;
                 }
@@ -98,7 +97,8 @@ pub fn start_benchmark_background(
 
             tracing::info!(
                 "Evaluating benchmark response for domain '{}' on agent {} (stage pipeline)",
-                domain, agent_public_key
+                domain,
+                agent_public_key
             );
             let Some(eval) = evaluate_benchmark_skill_stage(
                 domain,
@@ -155,7 +155,9 @@ pub fn start_benchmark_background(
 
         tracing::info!(
             "Benchmark completed for agent {}. Avg score: {}, Rec Price: {} motes",
-            agent_public_key, avg_score, avg_price
+            agent_public_key,
+            avg_score,
+            avg_price
         );
 
         let _ = sqlx::query(

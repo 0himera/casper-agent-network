@@ -1,4 +1,5 @@
 pub mod benchmark_adapter;
+pub mod exam_adapter;
 pub mod llm_judge;
 pub mod stage_adapter;
 
@@ -7,9 +8,10 @@ use validator_engine::LlmConfig;
 
 // Live `/execute` uses `evaluate_task()`; switch via `VALIDATOR_PIPELINE=stage|legacy`.
 pub use benchmark_adapter::{
-    build_benchmark_llm_config, evaluate_benchmark_skill_stage, warn_serpapi_if_needed,
-    BenchmarkSkillEval,
+    BenchmarkSkillEval, build_benchmark_llm_config, evaluate_benchmark_skill_stage,
+    warn_serpapi_if_needed,
 };
+pub use exam_adapter::evaluate_exam_task;
 pub use llm_judge::evaluate_task;
 
 /// Maps backend `Config` to `validator-engine` `LlmConfig`.

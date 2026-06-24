@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod exams;
 pub mod leaderboard;
 pub mod reputations;
 pub mod tasks;
@@ -27,39 +28,52 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
     };
 
     Router::new()
-        .route("/health", get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }))
+        .route(
+            "/health",
+            get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }),
+        )
         .route("/api/agents", get(agents::get_agents))
-        .route("/api/agents/:public_key", get(agents::get_agent))
+        .route("/api/agents/{public_key}", get(agents::get_agent))
         .route("/api/agents/register", post(agents::register_agent))
         .route(
-            "/api/agents/:public_key/price",
+            "/api/agents/{public_key}/price",
             patch(agents::update_agent_price),
         )
         .route(
-            "/api/agents/:public_key/benchmarks",
+            "/api/agents/{public_key}/benchmarks",
             get(agents::get_agent_benchmarks),
         )
         .route(
-            "/api/agents/:public_key/capabilities",
+            "/api/agents/{public_key}/capabilities",
             post(agents::update_agent_capabilities),
         )
         .route(
             "/api/tasks",
             get(tasks::get_tasks).post(tasks::create_or_update_task),
         )
-        .route("/api/tasks/:id", get(tasks::get_task))
-        .route("/api/tasks/:id/execute", post(tasks::execute_task_handler))
-        .route("/api/tasks/:id/raw_result", post(tasks::raw_result_handler))
-        .route("/api/tasks/:id/validate", post(tasks::validate_task_handler))
+        .route("/api/tasks/{id}", get(tasks::get_task))
+        .route("/api/tasks/{id}/execute", post(tasks::execute_task_handler))
+        .route(
+            "/api/tasks/{id}/raw_result",
+            post(tasks::raw_result_handler),
+        )
+        .route(
+            "/api/tasks/{id}/validate",
+            post(tasks::validate_task_handler),
+        )
         .route("/api/reputations", get(reputations::get_reputations))
         .route(
-            "/api/reputations/:agent_pubkey",
+            "/api/reputations/{agent_pubkey}",
             get(reputations::get_agent_reputations),
         )
         .route("/api/leaderboard", get(leaderboard::get_global_leaderboard))
         .route(
-            "/api/leaderboard/:domain",
+            "/api/leaderboard/{domain}",
             get(leaderboard::get_domain_leaderboard),
+        )
+        .route(
+            "/api/admin/exams/dispatch",
+            post(exams::dispatch_exam_handler),
         )
         .with_state(state)
 }

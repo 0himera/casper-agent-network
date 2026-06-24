@@ -1,3 +1,13 @@
+//! Database schema and pool initialization.
+//!
+//! ## E1 exam data-layer invariants (see `exam_idea_implementation.md`)
+//! - `exam_templates` holds prompts and `expected_answer_canonical` (internal only).
+//! - `exam_assignments` links live `tasks.id` → template → agent (internal only).
+//! - `tasks` must never gain `expected_answer`, `is_exam`, or other exam secrets.
+//! - Public REST/MCP handlers must not JOIN or expose `exam_*` tables (E1.6).
+//! - Validation routing (E2) and dispatch (E4) are out of scope for E1.
+
+pub mod exam;
 pub mod models;
 
 use sqlx::MySqlPool;
@@ -112,6 +122,39 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS spent_payments (
             deploy_hash VARCHAR(128) PRIMARY KEY,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS exam_templates (
+            id VARCHAR(128) PRIMARY KEY,
+            prompt TEXT NOT NULL,
+            expected_answer_canonical VARCHAR(512) NOT NULL,
+            domain VARCHAR(100) NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'active',
+            source_metadata JSON NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS exam_assignments (
+            task_id VARCHAR(128) PRIMARY KEY,
+            template_id VARCHAR(128) NOT NULL,
+            agent_public_key VARCHAR(128) NOT NULL,
+            bucket VARCHAR(50) NOT NULL DEFAULT 'audit',
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            verdict VARCHAR(50) NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            validated_at TIMESTAMP NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (template_id) REFERENCES exam_templates(id) ON DELETE RESTRICT,
+            FOREIGN KEY (agent_public_key) REFERENCES agents(public_key) ON DELETE CASCADE
         )",
     )
     .execute(&pool)

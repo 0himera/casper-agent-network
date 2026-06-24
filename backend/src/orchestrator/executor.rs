@@ -152,7 +152,10 @@ pub async fn execute_agent(
         }
     } else {
         // External agent: POST call to user-provided API endpoint
-        tracing::info!("Executing external agent call to URL: {}", endpoint_url.unwrap());
+        tracing::info!(
+            "Executing external agent call to URL: {}",
+            endpoint_url.unwrap()
+        );
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(90))
             .build()?;

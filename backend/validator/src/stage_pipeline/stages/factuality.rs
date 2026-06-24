@@ -24,7 +24,7 @@ pub struct FactualityStageEval {
 }
 
 pub fn should_skip_factuality(
-    domain: &str,
+    _domain: &str,
     agent_output: &str,
     factuality_config: &FactualityConfig,
     factuality_enabled: bool,

@@ -14,7 +14,9 @@ use super::stages::gibberish::GibberishStageEval;
 use super::stages::refusal::RefusalStageEval;
 use super::stages::relevance::RelevanceStageEval;
 use super::stages::{self, domain_match, factuality, gibberish, refusal, relevance};
-use super::types::{PipelineRunStats, PipelineVerdict, StageId, StagePipelineOutput, StageResult, StageTiming};
+use super::types::{
+    PipelineRunStats, PipelineVerdict, StageId, StagePipelineOutput, StageResult, StageTiming,
+};
 
 struct RawStageInput {
     id: StageId,
@@ -402,9 +404,10 @@ fn skipped_raw(id: StageId) -> RawStageInput {
 }
 
 fn factuality_ran_from_output(output: &StagePipelineOutput) -> bool {
-    output.stages.iter().any(|stage| {
-        stage.id == StageId::Factuality && !stage.skipped_due_to_gate
-    })
+    output
+        .stages
+        .iter()
+        .any(|stage| stage.id == StageId::Factuality && !stage.skipped_due_to_gate)
 }
 
 fn build_run_stats(
@@ -449,22 +452,21 @@ pub async fn evaluate_stage_pipeline_with_stats(
 
     let raw_stages =
         run_live_stages(domain, task_prompt, agent_output, config, &mut stage_ms).await?;
-    let factuality_stage =
-        if factuality_enabled && raw_stages.iter().all(|stage| stage.passed) {
-            let search_provider = build_search_provider(config)?;
-            let start = Instant::now();
-            let stage = maybe_run_factuality(config, domain, agent_output, &search_provider).await?;
-            stage_ms.push(StageTiming {
-                id: StageId::Factuality,
-                elapsed_ms: start.elapsed().as_millis() as u64,
-            });
-            let (hits, misses) = search_provider.cache_stats();
-            search_cache_hits = hits;
-            search_cache_misses = misses;
-            stage
-        } else {
-            None
-        };
+    let factuality_stage = if factuality_enabled && raw_stages.iter().all(|stage| stage.passed) {
+        let search_provider = build_search_provider(config)?;
+        let start = Instant::now();
+        let stage = maybe_run_factuality(config, domain, agent_output, &search_provider).await?;
+        stage_ms.push(StageTiming {
+            id: StageId::Factuality,
+            elapsed_ms: start.elapsed().as_millis() as u64,
+        });
+        let (hits, misses) = search_provider.cache_stats();
+        search_cache_hits = hits;
+        search_cache_misses = misses;
+        stage
+    } else {
+        None
+    };
 
     let output = assemble(raw_stages, factuality_stage);
     let stats = build_run_stats(
@@ -792,7 +794,8 @@ mod tests {
         let agent_output = "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY analysis.";
         let mut totals = Vec::new();
         for _ in 0..5 {
-            let output = evaluate_stage_pipeline_mock("defi_analysis", "Analyze yield", agent_output);
+            let output =
+                evaluate_stage_pipeline_mock("defi_analysis", "Analyze yield", agent_output);
             totals.push(output.total);
             assert_eq!(output.verdict, PipelineVerdict::Factual);
         }

@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-use crate::types::{JudgeCascadeMode, JudgeProvider, JudgeRoutingConfig, ValidatorError};
+use crate::types::{JudgeCascadeMode, JudgeRoutingConfig, ValidatorError};
 
 pub const MAX_PROMPT_BLOCK_CHARS: usize = 4000;
 
@@ -329,18 +329,6 @@ pub fn judge_routing() -> Result<JudgeRoutingConfig, ValidatorError> {
         .as_ref()
         .ok_or_else(|| ValidatorError::Llm("judge_routing section missing".into()))?;
     parse_judge_routing(yaml)
-}
-
-fn parse_provider(value: &str) -> Result<JudgeProvider, ValidatorError> {
-    match value {
-        "cloudflare" => Ok(JudgeProvider::Cloudflare),
-        "openai" => Ok(JudgeProvider::Openai),
-        "claude" => Ok(JudgeProvider::Claude),
-        "ollama" => Ok(JudgeProvider::Ollama),
-        other => Err(ValidatorError::Llm(format!(
-            "unknown judge provider: {other}"
-        ))),
-    }
 }
 
 fn parse_cascade(value: &str) -> Result<JudgeCascadeMode, ValidatorError> {

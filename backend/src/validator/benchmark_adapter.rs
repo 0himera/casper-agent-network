@@ -1,8 +1,8 @@
 //! Benchmark evaluation via the same stage pipeline used by live validation.
 
 use validator_engine::{
-    evaluate_stage_pipeline_with_stats, reset_judge_call_stats, LlmConfig, PipelineRunStats,
-    StagePipelineOutput,
+    LlmConfig, PipelineRunStats, StagePipelineOutput, evaluate_stage_pipeline_with_stats,
+    reset_judge_call_stats,
 };
 
 use crate::config::Config;
@@ -126,7 +126,10 @@ pub async fn evaluate_benchmark_skill_stage(
             })
         }
         Err(err) => {
-            eprintln!("stage benchmark eval failed for skill '{}': {}", domain, err);
+            eprintln!(
+                "stage benchmark eval failed for skill '{}': {}",
+                domain, err
+            );
             None
         }
     }
@@ -156,6 +159,15 @@ mod tests {
             validator_provider: None,
             validator_pipeline: ValidatorPipeline::Legacy,
             admin_account: String::new(),
+            exam_weight: 300,
+            exam_dispatch_prob_audit: 0.2,
+            exam_dispatch_prob_rehab: 0.5,
+            exam_max_per_agent_per_period: 1,
+            exam_dispatch_period_hours: 24,
+            exam_rehab_score_threshold: 0,
+            exam_audit_active_jobs_threshold: 2,
+            exam_dispatch_budget_motes: 5_000_000_000,
+            exam_dispatch_creator_public_key: String::new(),
         }
     }
 
@@ -207,15 +219,9 @@ mod tests {
         let prompt = "Allocate 10,000 CSPR across Casper liquidity pools.";
         let agent_output = "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY analysis and impermanent loss reasoning.";
 
-        let eval = evaluate_benchmark_skill_stage(
-            "defi",
-            prompt,
-            agent_output,
-            4_000,
-            &config,
-        )
-        .await
-        .expect("mock eval");
+        let eval = evaluate_benchmark_skill_stage("defi", prompt, agent_output, 4_000, &config)
+            .await
+            .expect("mock eval");
 
         assert!(eval.score <= 100);
         assert_eq!(eval.rubric_json["pipeline"], "stage");

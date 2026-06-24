@@ -5,8 +5,6 @@ pub use routing::call_judge_raw;
 
 use std::cell::Cell;
 
-use crate::types::{LlmConfig, ValidatorError};
-
 thread_local! {
     static LLM_CALL_COUNT: Cell<u32> = const { Cell::new(0) };
     static LAST_PROVIDER_USED: Cell<Option<crate::types::JudgeProvider>> = const { Cell::new(None) };
@@ -28,17 +26,6 @@ pub fn last_judge_provider_used() -> Option<crate::types::JudgeProvider> {
 pub(crate) fn record_provider_call(provider: crate::types::JudgeProvider) {
     LLM_CALL_COUNT.with(|c| c.set(c.get() + 1));
     LAST_PROVIDER_USED.with(|p| p.set(Some(provider)));
-}
-
-pub(crate) fn extract_json(text: &str) -> Result<&str, ValidatorError> {
-    let json_start = text
-        .find('{')
-        .ok_or_else(|| ValidatorError::Parse("No JSON object found in LLM response".into()))?;
-    let json_end = text
-        .rfind('}')
-        .ok_or_else(|| ValidatorError::Parse("No JSON object found in LLM response".into()))?
-        + 1;
-    Ok(&text[json_start..json_end])
 }
 
 #[cfg(test)]

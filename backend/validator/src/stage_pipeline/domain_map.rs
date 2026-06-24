@@ -18,7 +18,10 @@ mod tests {
 
     #[test]
     fn rwa_uses_rwa_label() {
-        assert_eq!(expected_domain_label("rwa"), "real-world asset (RWA) analysis");
+        assert_eq!(
+            expected_domain_label("rwa"),
+            "real-world asset (RWA) analysis"
+        );
     }
 
     #[test]
