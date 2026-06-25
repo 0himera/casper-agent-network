@@ -57,10 +57,9 @@ pub fn extract_from_json_value(text: &str, keys: &[&str]) -> Option<String> {
 pub fn extract_yes_no(text: &str) -> Option<bool> {
     if let Some(json_value) =
         extract_from_json_value(text, &["answer", "result", "response", "value"])
+        && let Some(parsed) = parse_yes_no_token(&json_value)
     {
-        if let Some(parsed) = parse_yes_no_token(&json_value) {
-            return Some(parsed);
-        }
+        return Some(parsed);
     }
 
     let normalized = text.trim().to_ascii_lowercase();

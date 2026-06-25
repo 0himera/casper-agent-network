@@ -23,5 +23,7 @@ tower_governor = "0.8.0"
 axum-prometheus = "0.10.0"
 metrics = "0.24.6"
 metrics-exporter-prometheus = "0.18.3"
+rand = "0.8"
 [dev-dependencies]
 temp-env = { version = "0.3", features = ["async_closure"] }
+tower = { version = "0.5", features = ["util"] }

@@ -1,15 +1,18 @@
+pub mod benchmark_adapter;
+pub mod exam_adapter;
 pub mod llm_judge;
-pub mod skill;
 pub mod stage_adapter;
-pub mod v2_adapter;
 
 use crate::config::Config;
 use validator_engine::LlmConfig;
 
 // Live `/execute` uses `evaluate_task()`; switch via `VALIDATOR_PIPELINE=stage|legacy`.
+pub use benchmark_adapter::{
+    BenchmarkSkillEval, build_benchmark_llm_config, evaluate_benchmark_skill_stage,
+    warn_serpapi_if_needed,
+};
+pub use exam_adapter::evaluate_exam_task;
 pub use llm_judge::evaluate_task;
-pub use skill::{map_skill, resolve_skill, resolve_skill_str};
-pub use v2_adapter::{V2Outcome, evaluate_task_v2};
 
 /// Maps backend `Config` to `validator-engine` `LlmConfig`.
 pub fn map_base_config(config: &Config) -> LlmConfig {
@@ -69,4 +72,3 @@ pub fn map_base_config(config: &Config) -> LlmConfig {
         judge_self_consistency,
     }
 }
-

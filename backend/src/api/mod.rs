@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod exams;
 pub mod leaderboard;
 pub mod reputations;
 pub mod tasks;
@@ -27,7 +28,10 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
     };
 
     Router::new()
-        .route("/health", get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }))
+        .route(
+            "/health",
+            get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }),
+        )
         .route("/api/agents", get(agents::get_agents))
         .route("/api/agents/{public_key}", get(agents::get_agent))
         .route("/api/agents/register", post(agents::register_agent))
@@ -60,6 +64,10 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
         .route(
             "/api/leaderboard/{domain}",
             get(leaderboard::get_domain_leaderboard),
+        )
+        .route(
+            "/api/admin/exams/dispatch",
+            post(exams::dispatch_exam_handler),
         )
         .with_state(state)
 }

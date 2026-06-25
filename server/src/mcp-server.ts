@@ -26,6 +26,53 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
+// Public task allowlist — never expose exam_templates / exam_assignments fields.
+const TASK_PUBLIC_COLUMNS = `
+  id, creator_public_key, assigned_agent_public_key, budget_motes, status,
+  result_hash, result, metadata_uri, transaction_hash, domain, skill_id,
+  prompt, deadline, result_signature, validator_audit, timestamp
+`.trim();
+
+type PublicTaskRow = {
+  id: string;
+  creator_public_key: string;
+  assigned_agent_public_key: string | null;
+  budget_motes: number;
+  status: string;
+  result_hash: string | null;
+  result: string | null;
+  metadata_uri: string | null;
+  transaction_hash: string;
+  domain: string;
+  skill_id: string | null;
+  prompt: string;
+  deadline: number;
+  result_signature: string | null;
+  validator_audit: unknown;
+  timestamp: Date;
+};
+
+function toPublicTask(row: RowDataPacket): PublicTaskRow {
+  return {
+    id: row.id,
+    creator_public_key: row.creator_public_key,
+    assigned_agent_public_key: row.assigned_agent_public_key ?? null,
+    budget_motes: Number(row.budget_motes),
+    status: row.status,
+    result_hash: row.result_hash ?? null,
+    result: row.result ?? null,
+    metadata_uri: row.metadata_uri ?? null,
+    transaction_hash: row.transaction_hash,
+    domain: row.domain,
+    skill_id: row.skill_id ?? null,
+    prompt: row.prompt,
+    deadline: Number(row.deadline),
+    result_signature: row.result_signature ?? null,
+    validator_audit: row.validator_audit ?? null,
+    timestamp: row.timestamp,
+  };
+}
+
 // Helper to load local proxy wasm
 const getProxyWasm = (): Uint8Array => {
   const buffer = fs.readFileSync(path.resolve(__dirname, `./resources/proxy_caller.wasm`));
@@ -153,9 +200,12 @@ server.tool(
   "find_open_tasks",
   {},
   async () => {
-    const [tasks] = await pool.query('SELECT * FROM tasks WHERE status = "Open" ORDER BY timestamp DESC');
+    const [tasks] = await pool.query<RowDataPacket[]>(
+      `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE status = "Open" ORDER BY timestamp DESC`
+    );
+    const publicTasks = tasks.map(toPublicTask);
     return {
-      content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }]
+      content: [{ type: "text", text: JSON.stringify(publicTasks, null, 2) }]
     };
   }
 );
@@ -379,7 +429,10 @@ server.tool(
   },
   async ({ taskId }) => {
     try {
-      const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE id = ?`,
+        [taskId]
+      );
       const task = rows[0];
       if (!task) {
         return {
@@ -388,7 +441,7 @@ server.tool(
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(task, null, 2) }]
+        content: [{ type: "text", text: JSON.stringify(toPublicTask(task), null, 2) }]
       };
     } catch (err: any) {
       return {
@@ -407,9 +460,12 @@ server.tool(
   },
   async ({ agentPublicKey }) => {
     try {
-      const [tasks] = await pool.query<RowDataPacket[]>('SELECT * FROM tasks WHERE assigned_agent_public_key = ? AND status = "InProgress" ORDER BY timestamp DESC', [agentPublicKey]);
+      const [tasks] = await pool.query<RowDataPacket[]>(
+        `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE assigned_agent_public_key = ? AND status = "InProgress" ORDER BY timestamp DESC`,
+        [agentPublicKey]
+      );
       // Filter out tasks that already have a result submitted
-      const activeTasks = tasks.filter(t => !t.result_hash);
+      const activeTasks = tasks.filter(t => !t.result_hash).map(toPublicTask);
       return {
         content: [{ type: "text", text: JSON.stringify(activeTasks, null, 2) }]
       };

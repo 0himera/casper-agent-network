@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::Method;
+use axum_prometheus::PrometheusMetricLayerBuilder;
 use backend::api::create_router;
 use backend::config::Config;
 use backend::db::init_db;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::cors::{Any, CorsLayer};
-use axum_prometheus::PrometheusMetricLayerBuilder;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,54 +49,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let governor_layer = GovernorLayer::new(governor_config)
-        .error_handler(|error| {
-            use tower_governor::errors::GovernorError;
-            match error {
-                GovernorError::TooManyRequests { wait_time, headers } => {
-                    let body = serde_json::json!({
-                        "error": "too_many_requests",
-                        "retry_after_seconds": wait_time
-                    }).to_string();
-                    let mut response = axum::response::Response::new(axum::body::Body::from(body));
-                    *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
-                    response.headers_mut().insert(
-                        axum::http::header::CONTENT_TYPE,
-                        axum::http::HeaderValue::from_static("application/json"),
-                    );
-                    if let Some(headers_map) = headers {
-                        response.headers_mut().extend(headers_map);
-                    }
-                    response
+    let governor_layer = GovernorLayer::new(governor_config).error_handler(|error| {
+        use tower_governor::errors::GovernorError;
+        match error {
+            GovernorError::TooManyRequests { wait_time, headers } => {
+                let body = serde_json::json!({
+                    "error": "too_many_requests",
+                    "retry_after_seconds": wait_time
+                })
+                .to_string();
+                let mut response = axum::response::Response::new(axum::body::Body::from(body));
+                *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+                response.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/json"),
+                );
+                if let Some(headers_map) = headers {
+                    response.headers_mut().extend(headers_map);
                 }
-                GovernorError::UnableToExtractKey => {
-                    let body = serde_json::json!({ "error": "unable_to_extract_key" }).to_string();
-                    let mut response = axum::response::Response::new(axum::body::Body::from(body));
-                    *response.status_mut() = axum::http::StatusCode::BAD_REQUEST;
-                    response.headers_mut().insert(
-                        axum::http::header::CONTENT_TYPE,
-                        axum::http::HeaderValue::from_static("application/json"),
-                    );
-                    response
-                }
-                GovernorError::Other { code, msg, headers } => {
-                    let body = serde_json::json!({
-                        "error": "rate_limiting_error",
-                        "message": msg.unwrap_or_else(|| "Error".to_string())
-                    }).to_string();
-                    let mut response = axum::response::Response::new(axum::body::Body::from(body));
-                    *response.status_mut() = code;
-                    response.headers_mut().insert(
-                        axum::http::header::CONTENT_TYPE,
-                        axum::http::HeaderValue::from_static("application/json"),
-                    );
-                    if let Some(headers_map) = headers {
-                        response.headers_mut().extend(headers_map);
-                    }
-                    response
-                }
+                response
             }
-        });
+            GovernorError::UnableToExtractKey => {
+                let body = serde_json::json!({ "error": "unable_to_extract_key" }).to_string();
+                let mut response = axum::response::Response::new(axum::body::Body::from(body));
+                *response.status_mut() = axum::http::StatusCode::BAD_REQUEST;
+                response.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/json"),
+                );
+                response
+            }
+            GovernorError::Other { code, msg, headers } => {
+                let body = serde_json::json!({
+                    "error": "rate_limiting_error",
+                    "message": msg.unwrap_or_else(|| "Error".to_string())
+                })
+                .to_string();
+                let mut response = axum::response::Response::new(axum::body::Body::from(body));
+                *response.status_mut() = code;
+                response.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/json"),
+                );
+                if let Some(headers_map) = headers {
+                    response.headers_mut().extend(headers_map);
+                }
+                response
+            }
+        }
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -111,7 +112,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Assemble the router with prometheus metrics, rate limiting, and CORS
     let app = create_router(pool.clone(), config.clone(), casper_client)
-        .route("/metrics", axum::routing::get(move || async move { metric_handle.render() }))
+        .route(
+            "/metrics",
+            axum::routing::get(move || async move { metric_handle.render() }),
+        )
         .layer(prometheus_layer)
         .layer(governor_layer)
         .layer(cors);
@@ -122,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Graceful Shutdown Implementation with 10-second timeout
     let (close_tx, close_rx) = tokio::sync::oneshot::channel::<()>();
-    
+
     let server_task = tokio::spawn(async move {
         axum::serve(
             listener,
@@ -182,4 +186,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
