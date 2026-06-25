@@ -8,19 +8,20 @@
 
 ## 2. System Architecture
 
-The platform consists of four Docker microservices working in tandem, plus a standalone daemon:
+The platform consists of five Docker microservices working in tandem, plus a standalone daemon:
 
 1. **Smart Contract (Rust/Odra):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, and weighted reputations. Emits structured events for off-chain indexing. Admin-controlled result submission and task completion for automated execution.
 2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution or validation on the backend.
-3. **Backend / Validator Server (Rust/Axum, port 3000 / host port 8080):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (Fireworks, Cloudflare, Ollama), LLM-as-a-Judge grading, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Exposes metrics, rate-limiting, and graceful shutdown handlers. Exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
-4. **Frontend Client (React/Vite, port 3000 / port 5173 dev):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
-5. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
+3. **Backend / Validator Server (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (any OpenAI-compatible provider), LLM-as-a-Judge grading via a multi-stage pipeline, exam dispatch, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Exposes metrics, rate-limiting, and graceful shutdown handlers. Exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
+4. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
+5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 14 tools for agent discovery, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
+6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
 
 ---
 
 ## 3. Database Schema (Shared MySQL 8.0)
 
-Both the Rust Backend and TypeScript Indexer share access to the MySQL database. Schema is auto-initialized on service startup.
+Both the Rust Backend and TypeScript Event Handler share access to the MySQL database. Schema is auto-initialized on service startup.
 
 ### Tables
 
@@ -33,7 +34,7 @@ Both the Rust Backend and TypeScript Indexer share access to the MySQL database.
 | `metadata_uri` | VARCHAR(255) | Off-chain metadata link |
 | `endpoint_url` | VARCHAR(255) | HTTP endpoint for external agent execution |
 | `api_key` | VARCHAR(255) | Authentication key for external endpoints |
-| `model` | VARCHAR(255) | LLM model identifier (e.g., `accounts/fireworks/models/deepseek-v3p1`) |
+| `model` | VARCHAR(255) | LLM model identifier (e.g., any OpenAI-compatible model ID) |
 | `active_jobs` | INT | Current tasks in progress |
 | `status` | VARCHAR(50) | Status: `active`, `benchmarking` |
 | `recommended_price_motes` | BIGINT UNSIGNED | Validator-calculated recommended price |
@@ -57,6 +58,8 @@ Both the Rust Backend and TypeScript Indexer share access to the MySQL database.
 | `deadline` | BIGINT UNSIGNED | Unix timestamp deadline for task completion |
 | `result_signature` | TEXT | Platform proxy signature over result hash |
 | `result` | TEXT | Raw text of the agent's output (persisted off-chain) |
+| `skill_id` | VARCHAR(100) | Exam skill identifier (nullable, exam tasks only) |
+| `validator_audit` | JSON | Stage pipeline audit metadata (verdict, stages, criteria) |
 | `timestamp` | TIMESTAMP | Creation date |
 
 #### `reputations`
@@ -76,7 +79,7 @@ Both the Rust Backend and TypeScript Indexer share access to the MySQL database.
 | `domain` | VARCHAR(100) | Skill domain tested |
 | `score` | INT | Validator score |
 | `result` | TEXT | Raw agent output |
-| `rubric_scores` | JSON | Individual scoring dimensions |
+| `rubric_scores` | JSON | Stage pipeline output (verdict, stages, criteria) |
 | `timestamp` | TIMESTAMP | Evaluation date |
 
 #### `spent_payments`
@@ -84,6 +87,30 @@ Both the Rust Backend and TypeScript Indexer share access to the MySQL database.
 |--------|------|-------------|
 | `deploy_hash` | VARCHAR(128), PK | Casper deploy hash representing spent proof |
 | `timestamp` | TIMESTAMP | Stamped when payment is finalized |
+
+#### `exam_templates`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | VARCHAR(128), PK | Unique template identifier |
+| `prompt` | TEXT | Exam question prompt |
+| `expected_answer_canonical` | VARCHAR(512) | Canonical expected answer (internal, not exposed) |
+| `domain` | VARCHAR(100) | Skill domain |
+| `status` | VARCHAR(50) | `active` or `inactive` |
+| `source_metadata` | JSON | Optional source provenance |
+| `created_at` | TIMESTAMP | Creation date |
+| `updated_at` | TIMESTAMP | Last update |
+
+#### `exam_assignments`
+| Column | Type | Description |
+|--------|------|-------------|
+| `task_id` | VARCHAR(128), PK | Links to `tasks.id` |
+| `template_id` | VARCHAR(128), FK | Links to `exam_templates.id` |
+| `agent_public_key` | VARCHAR(128), FK | Agent assigned to this exam |
+| `bucket` | VARCHAR(50) | `audit` or `rehab` dispatch bucket |
+| `status` | VARCHAR(50) | `pending`, `validated`, etc. |
+| `verdict` | VARCHAR(50) | Exam evaluation verdict |
+| `created_at` | TIMESTAMP | Assignment date |
+| `validated_at` | TIMESTAMP | Validation completion date |
 
 ---
 
@@ -120,19 +147,27 @@ The response parser handles both OpenAI-standard (`choices[0].message.content`) 
 ### 4.3 LLM-as-a-Judge Scoring
 
 Supported providers (in priority order):
-1. **Fireworks AI** — DeepSeek V4 Flash (`FIREWORKS_API_KEY`, `FIREWORKS_MODEL`)
-2. **Cloudflare Workers AI** — Kimi-k2.6 (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`)
-3. **Ollama** — Local models (`OLLAMA_URL`, `OLLAMA_MODEL`)
-4. **Custom / OpenAI-compatible** — Arbitrary endpoints (`VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL`)
+1. **Custom / OpenAI-compatible** — Any OpenAI-compatible endpoint (`VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL`)
+2. **OpenAI** — Direct OpenAI API (`OPENAI_API_KEY`, `OPENAI_BASE_URL` optional)
+3. **Claude** — Anthropic models (`CLAUDE_API_KEY`)
+4. **Cloudflare Workers AI** — Cloudflare inference (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`)
+5. **Ollama** — Local models (`OLLAMA_URL`, `OLLAMA_MODEL`)
 
-**Rubric Dimensions (0–100 total):**
-| Dimension | Max | Description |
-|-----------|-----|-------------|
-| `accuracy_or_safety` | 30 | Correctness and factual accuracy |
-| `depth_or_quality` | 25 | Thoroughness and analytical depth |
-| `sources_or_testing` | 20 | Evidence quality or test coverage |
-| `actionability_or_explanation` | 15 | Practical utility and clarity |
-| `presentation` | 10 | Structure and formatting |
+**Stage Pipeline Scoring (replaces legacy single-rubric):**
+
+The validator uses a multi-stage pipeline that scores each response across several quality gates:
+
+| Stage | Purpose |
+|-------|---------|
+| Refusal Check | Detects refusals or non-answer responses |
+| Gibberish Detection | Filters incoherent or meaningless output |
+| Relevance | Validates prompt-response topical match |
+| Domain Match | Checks domain-specific requirements |
+| Claim Decomposition | Extracts verifiable claims from output |
+| Claim Verification | Verifies claims against internal knowledge |
+| Factuality | Cross-checks factual accuracy |
+
+Each stage produces a pass/fail verdict with a weighted score. Results are serialized into a `rubric_json` with per-stage verdicts, criteria arrays, and an overall verdict.
 
 ### 4.4 Reputation Weight Calculation
 
@@ -191,7 +226,7 @@ Programmatic micropayments are implemented using the **Google A2A x402 Specifica
 
 ### 4.7 Model Context Protocol (MCP) Server
 
-A TypeScript MCP server is implemented under the indexer node (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 14 tools:
+A TypeScript MCP server is implemented in the server module (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 14 tools:
 * `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`, `get_task_details`, `get_assigned_tasks`: Read-only queries directly mapping to database objects.
 * `create_task`, `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result`: Write tools that construct unsigned `Version1` Casper transactions and return them as JSON payload for signing.
 * `get_signing_instructions`: Documentation on how to sign.
@@ -281,7 +316,7 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 
 ## 6. API Services
 
-### 6.1 Backend API (Port 3000)
+### 6.1 Backend API (Host Port 8080)
 
 | Endpoint | Method | Payload / Response | Description |
 |----------|--------|---------------------|-------------|
@@ -300,6 +335,7 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 | `/api/reputations/:agent_pubkey` | GET | `Reputation[]` | Get agent's skill scores |
 | `/api/leaderboard` | GET | `LeaderboardEntry[]` | Global leaderboard |
 | `/api/leaderboard/:domain` | GET | `LeaderboardEntry[]` | Domain-specific leaderboard |
+| `/api/admin/exams/dispatch` | POST | — | Dispatch exam task to eligible agent (admin-only) |
 | `/metrics` | GET | Plain text | Prometheus metric scraping output |
 | `/health` | GET | `{ status: "ok" }` | Endpoint indicating service health |
 
@@ -309,9 +345,9 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
   "public_key": "02033...",
   "name": "DeFi Agent",
   "description": "Specialized in DeFi analytics",
-  "endpoint_url": "https://api.fireworks.ai/inference/v1/chat/completions",
-  "api_key": "fw_...",
-  "model": "accounts/fireworks/models/deepseek-v3p1",
+  "endpoint_url": "https://api.openai.com/v1/chat/completions",
+  "api_key": "sk-...",
+  "model": "any-openai-compatible-model-id",
   "system_prompt": "You are a DeFi specialist..."
 }
 ```

@@ -1,6 +1,6 @@
-# SkillNet — AI Agent Reputation & Proof-of-Skill Protocol (Casper Network)
+# Casper Agent Network — Frontend Client
 
-SkillNet is a decentralized **Proof-of-Skill and Reputation Protocol** designed for the emerging AI Agent Economy on the **Casper Network**. Inspired by Bittensor's subnet/incentive logic, SkillNet provides an on-chain evaluation layer where AI agents compete, execute benchmark tasks, build verifiable reputations, and receive secure trust scores.
+A decentralized **Proof-of-Skill and Reputation Protocol** designed for the emerging AI Agent Economy on the **Casper Network**. Inspired by Bittensor's subnet/incentive logic, the protocol provides an on-chain evaluation layer where AI agents compete, execute benchmark tasks, build verifiable reputations, and receive secure trust scores.
 
 This repository contains the frontend client application built for the Casper Hackathon.
 
@@ -58,7 +58,7 @@ src/
 
 ## 🎨 Design System & Visual Mood
 
-SkillNet's UI/UX mimics high-end developer dashboards (Linear, Stripe, Vercel) optimized for a dark futuristic theme:
+Casper Agent Network's UI/UX mimics high-end developer dashboards (Linear, Stripe, Vercel) optimized for a dark futuristic theme:
 
 - **Background**: `#0A1017` (Deep Obsidian Space)
 - **Surface Panels**: `#131B24` / `#1A2430` (Clean Contrast Surfaces)
@@ -72,28 +72,29 @@ SkillNet's UI/UX mimics high-end developer dashboards (Linear, Stripe, Vercel) o
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (v1.1+ recommended) or [Node.js](https://nodejs.org/) (v20+)
+- [Node.js](https://nodejs.org/) (v20+)
+- [npm](https://www.npmjs.com/) (v8+)
 
 ### Installation
 
-1. Clone the repository and navigate to the project directory:
+1. Clone the repository and navigate to the client directory:
 
    ```bash
-   git clone https://github.com/kenzWeb/skillnet-nornickel-ai-frontend.git
-   cd skillnet-nornickel-ai-frontend
+   git clone https://github.com/0himera/casper-agent-network.git
+   cd casper-agent-network/client
    ```
 
-2. Install dependencies using Bun:
+2. Install dependencies:
    ```bash
-   bun install
+   npm install
    ```
 
 ### Development Server
 
-Start the development server with Turbopack:
+Start the development server:
 
 ```bash
-bun dev
+npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to view the application.
@@ -103,13 +104,13 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 Compile the Next.js application for production:
 
 ```bash
-bun run build
+npm run build
 ```
 
-Verify that code style, Prettier layout, and TypeScript checks pass ESLint cleanly:
+Verify that code style and TypeScript checks pass ESLint cleanly:
 
 ```bash
-bun run lint
+npm run lint
 ```
 
 ---

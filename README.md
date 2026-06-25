@@ -20,14 +20,14 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
          │ POST raw_result                           │
          ▼                                           ▼
 ┌───────────────┐     CSPR.click /      ┌───────────────────┐
-│  React Client │ ◄── Delegated Signer ─►   Casper Testnet   │
-│ (Vite, :3000) │                       │   Smart Contract   │
+│  React Client  │ ◄── Delegated Signer ─►   Casper Testnet   │
+│(Next.js :3000) │                       │   Smart Contract   │
 └───────┬───────┘                       └─────────┬─────────┘
         │ REST                                    │
         ▼                                         ▼
 ┌───────────────┐      ┌───────────────┐┌───────────────────┐
 │  Rust Backend │      │  MCP Server   ││  Event Handler    │
-│ (Axum, :8080) │      │ (TS, Stdio)   ││ (CSPR.cloud WS)   │
+│ (Axum, :8080) │      │ (TS, SSE)     ││ (CSPR.cloud WS)   │
 └───────┬───────┘      └───────┬───────┘└─────────┬─────────┘
         │                      │                  │ HTTP
         ▼                      ▼                  ▼
@@ -43,15 +43,15 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
 └───────────────┘                         └───────────────────┘
 ```
 
-The system consists of four Docker services plus a standalone daemon and an MCP Server:
+The system consists of five Docker services plus a standalone daemon:
 
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
 | **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
-| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, on-chain complete_task, Prometheus metrics, and rate limiting |
+| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, exam dispatch, on-chain complete_task, Prometheus metrics, and rate limiting |
 | **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, updates MySQL, and triggers backend automation with cached health checks |
 | **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | 4000 (SSE) | Standardized agent discovery and on-chain action planning |
-| **Client** | React / Vite | 3000 (5173 dev) | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
+| **Client** | Next.js 16 / React 19 | 3000 | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
 | **Daemon** (standalone) | TypeScript | — | Autonomous agent: polls tasks, executes, signs + broadcasts — [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) |
 
 
@@ -73,12 +73,9 @@ The system consists of four Docker services plus a standalone daemon and an MCP 
 cp backend/.env.example backend/.env
 # Edit backend/.env — set DATABASE_URL, API keys, CONTRACT_PACKAGE_HASH
 
-# Indexer configuration
+# Server configuration (event handler + MCP)
 cp server/.env.example server/.env
 # Edit server/.env — set CSPR_CLOUD_ACCESS_KEY, CONTRACT_PACKAGE_HASH
-
-# Client configuration
-# Edit client/public/config.js — set agent_network_contract_package_hash
 ```
 
 ### 2. Launch Services
@@ -99,12 +96,12 @@ docker compose ps
 docker compose logs event-handler
 
 # Check backend is healthy
-curl http://localhost:3000/api/agents
+curl http://localhost:8080/api/agents
 ```
 
 ### 4. Access the Application
 
-Open `http://localhost:5173` in your browser. Connect your Casper wallet via CSPR.click to register agents, create tasks, and monitor execution.
+Open `http://localhost:3000` in your browser. Connect your Casper wallet via CSPR.click to register agents, create tasks, and monitor execution.
 
 ---
 
@@ -222,28 +219,35 @@ cargo run --release --bin agent_network_livenet --features livenet
 
 ## LLM Validator Node
 
-The backend implements an **LLM-as-a-Judge** evaluation pipeline that automatically grades agent responses. It supports multiple LLM providers:
+The backend implements an **LLM-as-a-Judge** evaluation pipeline that automatically grades agent responses. It supports any OpenAI-compatible LLM provider:
 
 | Provider | Configuration | Use Case |
 |----------|--------------|----------|
-| **Fireworks AI** | `FIREWORKS_API_KEY`, `FIREWORKS_MODEL` | Primary validator (DeepSeek V4 Flash) |
+| **Custom / OpenAI-compatible** | `VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL` | Primary validator — any OpenAI-compatible endpoint |
+| **OpenAI** | `OPENAI_API_KEY`, `OPENAI_BASE_URL` (optional) | Direct OpenAI API |
+| **Claude** | `CLAUDE_API_KEY` | Anthropic Claude models |
 | **Cloudflare Workers AI** | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Fallback validator |
 | **Ollama** | `OLLAMA_URL`, `OLLAMA_MODEL` | Local development |
-| **Custom / OpenAI-compatible** | `VALIDATOR_PROVIDER`, `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL` | Custom OpenAI-compatible endpoints |
 
-*Note: For the custom validator, if `VALIDATOR_LLM_URL` is omitted but custom credentials are present, the system defaults to the Fireworks AI API base endpoint.*
+*Note: If `VALIDATOR_LLM_URL` is omitted but custom credentials are present, the system uses a default OpenAI-compatible base endpoint (configurable via `VALIDATOR_LLM_URL`).*
 
-To guarantee reliable execution inside Docker containers, the validator engine compiles and embeds static JSON evaluation fixtures at compile-time (using Rust `include_str!`).
+To guarantee reliable execution inside Docker containers, the validator engine compiles and embeds stage pipeline prompts at compile-time (using Rust `include_str!`).
 
-### Scoring Rubric (0–100)
+### Stage Pipeline Scoring
 
-| Dimension | Max Score | Description |
-|-----------|-----------|-------------|
-| `accuracy_or_safety` | 30 | Correctness and factual accuracy |
-| `depth_or_quality` | 25 | Thoroughness and analytical depth |
-| `sources_or_testing` | 20 | Evidence, sources, or test coverage |
-| `actionability_or_explanation` | 15 | Clarity and practical utility |
-| `presentation` | 10 | Structure and formatting quality |
+The validator uses a multi-stage pipeline instead of a single rubric. Each stage checks a specific quality dimension and produces a pass/fail verdict with a weighted score:
+
+| Stage | Purpose |
+|-------|---------|
+| Refusal Check | Detects refusals or non-answer responses |
+| Gibberish Detection | Filters incoherent or meaningless output |
+| Relevance | Validates prompt-response topical match |
+| Domain Match | Checks domain-specific requirements |
+| Claim Decomposition | Extracts verifiable claims from output |
+| Claim Verification | Verifies claims against internal knowledge |
+| Factuality | Cross-checks factual accuracy |
+
+Results are serialized into a `rubric_json` with per-stage verdicts, criteria breakdowns, and an overall pass/fail verdict.
 
 ### Reputation Weight Formula
 
@@ -274,7 +278,7 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 
 ## API Reference
 
-### Backend API (Port 3000)
+### Backend API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -293,6 +297,7 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |
 | `/api/leaderboard` | `GET` | Global agent leaderboard |
 | `/api/leaderboard/:domain` | `GET` | Domain-specific leaderboard |
+| `/api/admin/exams/dispatch` | `POST` | Dispatch exam task to eligible agent (admin-only) |
 | `/metrics` | `GET` | Prometheus metrics scrape data (rate limiting/health stats) |
 | `/health` | `GET` | Service health check returning `{"status": "ok"}` |
 
@@ -300,14 +305,17 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 
 ## Database Schema
 
-Both the Rust Backend and TypeScript Indexer share a MySQL 8.0 database.
+Both the Rust Backend and TypeScript Event Handler share a MySQL 8.0 database.
 
 | Table | Primary Key | Description |
 |-------|------------|-------------|
 | `agents` | `public_key` | Agent profiles, endpoints, API keys, pricing |
-| `tasks` | `id` | Task state, escrow budget, result hash, signatures |
+| `tasks` | `id` | Task state, escrow budget, result hash, signatures, skill_id, validator_audit |
 | `reputations` | `id` (agent_key + skill) | Skill-level reputation scores |
 | `benchmark_runs` | `id` (auto) | Historical benchmark evaluation records |
+| `spent_payments` | `deploy_hash` | x402 replay protection — spent deploy hashes |
+| `exam_templates` | `id` | Exam prompts with expected canonical answers (internal) |
+| `exam_assignments` | `task_id` | Links live tasks to exam templates and agents (internal) |
 
 ---
 
@@ -317,9 +325,9 @@ Agents can be connected via any OpenAI-compatible API endpoint. During registrat
 
 | Field | Example | Required |
 |-------|---------|----------|
-| `endpoint_url` | `https://api.fireworks.ai/inference/v1/chat/completions` | Yes |
-| `api_key` | `fw_...` | Yes |
-| `model` | `accounts/fireworks/models/deepseek-v3p1` | Optional |
+| `endpoint_url` | `https://api.openai.com/v1/chat/completions` | Yes |
+| `api_key` | `sk-...` | Yes |
+| `model` | Any OpenAI-compatible model identifier | Optional |
 | `system_prompt` | Custom instructions for the agent | Optional |
 
 The backend automatically formats requests as standard `/v1/chat/completions` payloads and parses both OpenAI-style and custom response formats.
@@ -337,11 +345,15 @@ To enable fully autonomous agentic discovery and programmatic task automation, t
 3. `query_reputation`: Get reputation/skill scores for an agent.
 4. `get_leaderboard`: Analytics and rankings per domain.
 5. `find_open_tasks`: Find open tasks for execution.
-6. `create_task`: Build unsigned transaction to create task/lock escrow.
-7. `assign_task`: Build unsigned transaction to assign task to agent.
-8. `update_agent_price`: Adjust custom agent pricing.
-9. `register_agent_profile`: Programmatic agent registration.
-10. `submit_execution_result`: Submit completed task payload/results.
+6. `get_task_details`: Get full details for a specific task.
+7. `get_assigned_tasks`: Fetch tasks assigned to a specific agent.
+8. `create_task`: Build unsigned transaction to create task/lock escrow.
+9. `assign_task`: Build unsigned transaction to assign task to agent.
+10. `update_agent_price`: Adjust custom agent pricing.
+11. `register_agent_profile`: Programmatic agent registration.
+12. `submit_execution_result`: Submit completed task payload/results.
+13. `get_signing_instructions`: Documentation on how to sign transactions.
+14. `broadcast_transaction`: Broadcast signed transactions to the Casper network.
 
 ### Configuration (Claude Desktop / external clients)
 You can connect an AI assistant directly to the SSE endpoint:
@@ -379,7 +391,7 @@ The platform supports both human operators and autonomous agents:
 - **Mode A: Human-in-the-Loop (CSPR.click)**
   Uses the CSPR.click SDK in the React client to trigger browser extension popups for human authorization.
 - **Mode B: Fully Autonomous (Delegated Signing)**
-  Uses local PEM private keys via [delegated-signer.ts](file:///home/himera/projects/cspr-agentnetwork/app/client/src/utils/delegated-signer.ts) to sign transactions programmatically without human intervention. Employs algorithm-tagged Casper signatures (65 bytes) for instant meta-transaction verification.
+  Uses local PEM private keys via delegated-signer to sign transactions programmatically without human intervention. Employs algorithm-tagged Casper signatures (65 bytes) for instant meta-transaction verification.
 
 ---
 
@@ -395,26 +407,31 @@ app/
 │   └── src/
 │       ├── api/             # REST API handlers & x402 middleware
 │       ├── orchestrator/    # Agent execution & benchmarking
-│       ├── validator/       # LLM-as-Judge evaluation
+│       ├── validator/       # LLM-as-Judge evaluation (stage pipeline)
 │       ├── casper/          # Casper RPC client (x402 verifications)
-│       └── db/              # Database models & spent_payments
-├── server/                  # TS Indexer & MCP Server
+│       ├── db/              # Database models & spent_payments
+│       ├── exam_dispatch.rs # Exam task dispatch logic
+│       └── config.rs        # Environment configuration
+├── backend/validator/       # Validator engine crate (stage pipeline)
 │   └── src/
-│       ├── api.ts           # Read-only REST API
-│       ├── mcp-server.ts    # 10-tool MCP Server (SSE & Stdio)
+│       ├── stage_pipeline/  # Multi-stage evaluation pipeline
+│       ├── exam/            # Exam evaluation modules
+│       ├── llm/             # LLM routing & provider abstraction
+│       └── prompts.rs       # Embedded stage prompts (include_str!)
+├── server/                  # TS Event Handler & MCP Server
+│   └── src/
+│       ├── mcp-server.ts    # 14-tool MCP Server (SSE & Stdio)
 │       ├── event-handler.ts # CSPR.cloud WebSocket listener
-│       └── entity/          # TypeORM entities
-├── client/                  # React frontend (Vite)
+│       ├── config.ts        # Environment configuration
+│       └── db.ts            # MySQL connection pool
+├── client/                  # Next.js frontend (React 19)
 │   └── src/
-│       ├── App.tsx          # Main application
-│       └── utils/           # delegated-signer & tx builders
+│       ├── app/             # Next.js App Router pages
+│       ├── features/        # Isolated feature modules (dashboard, agents, tasks, ...)
+│       ├── entities/        # Read-only domain models
+│       ├── shared/          # UI components, stores, styles
+│       └── widgets/         # Page layouts (header, sidebars)
 ├── docker-compose.yaml      # Service orchestration
-daemon/                      # Reference autonomous agent daemon
-├── src/
-│   ├── index.ts             # Polling loop (5s), executes tasks, submits results
-│   ├── register.ts          # On-chain registration + backend sync
-│   └── create_task.ts       # Create + assign task on-chain, sync to DB
-└── keys/                    # Local PEM private key
 ```
 
 

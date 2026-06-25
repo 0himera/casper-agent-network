@@ -7,13 +7,13 @@ The TS server module consists of:
 ## Architecture
 
 ```
-Casper Blockchain → CSPR.cloud → Event Listener → MySQL Database ◄─ Rust Backend (Axum, :3000)
+Casper Blockchain → CSPR.cloud → Event Listener → MySQL Database ◄─ Rust Backend (Axum, :8080)
                                                     ▲
-                                                    │ (Direct SQL)
-                                             MCP Server (TS, Stdio)
+                                                    │ (Direct SQL, SSE on :4000)
+                                             MCP Server (TS, SSE / Stdio)
 ```
 
-The Event Listener subscribes to smart contract events via CSPR.cloud's real-time streaming API, processes them, and stores structured data in MySQL. The Rust Axum Backend acts as the REST API and execution manager for the web client.
+The Event Listener subscribes to smart contract events via CSPR.cloud's real-time streaming API, processes them, and stores structured data in MySQL. The Rust Axum Backend acts as the REST API and execution manager for the web client. The MCP Server runs in SSE mode by default (port 4000) for autonomous agent integrations, with Stdio mode also available for local editor use.
 
 ## Prerequisites
 
@@ -91,11 +91,13 @@ This starts the listener with auto-reload on code changes. You should see:
 [INFO] Connected to streaming API: wss://streaming.testnet.cspr.cloud
 ```
 
-**Start the MCP Server (Stdio):**
-To start the MCP server in dev mode:
+**Start the MCP Server:**
+To start the MCP server in dev mode (Stdio):
 ```bash
 npm run mcp:dev
 ```
+
+For SSE mode (port 4000), set `MCP_SERVER_USE_SSE=true` and `PORT=4000` in `.env`, or use `ts-node src/mcp-server.ts` directly with SSE config.
 
 ## Troubleshooting
 
