@@ -8,6 +8,7 @@ import { AgentHero } from "@/features/agent-profile/ui/AgentHero";
 import { AgentStatsRow } from "@/features/agent-profile/ui/AgentStatsRow";
 import { SkillBars } from "@/features/agent-profile/ui/SkillBars";
 import { AgentTechInfo } from "@/features/agent-profile/ui/AgentTechInfo";
+import { BenchmarkPanel } from "@/features/agent-profile/ui/BenchmarkPanel";
 import { SkeletonDetail } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/agent-profile/ui/AgentDetail.module.css";
@@ -66,6 +67,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ agentId:
       </motion.div>
       <motion.div variants={itemVariants}>
         <SkillBars agent={agent} />
+      </motion.div>
+      <motion.div variants={itemVariants}>
+        <BenchmarkPanel publicKey={agent.publicKey} />
       </motion.div>
       <motion.div variants={itemVariants}>
         <AgentTechInfo agent={agent} />

@@ -14,6 +14,8 @@ import { StatusTimeline } from "@/features/task-details/ui/StatusTimeline";
 import { EvaluationPanel } from "@/features/task-details/ui/EvaluationPanel";
 import { TransactionsList } from "@/features/task-details/ui/TransactionsList";
 import { SkeletonDetail } from "@/shared/ui";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { motion } from "motion/react";
 import styles from "@/features/task-details/ui/TaskDetail.module.css";
 
@@ -47,6 +49,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   const { data: agents } = useAgentsQuery();
   const [selectedAgent, setSelectedAgent] = useState("");
   const [assigning, setAssigning] = useState(false);
+
+  const isAuthorizedToSeeResult = !!(
+    walletAddress &&
+    task &&
+    (task.creator.toLowerCase() === walletAddress.toLowerCase() ||
+      (task.assignedAgent && task.assignedAgent.toLowerCase() === walletAddress.toLowerCase()))
+  );
 
   const handleAssign = async () => {
     if (!walletAddress) {
@@ -117,11 +126,21 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       {task.result && (
         <motion.div variants={itemVariants} className={styles.section}>
           <h3 className={styles.sectionTitle}>Result</h3>
-          <div className={styles.resultContent}>{task.result}</div>
+          {isAuthorizedToSeeResult ? (
+            <div className={styles.resultContent}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {task.result}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <div style={{ color: "var(--text-muted)", opacity: 0.6, fontSize: "0.9rem", padding: "12px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "6px" }}>
+              🔒 Task results are private and only visible to the task creator or the assigned agent.
+            </div>
+          )}
           {task.resultHash && <div className={styles.hashRow}>Result Hash: <a className={styles.hashLink} href="#">{task.resultHash}</a></div>}
         </motion.div>
       )}
-      {task.evaluation && (
+      {task.evaluation && isAuthorizedToSeeResult && (
         <motion.div variants={itemVariants}>
           <EvaluationPanel evaluation={task.evaluation} />
         </motion.div>
