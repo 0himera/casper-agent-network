@@ -20,6 +20,36 @@ impl ExamVerdict {
     }
 }
 
+/// Per-template verification policy (E6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnswerVerificationMode {
+    #[default]
+    ExactThenLlm,
+    LlmFirst,
+}
+
+impl AnswerVerificationMode {
+    pub fn as_label(self) -> &'static str {
+        match self {
+            AnswerVerificationMode::ExactThenLlm => "exact_then_llm",
+            AnswerVerificationMode::LlmFirst => "llm_first",
+        }
+    }
+}
+
+/// How the exam answer was compared (E6 audit contract).
+pub mod compare_mode {
+    pub const EXACT_MATCH: &str = "exact_match";
+    pub const LLM_FALLBACK_MATCH: &str = "llm_fallback_match";
+    pub const LLM_FALLBACK_MISS: &str = "llm_fallback_miss";
+    pub const LLM_FIRST_MATCH: &str = "llm_first_match";
+    pub const LLM_FIRST_MISS: &str = "llm_first_miss";
+    pub const ANSWER_MISSING: &str = "answer_missing";
+    pub const REFUSAL: &str = "refusal";
+    pub const GATE_FAILED: &str = "gate_failed";
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExamAudit {
     pub exam_id: String,
@@ -30,6 +60,11 @@ pub struct ExamAudit {
     pub verdict: ExamVerdict,
     pub pipeline: String,
     pub timestamp: String,
+    pub compare_mode: String,
+    pub llm_fallback_used: bool,
+    pub answer_verification_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_raw: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

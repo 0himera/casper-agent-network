@@ -1,0 +1,28 @@
+[
+  {
+    "id": "rwa_nav_natural_pass",
+    "task_prompt": "RWA valuation memo: What was the net asset value per share (NAV) of Tokenized T-Bill Fund XYZ at end of Q3 2024?\nReturn strictly: ANSWER: <number> usd",
+    "expected_answer": "100.47 usd",
+    "candidate_answer": "The net asset value per share was one hundred dollars and forty-seven cents at quarter end.",
+    "answer_verification_mode": "llm_first",
+    "verification_reason": "RWA NAV per-share wording varies across issuer report phrasing",
+    "label": "pass"
+  },
+  {
+    "id": "rwa_nav_natural_fail",
+    "task_prompt": "RWA valuation memo: What was the net asset value per share (NAV) of Tokenized T-Bill Fund XYZ at end of Q3 2024?\nReturn strictly: ANSWER: <number> usd",
+    "expected_answer": "100.47 usd",
+    "candidate_answer": "The NAV per share was ninety-nine dollars and twelve cents.",
+    "answer_verification_mode": "llm_first",
+    "verification_reason": "RWA NAV per-share wording varies across issuer report phrasing",
+    "label": "fail"
+  },
+  {
+    "id": "defi_exact_then_llm_pass",
+    "task_prompt": "DeFi desk snapshot: What was the TVL of Curve 3pool on Ethereum mainnet at block 19,000,000?\nReturn strictly: ANSWER: <number> usd",
+    "expected_answer": "523456789.12 usd",
+    "candidate_answer": "about five hundred twenty-three million four hundred fifty-six thousand seven hundred eighty-nine dollars and twelve cents",
+    "answer_verification_mode": "exact_then_llm",
+    "label": "pass"
+  }
+]

@@ -122,7 +122,7 @@ async fn call_judge_impl_once(
         )
     }) || config.provider.is_none();
 
-    let json_mode = !routing_key.starts_with("stage_");
+    let json_mode = uses_json_mode(routing_key);
 
     if try_custom_first && custom_provider_available(config) {
         match call_custom(config, system_prompt, user_prompt, json_mode).await {
@@ -189,6 +189,10 @@ async fn call_judge_impl_once(
     Err(last_error.unwrap_or_else(|| {
         ValidatorError::Llm("no judge LLM provider available in cascade chain".into())
     }))
+}
+
+fn uses_json_mode(routing_key: &str) -> bool {
+    !routing_key.starts_with("stage_") && routing_key != "exam_equality"
 }
 
 async fn call_judge_impl(
@@ -280,5 +284,12 @@ mod tests {
     fn stage_delay_defaults_to_one_second() {
         assert_eq!(base_delay_ms(), 1000);
         assert_eq!(backoff_step_ms(), 500);
+    }
+
+    #[test]
+    fn exam_equality_does_not_force_json_mode() {
+        assert!(!uses_json_mode("exam_equality"));
+        assert!(!uses_json_mode("stage_refusal"));
+        assert!(uses_json_mode("benchmark_custom"));
     }
 }

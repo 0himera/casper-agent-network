@@ -357,6 +357,7 @@ async fn evaluate_task_validation_with_context(
             prompt,
             output,
             &ctx.template.expected_answer_canonical,
+            ctx.template.source_metadata.as_ref(),
             processing_time_ms,
             config,
         )
@@ -664,6 +665,7 @@ mod validation_tests {
             exam_audit_active_jobs_threshold: 2,
             exam_dispatch_budget_motes: 5_000_000_000,
             exam_dispatch_creator_public_key: String::new(),
+            exam_llm_equality: false,
         }
     }
 
@@ -821,6 +823,9 @@ mod validation_tests {
             "verdict",
             "pipeline",
             "timestamp",
+            "compare_mode",
+            "llm_fallback_used",
+            "answer_verification_mode",
         ] {
             assert!(audit.get(key).is_some(), "missing exam audit field: {key}");
         }

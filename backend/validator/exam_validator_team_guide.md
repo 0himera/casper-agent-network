@@ -23,7 +23,7 @@ The exam pipeline, dispatching logic, and on-chain submission are configured via
 |----------|---------|---------|
 | `EXAM_WEIGHT` | `300` | On-chain weight submitted to `submit_complete` for both pass and fail outcomes. |
 | `EXAM_SKIP_ONCHAIN` | unset | Set to `1` (or `true`) in local/CI environments to skip on-chain transaction submission. |
-| `EXAM_LLM_EQUALITY` | `0` | Post-MVP (E6) flag. When set to `1`, enables second-chance LLM semantic comparison after exact match fails. |
+| `EXAM_LLM_EQUALITY` | `0` | E6 flag (default **off**). When `1`, enables LLM semantic answer verification. Mode depends on template `answer_verification_mode` in `source_metadata` (see E6 below). |
 | `EXAM_DISPATCH_PROB_AUDIT` | `0.2` | Probability (0.0 to 1.0) of dispatching an exam to a high-reputation agent (Audit bucket). |
 | `EXAM_DISPATCH_PROB_REHAB` | `0.5` | Probability (0.0 to 1.0) of dispatching an exam to a low-reputation agent (Rehab bucket). |
 | `EXAM_MAX_PER_AGENT_PER_PERIOD` | `1` | Frequency cap: maximum number of exam tasks assigned to a single agent in a rolling period. |
@@ -73,21 +73,27 @@ flowchart TD
 
 ## Evaluation Methodology
 
-The exam pipeline judges the answer using a strict, deterministic sequence:
+The exam pipeline judges the answer in a fixed order:
 
-1. **S0 Refusal Check:**
-   The answer is parsed for standard LLM refusal phrases or disclaimers (reusing the Stage Pipeline's S0 refusal model). If a refusal is detected, the evaluation exits early with **Score: 0** and verdict **`refusal`**.
-2. **ANSWER: Extraction:**
-   The engine searches for the strict contract marker `ANSWER:` in the agent's output. If the marker is missing, the evaluation exits with **Score: 0** and verdict **`failed`**.
-3. **Canonicalization:**
-   The extracted answer is normalized:
-   * Whitespace is trimmed and collapsed.
-   * Text is converted to lowercase.
-   * Trailing punctuation (dots, commas) is stripped.
-4. **Exact Match Comparison:**
-   The canonicalized answer is compared directly against `expected_answer_canonical` from the template.
-   * **Match:** Verdict **`passed`**, **Score: 100**.
-   * **Mismatch:** Verdict **`failed`**, **Score: 0**.
+1. **Input gate** — malformed or empty output → **`gate_failed`**, score 0.
+2. **S0 Refusal Check** — reuses the Stage Pipeline refusal model. Refusal → **`refusal`**, score 0.
+3. **ANSWER: Extraction** — missing `ANSWER:` marker → **`failed`**, score 0.
+4. **Canonicalization** — trim, lowercase, collapse whitespace, strip trailing punctuation.
+5. **Answer verification (E6)** — mode from template `source_metadata.answer_verification_mode` (default `exact_then_llm`):
+
+| Mode | When `EXAM_LLM_EQUALITY=0` (default) | When `EXAM_LLM_EQUALITY=1` |
+|------|--------------------------------------|----------------------------|
+| **`exact_then_llm`** | Exact canonical match only | Exact first; on mismatch, isolated LLM yes/no equality call |
+| **`llm_first`** | Exact-only fail-safe (same as legacy) | LLM yes/no first; audit uses `llm_first_*` compare modes |
+
+**Policy guardrails:**
+
+- Missing or unknown `answer_verification_mode` → `exact_then_llm`.
+- `llm_first` requires non-empty `verification_reason` in internal template metadata; otherwise degrades to `exact_then_llm`.
+- Only explicitly reviewed ambiguous Type H templates (e.g. RWA NAV) may use `llm_first`. Computed numeric tasks belong in **E8**, not E6.
+- Unparseable LLM output or LLM errors → fail closed (score 0).
+
+Verdicts remain **`passed`** (100) or **`failed`** / **`refusal`** / **`gate_failed`** (0). No new verdict values.
 
 ---
 
@@ -121,9 +127,22 @@ The `tasks.validator_audit` column stores the full audit trail:
   "expected_answer_hash": "8f42a9b3c40d...",
   "actual_answer_hash": "8f42a9b3c40d...",
   "hash_algorithm": "sha256",
-  "timestamp": "2026-06-24T04:10:00Z"
+  "timestamp": "2026-06-24T04:10:00Z",
+  "compare_mode": "exact_match",
+  "llm_fallback_used": false,
+  "answer_verification_mode": "exact_then_llm",
+  "llm_raw": null
 }
 ```
+
+E6 `compare_mode` values:
+
+| Value | Meaning |
+|-------|---------|
+| `exact_match` | Deterministic canonical match (or fail-safe when LLM disabled) |
+| `llm_fallback_match` / `llm_fallback_miss` | `exact_then_llm` path after exact mismatch |
+| `llm_first_match` / `llm_first_miss` | Primary LLM verification (`llm_first` templates) |
+| `answer_missing`, `refusal`, `gate_failed` | Early exit; LLM not invoked |
 
 ---
 
@@ -147,6 +166,21 @@ curl -X POST "http://localhost:3000/api/tasks/<task_id>/execute" \
 curl -X POST "http://localhost:3000/api/tasks/<task_id>/validate" \
   -H "Authorization: your-internal-service-key"
 ```
+
+### Running E6 Benchmark and Manual Smoke
+
+```bash
+cd backend/validator
+
+# Mock golden benchmark (CI-safe; uses mock_equality_yes/no markers)
+cargo run --bin exam_llm_equality_benchmark
+
+# Manual real-LLM smoke (requires .env credentials; NOT in regression_gate.sh)
+source .env
+./scripts/exam_llm_smoke.sh
+```
+
+Mock benchmark reports false-fail rate and precision/recall for Mode A (exact only) vs Mode A+B (exact + LLM). Real-LLM smoke uses natural phrasing cases in `tests/exam_llm_equality_real_smoke_cases.json`.
 
 ### Running Tests
 
@@ -215,6 +249,6 @@ The following table outlines planned post-MVP features, sorted by descending uti
 
 | ID | Feature Name | Technical Description & Impact | Utility | Sequence / Dependency |
 |---|---|---|---|---|
-| **E6** | **LLM-Equality Fallback** | If the deterministic Type H exact match fails, the engine falls back to an isolated LLM call (`EXAM_LLM_EQUALITY=1`) comparing only the candidate's answer and the expected canonical answer. This reduces false-fail rates due to minor semantic or formatting variations. | **High** | Requires **E5** (MVP Release) and a golden dataset of $\ge 20$ Q/A pairs. |
+| **E6** | **LLM-Equality Verification** | **Implemented.** Per-template `answer_verification_mode` (`exact_then_llm` default, `llm_first` for reviewed ambiguous Type H). Controlled by `EXAM_LLM_EQUALITY=1`. Mock benchmark in CI; real-LLM smoke manual only. | **High** | Requires **E5** (MVP Release). |
 | **E7** | **Background Autoplanner** | Extracts the dispatch logic into a background loop (`tokio::spawn` + interval) running periodically. This removes the need for external cron jobs or manual `curl` requests to trigger the exam dispatch. | **Medium-High** | Can be done now (depends on **E4** dispatch stability). |
 | **E8** | **Type C (Reference Solver)** | Adds support for computed exam answers (Type C) using an on-chain or off-chain reference solver (e.g., calculating Impermanent Loss at block N) instead of static historical facts. Prevents template fatigue. | **Medium** | Requires **E5** (MVP Release) and an approved closed-form solver specification. |
