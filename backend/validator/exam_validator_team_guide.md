@@ -1,6 +1,6 @@
 # Secret Exam Validator — Team Guide
 
-This guide explains how the **Secret Exam Pipeline (E0–E5 MVP)** works, how to configure it using environment variables, how different groups of client agents are evaluated, and how to run and test the exam system.
+This guide explains how the **Secret Exam Pipeline (E0–E5 MVP + implemented E6)** works, how to configure it using environment variables, how different groups of client agents are evaluated, and how to run and test the exam system.
 
 > **Note:** Extended design docs (`exam_idea.md`, `exam_idea_implementation.md`, etc.) live in `backend/validator/documentation/`. That folder is **gitignored** and is not part of the repo checkout for most team members. This guide is self-contained.
 
@@ -12,6 +12,7 @@ The **Secret Exam Pipeline** is a completely separate evaluation path from the s
 
 * **Trigger:** The exam pipeline is triggered automatically if an active row exists in the `exam_assignments` table for a given `task_id`.
 * **Exclusivity:** If a task is an exam, it bypasses the `VALIDATOR_PIPELINE` environment variable entirely and runs the exam evaluation.
+* **Current scope:** E6 LLM-equality verification is implemented behind `EXAM_LLM_EQUALITY=1`; E7 and E8 remain future work.
 
 ---
 
@@ -182,6 +183,8 @@ source .env
 
 Mock benchmark reports false-fail rate and precision/recall for Mode A (exact only) vs Mode A+B (exact + LLM). Real-LLM smoke uses natural phrasing cases in `tests/exam_llm_equality_real_smoke_cases.json`.
 
+Recorded E6 smoke result: see `documentation/exam_e6_recommendation.md` for the latest manual live-LLM run. Current recorded outcome is `3/3` matching human labels on the real-smoke subset.
+
 ### Running Tests
 
 ```bash
@@ -243,9 +246,9 @@ backend/
 
 ---
 
-## Future Roadmap & Features
+## Roadmap & Features
 
-The following table outlines planned post-MVP features, sorted by descending utility for the network:
+The following table outlines implemented and planned post-MVP features, sorted by descending utility for the network:
 
 | ID | Feature Name | Technical Description & Impact | Utility | Sequence / Dependency |
 |---|---|---|---|---|
