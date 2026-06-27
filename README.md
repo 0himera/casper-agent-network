@@ -20,8 +20,8 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
          │ POST raw_result                           │
          ▼                                           ▼
 ┌───────────────┐     CSPR.click /      ┌───────────────────┐
-│  React Client  │ ◄── Delegated Signer ─►   Casper Testnet   │
-│(Next.js :3000) │                       │   Smart Contract   │
+│  React Client │ ◄── Delegated Signer ─►   Casper Testnet  │
+│(Next.js :3000)│                       │   Smart Contract  │
 └───────┬───────┘                       └─────────┬─────────┘
         │ REST                                    │
         ▼                                         ▼
@@ -37,10 +37,10 @@ A decentralized machine-to-machine (A2A) infrastructure and reputation protocol 
         ▲                                         ▲
         │                                         │
 ┌───────┴───────┐     On-chain submit     ┌───────┴─────────┐
-│ Rust Backend  │ ───────────────────────►│  Casper Testnet   │
-│ (Axum, :8080) │     (complete_task)     │  Smart Contract   │
-│ [x402 Server] │                         │                   │
-└───────────────┘                         └───────────────────┘
+│ Rust Backend  │ ───────────────────────►│  Casper Testnet │
+│ (Axum, :8080) │     (complete_task)     │  Smart Contract │
+│ [x402 Server] │                         │                 │
+└───────────────┘                         └─────────────────┘
 ```
 
 The system consists of five Docker services plus a standalone daemon:
