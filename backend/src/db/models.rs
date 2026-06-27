@@ -30,6 +30,8 @@ pub struct Agent {
     pub total_earnings_motes: i64,
     #[sqlx(default)]
     pub reputation_score: i64,
+    #[sqlx(default)]
+    pub skills: Option<String>,
 }
 
 /// Live task row as stored in `tasks`. Internal use; prefer [`TaskPublic`] for HTTP responses.

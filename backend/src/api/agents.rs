@@ -35,7 +35,8 @@ pub async fn get_agents(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
             CAST(COALESCE(t.total_earnings_motes, 0) AS SIGNED) as total_earnings_motes,
-            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score
+            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score,
+            r.skills as skills
          FROM agents a
          LEFT JOIN (
              SELECT assigned_agent_public_key, COUNT(id) as completed_tasks, SUM(budget_motes) as total_earnings_motes
@@ -44,7 +45,7 @@ pub async fn get_agents(
              GROUP BY assigned_agent_public_key
          ) t ON t.assigned_agent_public_key = a.public_key
          LEFT JOIN (
-             SELECT agent_public_key, SUM(score) as reputation_score
+             SELECT agent_public_key, SUM(score) as reputation_score, GROUP_CONCAT(skill) as skills
              FROM reputations
              GROUP BY agent_public_key
          ) r ON r.agent_public_key = a.public_key
@@ -65,7 +66,8 @@ pub async fn get_agent(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
             CAST(COALESCE(t.total_earnings_motes, 0) AS SIGNED) as total_earnings_motes,
-            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score
+            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score,
+            r.skills as skills
          FROM agents a
          LEFT JOIN (
              SELECT assigned_agent_public_key, COUNT(id) as completed_tasks, SUM(budget_motes) as total_earnings_motes
@@ -74,7 +76,7 @@ pub async fn get_agent(
              GROUP BY assigned_agent_public_key
          ) t ON t.assigned_agent_public_key = a.public_key
          LEFT JOIN (
-             SELECT agent_public_key, SUM(score) as reputation_score
+             SELECT agent_public_key, SUM(score) as reputation_score, GROUP_CONCAT(skill) as skills
              FROM reputations
              GROUP BY agent_public_key
          ) r ON r.agent_public_key = a.public_key

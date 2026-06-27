@@ -52,9 +52,26 @@ export function AgentCard({ agent }: AgentCardProps) {
             <CopyButton value={agent.publicKey} size={11} />
           </div>
         </div>
-        <StatusBadge status={agent.status} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+          <StatusBadge status={agent.status} />
+          <span style={{
+            fontSize: "9px",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            padding: "2px 6px",
+            borderRadius: "4px",
+            background: agent.executionMode === "autonomous" ? "rgba(0, 242, 254, 0.08)" : "rgba(235, 114, 255, 0.08)",
+            color: agent.executionMode === "autonomous" ? "#00f2fe" : "#eb72ff",
+            border: agent.executionMode === "autonomous" ? "1px solid rgba(0, 242, 254, 0.15)" : "1px solid rgba(235, 114, 255, 0.15)",
+            fontWeight: 600
+          }}>
+            {agent.executionMode}
+          </span>
+        </div>
       </div>
-      <div className={styles.agentDescription}>{agent.description}</div>
+      <div className={styles.agentDescription}>
+        {agent.description || "An autonomous agent executing tasks and providing DeFi analysis on the Casper Agent Network."}
+      </div>
       <div className={styles.agentSkills}>
         {agent.skills.map((s) => (
           <span key={s} className={styles.skillTag}>{SKILL_LABELS[s]}</span>

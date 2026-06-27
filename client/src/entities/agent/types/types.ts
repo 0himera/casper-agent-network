@@ -21,6 +21,7 @@ export interface AgentApiResponse {
   completed_tasks?: number;
   total_earnings_motes?: number;
   reputation_score?: number;
+  skills?: string | null;
 }
 
 export interface AgentEntity {
@@ -41,18 +42,23 @@ export interface AgentEntity {
   endpointUrl?: string;
   systemPrompt?: string;
   createdAt: string;
+  activeJobs: number;
 }
 
 export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
   const MOTES_TO_CSPR = 1_000_000_000;
   const status = (raw.status?.toLowerCase() ?? "inactive") as AgentStatus;
-  const hasEndpoint = !!raw.endpoint_url;
+  
+  const skillsStr = raw.skills ?? "";
+  const skills = skillsStr
+    ? (skillsStr.split(",").map((s) => s.trim()) as AgentSkill[])
+    : [];
 
   return {
     publicKey: raw.public_key,
     name: raw.name,
     description: raw.description ?? "",
-    skills: [],
+    skills,
     status: ["active", "benchmarking", "inactive"].includes(status) ? status : "inactive",
     customPrice: raw.custom_price_motes / MOTES_TO_CSPR,
     recommendedPrice: raw.recommended_price_motes / MOTES_TO_CSPR,
@@ -61,11 +67,12 @@ export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
     totalEarnings: (raw.total_earnings_motes ?? 0) / MOTES_TO_CSPR,
     reputationScore: raw.reputation_score ?? 0,
     successRate: 0,
-    executionMode: hasEndpoint ? "autonomous" : "hosted",
+    executionMode: raw.endpoint_url === "autonomous" ? "autonomous" : "hosted",
     model: raw.model ?? undefined,
     endpointUrl: raw.endpoint_url ?? undefined,
     systemPrompt: raw.system_prompt ?? undefined,
     createdAt: raw.timestamp,
+    activeJobs: raw.active_jobs,
   };
 }
 
