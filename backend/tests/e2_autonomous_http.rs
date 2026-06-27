@@ -67,6 +67,7 @@ fn build_test_router(pool: DbPool) -> Router {
         exam_audit_active_jobs_threshold: 2,
         exam_dispatch_budget_motes: 5_000_000_000,
         exam_dispatch_creator_public_key: String::new(),
+        exam_llm_equality: false,
     };
     let casper_client = CasperClient::new(
         "http://localhost".to_string(),
@@ -104,6 +105,7 @@ fn build_dispatch_test_router(pool: DbPool) -> Router {
         exam_audit_active_jobs_threshold: 2,
         exam_dispatch_budget_motes: 5_000_000_000,
         exam_dispatch_creator_public_key: CREATOR_PK.to_string(),
+        exam_llm_equality: false,
     };
     let casper_client = CasperClient::new(
         "http://localhost".to_string(),
@@ -363,6 +365,9 @@ fn assert_exam_audit_shape(audit: &serde_json::Value) {
         "verdict",
         "pipeline",
         "timestamp",
+        "compare_mode",
+        "llm_fallback_used",
+        "answer_verification_mode",
     ] {
         assert!(audit.get(key).is_some(), "missing exam audit field: {key}");
     }

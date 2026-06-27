@@ -15,7 +15,9 @@ pub use crate::llm::{
     call_judge_raw, judge_call_count, last_judge_provider_used, reset_judge_call_stats,
 };
 pub use exam::{
-    ExamAudit, ExamPipelineOutput, ExamVerdict, evaluate_exam_pipeline, evaluate_exam_pipeline_mock,
+    AnswerVerificationMode, ExamAudit, ExamPipelineOutput, ExamVerdict, ExamVerificationPolicy,
+    evaluate_exam_pipeline, evaluate_exam_pipeline_mock, evaluate_exam_pipeline_mock_with_config,
+    resolve_exam_verification_policy,
 };
 pub use prompts::{
     build_stage_gibberish_prompts_version, build_stage_refusal_prompts_version,

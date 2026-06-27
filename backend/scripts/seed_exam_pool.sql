@@ -96,7 +96,9 @@ Return strictly: ANSWER: <number> usd',
         'type', 'H',
         'source', 'issuer quarterly report (offline, curated)',
         'period', '2024-Q3',
-        'instrument', 'Tokenized T-Bill Fund XYZ'
+        'instrument', 'Tokenized T-Bill Fund XYZ',
+        'answer_verification_mode', 'llm_first',
+        'verification_reason', 'RWA NAV per-share wording varies across issuer report phrasing; exact canonical match is too brittle for natural-language answers'
     )
 ) ON DUPLICATE KEY UPDATE
     prompt = VALUES(prompt),

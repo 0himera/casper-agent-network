@@ -60,6 +60,8 @@ pub struct Config {
     pub exam_dispatch_budget_motes: u64,
     /// Creator public key stored on dispatched exam tasks (platform wallet).
     pub exam_dispatch_creator_public_key: String,
+    /// Post-MVP (E6): enable LLM semantic equality fallback after exact mismatch.
+    pub exam_llm_equality: bool,
 }
 
 /// Clamp dispatch probability to anti-gaming range `(0.0, 1.0)`; `>= 1.0` becomes `0.99`.
@@ -152,6 +154,10 @@ impl Config {
         let exam_dispatch_creator_public_key =
             env::var("EXAM_DISPATCH_CREATOR_PUBLIC_KEY").unwrap_or_else(|_| admin_account.clone());
 
+        let exam_llm_equality = env::var("EXAM_LLM_EQUALITY")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+
         Config {
             database_url,
             port,
@@ -179,6 +185,7 @@ impl Config {
             exam_audit_active_jobs_threshold,
             exam_dispatch_budget_motes,
             exam_dispatch_creator_public_key,
+            exam_llm_equality,
         }
     }
 }
@@ -227,6 +234,7 @@ mod tests {
                 exam_audit_active_jobs_threshold: 2,
                 exam_dispatch_budget_motes: 5_000_000_000,
                 exam_dispatch_creator_public_key: String::new(),
+                exam_llm_equality: false,
             };
             assert_eq!(config.exam_weight, 300);
         });
@@ -240,6 +248,22 @@ mod tests {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(300);
             assert_eq!(weight, 450);
+        });
+    }
+
+    #[test]
+    fn exam_llm_equality_defaults_to_false() {
+        temp_env::with_var("EXAM_LLM_EQUALITY", None::<&str>, || {
+            let config = Config::from_env();
+            assert!(!config.exam_llm_equality);
+        });
+    }
+
+    #[test]
+    fn exam_llm_equality_reads_from_env() {
+        temp_env::with_var("EXAM_LLM_EQUALITY", Some("1"), || {
+            let config = Config::from_env();
+            assert!(config.exam_llm_equality);
         });
     }
 

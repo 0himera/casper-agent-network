@@ -239,6 +239,7 @@ mod tests {
             exam_audit_active_jobs_threshold: 2,
             exam_dispatch_budget_motes: 5_000_000_000,
             exam_dispatch_creator_public_key: "admin-pk".into(),
+            exam_llm_equality: false,
         }
     }
 

@@ -58,6 +58,8 @@ pub struct LlmConfig {
     pub judge_cascade: Option<JudgeCascadeMode>,
     pub judge_timeout_ms: Option<u64>,
     pub judge_self_consistency: Option<bool>,
+    /// Post-MVP (E6): LLM semantic equality fallback after exact mismatch.
+    pub exam_llm_equality: bool,
 }
 
 impl LlmConfig {
@@ -112,6 +114,8 @@ impl LlmConfig {
             judge_cascade,
             judge_timeout_ms,
             judge_self_consistency,
+            exam_llm_equality: env("EXAM_LLM_EQUALITY")
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
         }
     }
 }
