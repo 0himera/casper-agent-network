@@ -292,4 +292,23 @@ mod tests {
         assert!(!uses_json_mode("stage_refusal"));
         assert!(uses_json_mode("benchmark_custom"));
     }
+
+    #[tokio::test]
+    async fn call_judge_raw_no_provider_returns_llm_error() {
+        let config = LlmConfig::default();
+        let result = call_judge_raw(
+            &config,
+            "exam_equality",
+            "system",
+            "Expected answer:\n1 usd\n\nCandidate answer:\n1 usd",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(
+            message.contains("no judge LLM provider") || message.contains("LLM"),
+            "unexpected error: {message}"
+        );
+    }
 }

@@ -5,6 +5,9 @@ pub mod reputations;
 pub mod tasks;
 pub mod x402;
 
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+
 use crate::casper::contract::CasperClient;
 use crate::config::Config;
 use crate::db::DbPool;
@@ -13,11 +16,31 @@ use axum::{
     routing::{get, patch, post},
 };
 
+/// Tracks in-flight `/validate` jobs per task id to deduplicate concurrent retries.
+#[derive(Clone, Default)]
+pub struct ValidateInflight {
+    tasks: Arc<Mutex<HashSet<String>>>,
+}
+
+impl ValidateInflight {
+    /// Returns `true` if this caller acquired the in-flight slot for `task_id`.
+    pub fn try_start(&self, task_id: &str) -> bool {
+        let mut guard = self.tasks.lock().expect("validate inflight lock poisoned");
+        guard.insert(task_id.to_string())
+    }
+
+    pub fn finish(&self, task_id: &str) {
+        let mut guard = self.tasks.lock().expect("validate inflight lock poisoned");
+        guard.remove(task_id);
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: DbPool,
     pub config: Config,
     pub casper_client: CasperClient,
+    pub validate_inflight: ValidateInflight,
 }
 
 pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) -> Router {
@@ -25,6 +48,7 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
         pool,
         config,
         casper_client,
+        validate_inflight: ValidateInflight::default(),
     };
 
     Router::new()
@@ -76,4 +100,18 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
             post(exams::dispatch_exam_handler),
         )
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ValidateInflight;
+
+    #[test]
+    fn validate_inflight_guard_deduplicates_same_task() {
+        let guard = ValidateInflight::default();
+        assert!(guard.try_start("task-1"));
+        assert!(!guard.try_start("task-1"));
+        guard.finish("task-1");
+        assert!(guard.try_start("task-1"));
+    }
 }

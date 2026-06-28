@@ -63,7 +63,7 @@ pub async fn update_exam_assignment_validation(
     sqlx::query(
         "UPDATE exam_assignments \
          SET status = 'validated', verdict = ?, validated_at = NOW() \
-         WHERE task_id = ?",
+         WHERE task_id = ? AND status != 'validated'",
     )
     .bind(verdict)
     .bind(task_id)
@@ -185,7 +185,6 @@ pub async fn insert_dispatched_exam_task(
 mod tests {
     use validator_engine::exam::canonicalize::canonicalize_exam_answer;
 
-    /// Seed values from scripts/seed_exam_pool.sql must already match E0 canonicalize.
     #[test]
     fn seed_canonical_answers_are_pre_normalized() {
         let seeds = [

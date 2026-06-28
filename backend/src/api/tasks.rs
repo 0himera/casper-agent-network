@@ -270,24 +270,51 @@ pub async fn validate_task_handler(
         "No raw result saved for task".into(),
     ))?;
 
+    if is_validate_noop(&task) {
+        return Ok(validate_http_response(
+            StatusCode::OK,
+            "noop",
+            "Task already validated",
+        ));
+    }
+
+    if !state.validate_inflight.try_start(&id) {
+        return Ok(validate_http_response(
+            StatusCode::ACCEPTED,
+            "in_progress",
+            "Validation already in progress",
+        ));
+    }
+
     let pool = state.pool.clone();
     let config = state.config.clone();
+    let inflight = state.validate_inflight.clone();
     let result = result.clone();
+    let task_id = task.id.clone();
+    let domain = task.domain.clone();
+    let prompt = task.prompt.clone();
+    let budget_motes = task.budget_motes;
+
     tokio::spawn(async move {
         validate_and_complete(
             &pool,
             &config,
-            &task.id,
-            &task.domain,
-            &task.prompt,
-            task.budget_motes,
+            &task_id,
+            &domain,
+            &prompt,
+            budget_motes,
             &result,
             0,
         )
         .await;
+        inflight.finish(&task_id);
     });
 
-    Ok(StatusCode::ACCEPTED)
+    Ok(validate_http_response(
+        StatusCode::ACCEPTED,
+        "accepted",
+        "Validation started",
+    ))
 }
 
 struct ExamEvalContext {
@@ -461,6 +488,70 @@ fn exam_verdict_from_audit(audit: &Option<serde_json::Value>) -> Option<String> 
         .map(str::to_string)
 }
 
+fn compute_result_hash(output: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(output.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn needs_submit_retry(task: &Task) -> bool {
+    task.validator_audit.is_some() && task.status != "Completed" && !should_skip_onchain_submit()
+}
+
+fn is_validate_noop(task: &Task) -> bool {
+    if task.status == "Completed" {
+        return true;
+    }
+    task.validator_audit.is_some() && !needs_submit_retry(task)
+}
+
+fn score_from_validator_audit(audit: &serde_json::Value) -> Option<u32> {
+    match audit.get("pipeline").and_then(|value| value.as_str()) {
+        Some("exam") => match audit.get("verdict").and_then(|value| value.as_str()) {
+            Some("passed") => Some(100),
+            Some("failed") | Some("refusal") | Some("gate_failed") => Some(0),
+            _ => None,
+        },
+        Some("stage") => audit
+            .get("output")
+            .and_then(|output| output.get("total"))
+            .and_then(|total| total.as_u64())
+            .map(|total| total as u32),
+        _ => audit
+            .get("total")
+            .and_then(|total| total.as_u64())
+            .map(|total| total as u32),
+    }
+}
+
+fn validate_http_response(
+    status: StatusCode,
+    body_status: &str,
+    message: &str,
+) -> impl IntoResponse {
+    (
+        status,
+        Json(serde_json::json!({
+            "status": body_status,
+            "message": message,
+        })),
+    )
+}
+
+async fn fetch_task_row(pool: &DbPool, task_id: &str) -> Option<Task> {
+    match sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(task_id)
+        .fetch_optional(pool)
+        .await
+    {
+        Ok(task) => task,
+        Err(err) => {
+            tracing::error!("Failed to load task {}: {}", task_id, err);
+            None
+        }
+    }
+}
+
 async fn validate_and_complete(
     pool: &DbPool,
     config: &Config,
@@ -471,6 +562,11 @@ async fn validate_and_complete(
     output: &str,
     processing_time_ms: u64,
 ) {
+    let Some(task_row) = fetch_task_row(pool, task_id).await else {
+        tracing::error!("Task {} not found during validate_and_complete", task_id);
+        return;
+    };
+
     let exam_ctx = match load_exam_context(pool, task_id).await {
         ExamLoadOutcome::NotExam => None,
         ExamLoadOutcome::Ready(ctx) => Some(ctx),
@@ -478,67 +574,100 @@ async fn validate_and_complete(
     };
     let is_exam = exam_ctx.is_some();
 
-    let eval_res = match evaluate_task_validation_with_context(
-        exam_ctx,
-        task_id,
-        domain,
-        prompt,
-        output,
-        processing_time_ms,
-        config,
-    )
-    .await
-    {
-        Ok(res) => res,
-        Err(err) => {
-            tracing::error!("Failed to evaluate task {}: {}", task_id, err);
+    let (score, weight, result_hash) = if let Some(existing_audit) = &task_row.validator_audit {
+        if !needs_submit_retry(&task_row) {
+            tracing::info!(
+                "Task {} already validated; skipping duplicate validate_and_complete",
+                task_id
+            );
             return;
         }
-    };
 
-    let score = eval_res.total;
-    let weight = resolve_completion_weight(is_exam, config, domain, budget_motes);
-
-    let mut hasher = Sha256::new();
-    hasher.update(output.as_bytes());
-    let result_hash = hex::encode(hasher.finalize());
-
-    let signature = format!("sig:platform_proxy:{}", result_hash);
-
-    let _ = sqlx::query(
-        "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ?, validator_audit = ? WHERE id = ?",
-    )
-    .bind(&result_hash)
-    .bind(&signature)
-    .bind(output)
-    .bind(&eval_res.validator_audit)
-    .bind(task_id)
-    .execute(pool)
-    .await;
-
-    if is_exam {
-        if let Some(verdict) = exam_verdict_from_audit(&eval_res.validator_audit) {
-            tracing::info!(
-                "exam_eval verdict={} score={} weight={} task_id={}",
-                verdict,
-                score,
-                weight,
-                task_id
-            );
-            if let Err(err) = update_exam_assignment_validation(pool, task_id, &verdict).await {
+        let score = match score_from_validator_audit(existing_audit) {
+            Some(score) => score,
+            None => {
                 tracing::error!(
-                    "Failed to update exam assignment for task {}: {}",
-                    task_id,
-                    err
+                    "Task {} has validator_audit but score could not be derived",
+                    task_id
+                );
+                return;
+            }
+        };
+        let weight = resolve_completion_weight(is_exam, config, domain, budget_motes);
+        let result_hash = task_row
+            .result_hash
+            .clone()
+            .unwrap_or_else(|| compute_result_hash(output));
+
+        tracing::info!(
+            "Task {} retrying submit path only (score={}, weight={})",
+            task_id,
+            score,
+            weight
+        );
+
+        (score, weight, result_hash)
+    } else {
+        let eval_res = match evaluate_task_validation_with_context(
+            exam_ctx,
+            task_id,
+            domain,
+            prompt,
+            output,
+            processing_time_ms,
+            config,
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("Failed to evaluate task {}: {}", task_id, err);
+                return;
+            }
+        };
+
+        let score = eval_res.total;
+        let weight = resolve_completion_weight(is_exam, config, domain, budget_motes);
+        let result_hash = compute_result_hash(output);
+        let signature = format!("sig:platform_proxy:{}", result_hash);
+
+        let _ = sqlx::query(
+            "UPDATE tasks SET result_hash = ?, result_signature = ?, result = ?, validator_audit = ? WHERE id = ?",
+        )
+        .bind(&result_hash)
+        .bind(&signature)
+        .bind(output)
+        .bind(&eval_res.validator_audit)
+        .bind(task_id)
+        .execute(pool)
+        .await;
+
+        if is_exam {
+            if let Some(verdict) = exam_verdict_from_audit(&eval_res.validator_audit) {
+                tracing::info!(
+                    "exam_eval verdict={} score={} weight={} task_id={}",
+                    verdict,
+                    score,
+                    weight,
+                    task_id
+                );
+                if let Err(err) = update_exam_assignment_validation(pool, task_id, &verdict).await {
+                    tracing::error!(
+                        "Failed to update exam assignment for task {}: {}",
+                        task_id,
+                        err
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    "Exam task {} validated but verdict missing from validator_audit",
+                    task_id
                 );
             }
-        } else {
-            tracing::warn!(
-                "Exam task {} validated but verdict missing from validator_audit",
-                task_id
-            );
         }
-    }
+
+        (score, weight, result_hash)
+    };
 
     tracing::info!(
         "Task {} validated. Score: {}, Weight: {}, Result Hash: {}, submitting to chain...",
@@ -831,6 +960,74 @@ mod validation_tests {
         }
         assert_eq!(audit["pipeline"], "exam");
         assert_eq!(audit["hash_algorithm"], "sha256");
+    }
+
+    #[test]
+    fn is_validate_noop_when_completed_or_audit_without_submit_retry() {
+        temp_env::with_vars([("EXAM_SKIP_ONCHAIN", Some("1"))], || {
+            let mut task = Task {
+                id: "t1".to_string(),
+                creator_public_key: "c".to_string(),
+                assigned_agent_public_key: None,
+                budget_motes: 0,
+                status: "Completed".to_string(),
+                result_hash: None,
+                result: None,
+                metadata_uri: None,
+                transaction_hash: "tx".to_string(),
+                domain: "defi_analysis".to_string(),
+                skill_id: None,
+                prompt: "p".to_string(),
+                deadline: 0,
+                result_signature: None,
+                validator_audit: None,
+                timestamp: Utc::now(),
+            };
+            assert!(is_validate_noop(&task));
+
+            task.status = "InProgress".to_string();
+            task.validator_audit = Some(serde_json::json!({"pipeline":"exam","verdict":"passed"}));
+            assert!(is_validate_noop(&task));
+            assert!(!needs_submit_retry(&task));
+        });
+    }
+
+    #[test]
+    fn needs_submit_retry_when_audit_present_and_not_completed_without_skip() {
+        temp_env::with_vars([("EXAM_SKIP_ONCHAIN", None::<&str>)], || {
+            let task = Task {
+                id: "t1".to_string(),
+                creator_public_key: "c".to_string(),
+                assigned_agent_public_key: None,
+                budget_motes: 0,
+                status: "InProgress".to_string(),
+                result_hash: Some("abc".to_string()),
+                result: Some("output".to_string()),
+                metadata_uri: None,
+                transaction_hash: "tx".to_string(),
+                domain: "defi_analysis".to_string(),
+                skill_id: None,
+                prompt: "p".to_string(),
+                deadline: 0,
+                result_signature: None,
+                validator_audit: Some(serde_json::json!({"pipeline":"exam","verdict":"passed"})),
+                timestamp: Utc::now(),
+            };
+            assert!(!is_validate_noop(&task));
+            assert!(needs_submit_retry(&task));
+        });
+    }
+
+    #[test]
+    fn score_from_validator_audit_supports_exam_and_stage() {
+        let exam = serde_json::json!({"pipeline":"exam","verdict":"passed"});
+        assert_eq!(score_from_validator_audit(&exam), Some(100));
+
+        let stage = serde_json::json!({
+            "pipeline": "stage",
+            "output": { "total": 82 }
+        });
+        assert_eq!(score_from_validator_audit(&stage), Some(82));
     }
 
     #[test]
@@ -1202,6 +1399,180 @@ mod validation_tests {
                 assert!(assignment.validated_at.is_some());
             },
         )
+        .await;
+
+        cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MySQL: DATABASE_URL from backend/.env; cargo test --lib db_ -- --ignored --test-threads=1"]
+    async fn db_validate_and_complete_retry_is_idempotent() {
+        let task_id = "e2-db-retry-idempotent";
+        let output = "ANSWER: 2845678901.25 cspr";
+        let pool = connect_test_pool().await;
+        cleanup_e2_fixtures(&pool, task_id).await;
+        seed_exam_task_fixture(&pool, task_id, true).await;
+
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("EXAM_SKIP_ONCHAIN", Some("1")),
+            ],
+            async {
+                let config = sample_config();
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Compute stake",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+
+                let task_after_first = fetch_task_row(&pool, task_id).await;
+                let audit_first = task_after_first
+                    .validator_audit
+                    .clone()
+                    .expect("audit after first validate");
+                let assignment_first = fetch_exam_assignment_row(&pool, task_id).await;
+
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Compute stake",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+
+                let task_after_second = fetch_task_row(&pool, task_id).await;
+                let assignment_second = fetch_exam_assignment_row(&pool, task_id).await;
+
+                assert_eq!(task_after_second.validator_audit, Some(audit_first));
+                assert_eq!(
+                    assignment_first.validated_at,
+                    assignment_second.validated_at
+                );
+                assert_eq!(assignment_second.status, "validated");
+                assert_eq!(assignment_second.verdict.as_deref(), Some("passed"));
+            },
+        )
+        .await;
+
+        cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MySQL: DATABASE_URL from backend/.env; cargo test --lib db_ -- --ignored --test-threads=1"]
+    async fn db_validate_retry_reuses_audit_for_submit_path() {
+        let task_id = "e2-db-retry-submit";
+        let output = "ANSWER: 2845678901.25 cspr";
+        let pool = connect_test_pool().await;
+        cleanup_e2_fixtures(&pool, task_id).await;
+        seed_exam_task_fixture(&pool, task_id, true).await;
+
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config();
+
+            temp_env::async_with_vars([("EXAM_SKIP_ONCHAIN", Some("1"))], async {
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Compute stake",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+            })
+            .await;
+
+            let task_after_first = fetch_task_row(&pool, task_id).await;
+            let audit_first = task_after_first
+                .validator_audit
+                .clone()
+                .expect("audit after first validate");
+            let assignment_first = fetch_exam_assignment_row(&pool, task_id).await;
+            assert_eq!(task_after_first.status, "InProgress");
+
+            validate_and_complete(
+                &pool,
+                &config,
+                task_id,
+                "defi_analysis",
+                "Compute stake",
+                5_000_000_000,
+                output,
+                4000,
+            )
+            .await;
+
+            let task_after_retry = fetch_task_row(&pool, task_id).await;
+            let assignment_after_retry = fetch_exam_assignment_row(&pool, task_id).await;
+
+            assert_eq!(task_after_retry.validator_audit, Some(audit_first));
+            assert_eq!(
+                assignment_first.validated_at,
+                assignment_after_retry.validated_at
+            );
+        })
+        .await;
+
+        cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    /// Gap 3 substitute: proves backend reaches submit-path attempt when `EXAM_SKIP_ONCHAIN` is unset.
+    #[tokio::test]
+    #[ignore = "requires MySQL: prod-path gap sanity; cargo test prod_path_branch_sanity -- --ignored --test-threads=1"]
+    async fn prod_path_branch_sanity_reaches_submit_attempt() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_test_writer()
+            .try_init();
+
+        assert!(
+            !should_skip_onchain_submit(),
+            "EXAM_SKIP_ONCHAIN must be unset for prod-path sanity check"
+        );
+
+        let task_id = "e2-prod-path-sanity";
+        let output = "ANSWER: 2845678901.25 cspr";
+        let pool = connect_test_pool().await;
+        cleanup_e2_fixtures(&pool, task_id).await;
+        seed_exam_task_fixture(&pool, task_id, true).await;
+
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
+            let config = sample_config();
+
+            validate_and_complete(
+                &pool,
+                &config,
+                task_id,
+                "defi_analysis",
+                "Compute stake",
+                5_000_000_000,
+                output,
+                4000,
+            )
+            .await;
+
+            let task = fetch_task_row(&pool, task_id).await;
+            assert!(
+                task.validator_audit.is_some(),
+                "validation must persist audit before submit attempt"
+            );
+        })
         .await;
 
         cleanup_e2_fixtures(&pool, task_id).await;

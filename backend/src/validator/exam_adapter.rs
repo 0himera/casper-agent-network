@@ -93,7 +93,7 @@ pub async fn evaluate_exam_task(
 mod tests {
     use super::*;
     use crate::config::ValidatorPipeline;
-    use validator_engine::{evaluate_exam_pipeline_mock, ExamVerdict};
+    use validator_engine::{ExamVerdict, evaluate_exam_pipeline_mock};
 
     fn sample_config() -> Config {
         Config {
@@ -205,6 +205,61 @@ mod tests {
                 assert_eq!(audit["answer_verification_mode"], "exact_then_llm");
             },
         )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn evaluate_exam_task_llm_fallback_miss_audit_shape() {
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("EXAM_LLM_EQUALITY", Some("1")),
+            ],
+            async {
+                let mut config = sample_config();
+                config.exam_llm_equality = true;
+                let result = evaluate_exam_task(
+                    "exam-template-1",
+                    "defi_analysis",
+                    "Compute yield",
+                    "ANSWER: mock_equality_no about twelve thousand usd",
+                    "12345.67 usd",
+                    None,
+                    4000,
+                    &config,
+                )
+                .await
+                .expect("exam mock eval");
+
+                assert_eq!(result.total, 0);
+                let audit = result.validator_audit.expect("audit");
+                assert_eq!(audit["compare_mode"], "llm_fallback_miss");
+                assert_eq!(audit["llm_fallback_used"], true);
+                assert_eq!(audit["llm_raw"], "NO");
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn evaluate_exam_task_returns_err_when_no_llm_provider() {
+        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("0"))], async {
+            let mut config = sample_config();
+            config.exam_llm_equality = true;
+            let result = evaluate_exam_task(
+                "exam-template-1",
+                "defi_analysis",
+                "Compute yield",
+                "ANSWER: 999 usd",
+                "12345.67 usd",
+                None,
+                4000,
+                &config,
+            )
+            .await;
+
+            assert!(result.is_err(), "missing provider must not silently pass");
+        })
         .await;
     }
 

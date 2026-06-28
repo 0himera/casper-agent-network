@@ -4,7 +4,7 @@ use crate::types::{LlmConfig, ValidatorError};
 use super::audit::build_exam_audit;
 use super::canonicalize::canonicalize_exam_answer;
 use super::compare::compare_type_h;
-use super::equality::{ExamEqualityEval, evaluate_exam_equality};
+use super::equality::{ExamEqualityEval, evaluate_exam_equality, parse_exam_equality_response};
 use super::gates::check_exam_input_gate;
 use super::metadata::ExamVerificationPolicy;
 use super::parse::extract_answer_contract;
@@ -552,5 +552,96 @@ mod tests {
         assert_eq!(output.verdict, ExamVerdict::Refusal);
         assert_eq!(output.audit.compare_mode, compare_mode::REFUSAL);
         assert!(!output.audit.llm_fallback_used);
+    }
+
+    #[test]
+    fn mock_pipeline_llm_fallback_miss_on_mock_no() {
+        let config = LlmConfig {
+            mock: true,
+            exam_llm_equality: true,
+            ..Default::default()
+        };
+        let output = evaluate_exam_pipeline_mock_with_config(
+            EXAM_ID,
+            TASK_PROMPT,
+            "ANSWER: mock_equality_no about twelve thousand usd",
+            EXPECTED_CANONICAL,
+            config,
+            ExamVerificationPolicy::default(),
+        );
+
+        assert_eq!(output.verdict, ExamVerdict::Failed);
+        assert_eq!(output.total, 0);
+        assert_eq!(output.audit.compare_mode, compare_mode::LLM_FALLBACK_MISS);
+        assert!(output.audit.llm_fallback_used);
+        assert_eq!(output.audit.llm_raw.as_deref(), Some("NO"));
+    }
+
+    #[test]
+    fn pipeline_output_fails_closed_on_unparseable_llm_response() {
+        let equality = parse_exam_equality_response("perhaps".to_string());
+        let output = output_from_llm_eval(
+            EXAM_ID,
+            TASK_PROMPT,
+            EXPECTED_CANONICAL,
+            "999 usd",
+            equality,
+            AnswerVerificationMode::ExactThenLlm,
+            false,
+        );
+
+        assert_eq!(output.verdict, ExamVerdict::Failed);
+        assert_eq!(output.audit.compare_mode, compare_mode::LLM_FALLBACK_MISS);
+        assert!(output.audit.llm_fallback_used);
+        assert_eq!(output.audit.llm_raw.as_deref(), Some("perhaps"));
+    }
+
+    #[test]
+    fn pipeline_output_fails_closed_on_llm_transport_error() {
+        let equality = ExamEqualityEval {
+            is_equal: false,
+            raw_output: "LLM_ERROR: no judge LLM provider available in cascade chain".to_string(),
+            parse_fallback: true,
+        };
+        let output = output_from_llm_eval(
+            EXAM_ID,
+            TASK_PROMPT,
+            EXPECTED_CANONICAL,
+            "999 usd",
+            equality,
+            AnswerVerificationMode::ExactThenLlm,
+            false,
+        );
+
+        assert_eq!(output.verdict, ExamVerdict::Failed);
+        assert_eq!(output.audit.compare_mode, compare_mode::LLM_FALLBACK_MISS);
+        assert!(output.audit.llm_fallback_used);
+        assert!(
+            output
+                .audit
+                .llm_raw
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("LLM_ERROR:")
+        );
+    }
+
+    #[tokio::test]
+    async fn llm_verification_missing_provider_fails_closed() {
+        let config = LlmConfig {
+            mock: false,
+            ..Default::default()
+        };
+        let eval = run_llm_verification(
+            &config,
+            "ANSWER: 999 usd",
+            EXPECTED_CANONICAL,
+            "999 usd",
+        )
+        .await;
+
+        assert!(!eval.is_equal);
+        assert!(eval.parse_fallback);
+        assert!(eval.raw_output.starts_with("LLM_ERROR:"));
     }
 }

@@ -327,6 +327,13 @@ async fn post_raw_result(
 }
 
 async fn post_validate(router: &mut Router, task_id: &str) -> StatusCode {
+    post_validate_with_body(router, task_id).await.0
+}
+
+async fn post_validate_with_body(
+    router: &mut Router,
+    task_id: &str,
+) -> (StatusCode, serde_json::Value) {
     let request = Request::builder()
         .method("POST")
         .uri(format!("/api/tasks/{task_id}/validate"))
@@ -335,7 +342,12 @@ async fn post_validate(router: &mut Router, task_id: &str) -> StatusCode {
         .expect("validate request");
 
     let response = router.oneshot(request).await.expect("validate response");
-    response.status()
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("validate body");
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    (status, json)
 }
 
 async fn post_dispatch(router: &mut Router) -> (StatusCode, serde_json::Value) {
@@ -419,6 +431,78 @@ async fn http_autonomous_exam_pass() {
             let result_hash: Option<String> =
                 row.try_get("result_hash").expect("result_hash column");
             assert!(result_hash.is_some());
+        },
+    )
+    .await;
+
+    cleanup_fixtures(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires MySQL: DATABASE_URL from backend/.env; cargo test --test e2_autonomous_http -- --ignored --test-threads=1"]
+async fn http_validate_retry_returns_noop() {
+    let pool = connect_test_pool().await;
+    cleanup_fixtures(&pool).await;
+    seed_exam_fixtures(&pool).await;
+
+    temp_env::async_with_vars(
+        [
+            ("VALIDATOR_MOCK_LLM", Some("1")),
+            ("EXAM_SKIP_ONCHAIN", Some("1")),
+        ],
+        async {
+            let mut router = build_test_router(pool.clone());
+
+            let raw_status = post_raw_result(
+                &mut router,
+                TASK_ID,
+                AGENT_PK,
+                r#"{"result":"ANSWER: 2845678901.25 cspr"}"#,
+            )
+            .await;
+            assert_eq!(raw_status, StatusCode::OK);
+
+            let (first_status, first_body) = post_validate_with_body(&mut router, TASK_ID).await;
+            assert_eq!(first_status, StatusCode::ACCEPTED);
+            assert_eq!(first_body["status"], "accepted");
+
+            let audit = poll_validator_audit(&pool, TASK_ID)
+                .await
+                .expect("validator_audit after first validate");
+            let assignment =
+                sqlx::query("SELECT validated_at FROM exam_assignments WHERE task_id = ?")
+                    .bind(TASK_ID)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("exam assignment row");
+            let validated_at: Option<chrono::DateTime<chrono::Utc>> =
+                assignment.try_get("validated_at").expect("validated_at");
+
+            let (second_status, second_body) = post_validate_with_body(&mut router, TASK_ID).await;
+            assert_eq!(second_status, StatusCode::OK);
+            assert_eq!(second_body["status"], "noop");
+            assert_eq!(second_body["message"], "Task already validated");
+
+            let audit_after = sqlx::query("SELECT validator_audit FROM tasks WHERE id = ?")
+                .bind(TASK_ID)
+                .fetch_one(&pool)
+                .await
+                .expect("task row after retry");
+            let persisted_audit: Option<serde_json::Value> = audit_after
+                .try_get("validator_audit")
+                .expect("validator_audit");
+            assert_eq!(persisted_audit, Some(audit));
+
+            let assignment_after =
+                sqlx::query("SELECT validated_at FROM exam_assignments WHERE task_id = ?")
+                    .bind(TASK_ID)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("exam assignment after retry");
+            let validated_at_after: Option<chrono::DateTime<chrono::Utc>> = assignment_after
+                .try_get("validated_at")
+                .expect("validated_at after retry");
+            assert_eq!(validated_at, validated_at_after);
         },
     )
     .await;
