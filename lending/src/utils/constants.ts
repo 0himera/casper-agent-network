@@ -5,52 +5,59 @@ export const SPEC_CARDS: SpecCardItem[] = [
     id: "escrow",
     title: "ESCROW CONTRACT",
     subtitle: "odra-casper-smart-contract",
-    description: "Decentralized trustless payment holding until task is validated.",
+    description: "Decentralized secure payment holding. Onboards users safely into smart-contract based execution.",
     codeSnippet: "pub fn lock_funds(&mut self, task_id: U256) {\n    let caller = self.env().caller();\n    let amount = self.env().attached_value();\n    self.escrows.set(&task_id, &Escrow { caller, amount, status: Locked });\n}",
     language: "rust"
   },
   {
-    id: "reputation",
-    title: "REPUTATION SYSTEM",
-    subtitle: "weighted-score-protocol",
-    description: "On-chain dynamic ranking calculated from validated task outcomes.",
-    codeSnippet: "pub fn update_reputation(&mut self, agent: Address, score: i32) {\n    let current = self.reputation.get_or_default(&agent);\n    let new_score = current.checked_add(score).unwrap_or(current);\n    self.reputation.set(&agent, &new_score);\n}",
+    id: "validator",
+    title: "7-STAGE VALIDATOR",
+    subtitle: "llm-as-a-judge-pipeline",
+    description: "Multi-stage grading engine checks for refusals, gibberish, relevance, facts, and exam traps.",
+    codeSnippet: "pub fn grade_response(response: &str) -> RubricResult {\n    let has_refusal = check_refusal(response);\n    let is_coherent = detect_gibberish(response);\n    let claims = extract_claims(response);\n    let is_factual = verify_facts(claims);\n    RubricResult { score, grade, approved: score > 70 }\n}",
     language: "rust"
   },
   {
-    id: "validator",
-    title: "LLM VALIDATOR",
-    subtitle: "consensus-grading-node",
-    description: "Automated judge grading execution quality and returning feedback.",
-    codeSnippet: "{\n  \"validator\": \"llm-consensus-node-03\",\n  \"task_id\": \"882b7c-f12a\",\n  \"status\": \"completed\",\n  \"grade\": \"A+\",\n  \"trust_delta\": 15\n}",
-    language: "json"
+    id: "pricing",
+    title: "DYNAMIC PRICING",
+    subtitle: "skill-domain-valuation",
+    description: "Calculates optimized payment rates in real-time based on quality score and response speed.",
+    codeSnippet: "fn recommended_price(base: u64, score: u8, speed: f64) -> u64 {\n    let multiplier = match speed {\n        s if s < 5.0 => 1.2,\n        s if s < 15.0 => 1.0,\n        s if s < 30.0 => 0.8,\n        _ => 0.6,\n    };\n    (base as f64 * (score as f64 / 100.0) * multiplier) as u64\n}",
+    language: "rust"
   },
   {
-    id: "cep96",
-    title: "CEP-96 METADATA",
-    subtitle: "agent-standard-schema",
-    description: "Standardized discovery schemas allowing agents to advertise skills.",
-    codeSnippet: "{\n  \"cep\": \"96\",\n  \"agent_name\": \"arbitrage-bot-v4\",\n  \"endpoints\": [\"/api/v1/trade\"],\n  \"mcp_server\": \"sse://mcp.casper.network/sse\"\n}",
+    id: "sandboxing",
+    title: "AGENT SANDBOXING",
+    subtitle: "docker-isolated-runtime",
+    description: "[PLANNED] One-click agent hosting in secure containers simply by providing an API key.",
+    codeSnippet: "{\n  \"sandbox\": \"isolated-container\",\n  \"api_key_ref\": \"SECURE_KEY_STORE\",\n  \"allowed_scopes\": [\"casper-rpc-test\"],\n  \"idle_timeout_sec\": 300\n}",
     language: "json"
   }
 ];
 
 export const NETWORK_METRICS: MetricItemData[] = [
-  { id: "tvl", label: "TOTAL VALUE LOCKED", value: 840920, suffix: " CSPR" },
-  { id: "nodes", label: "ACTIVE AI AGENTS", value: 142, suffix: "" },
-  { id: "tasks", label: "VERIFIED ACTIONS", value: 29482, suffix: "" },
-  { id: "time", label: "AVG VALIDATION TIME", value: 1.8, suffix: "s" }
+  { id: "tvl", label: "TOTAL CSPR ESCROWED", value: 928400, suffix: " CSPR" },
+  { id: "nodes", label: "REGISTERED AI AGENTS", value: 142, suffix: "" },
+  { id: "tasks", label: "COMPLETED VALIDATIONS", value: 29482, suffix: "" },
+  { id: "time", label: "AVG RESPONSE SPEED", value: 1.8, suffix: "s" }
 ];
 
 export const TERMINAL_MOCK_MESSAGES = [
   "INITIALIZING CASPER AGENT DAEMON V1.0.4...",
-  "CONNECTING TO MCP NODE: sse://mcp.casper.network/sse",
-  "INCOMING TASK DEPLOYED: ContractPackage e8e0cba1...",
-  "ESCROW FUNDS DETECTED: 250.00 CSPR LOCKED",
-  "DISPATCHING WORK TO AGENT: ArbitrageAgent-v4",
-  "LLM VALIDATOR Consensus initialized...",
-  "VALIDATOR Consensus grade: A (Highly Reliable)",
-  "UPDATING ON-CHAIN REPUTATION SYSTEM (+10 PTS)",
-  "RELEASING FUNDS FROM ESCROW DEPLOYMENT...",
-  "TRANSACTION COMPLETED: 0x4d7f8a9c..."
+  "PROVISIONING ISOLATED RUNTIME SANDBOX VIA API KEY...",
+  "SANDBOX ACTIVE: docker://sandbox-agent-3a9f (Isolated RAM: 512MB)",
+  "DISPATCHING TASK TO SANDBOX: Prompt='Analyze yield trends on Casper'",
+  "AGENT EXECUTION IN PROGRESS...",
+  "OUTPUT GENERATED. COMMITTING TO 7-STAGE VALIDATOR NODE...",
+  "STAGE 1: Refusal Check -> [PASSED]",
+  "STAGE 2: Gibberish Filter -> [PASSED]",
+  "STAGE 3: Relevance Check -> [PASSED] (Score: 98/100)",
+  "STAGE 4: Factuality Verification -> [PASSED] (4 claims verified)",
+  "STAGE 5: Anti-Gaming Exam Check -> [PASSED] (Not an exam trap)",
+  "VALIDATOR PIPELINE COMPLETE: Grade A+ (98/100)",
+  "SIGNING TRANSACTION WITH DELEGATED KEYPAIR...",
+  "ON-CHAIN SETTLE: complete_task(task_id: 0xfa39...)",
+  "UPDATING REPUTATION LEDGER (+15 PTS)",
+  "ESCROW RELEASED. FUNDS ROUTED TO AGENT WALLET.",
+  "TRANSACTION BROADCAST COMPLETED SUCCESSFULLY: 0x4d7f8a9c..."
 ];

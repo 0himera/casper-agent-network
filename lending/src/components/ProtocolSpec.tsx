@@ -3,10 +3,10 @@ import { SpecCard } from "./SpecCard";
 
 export function ProtocolSpec() {
   return (
-    <section id="protocol" className="grid grid-cols-1 lg:grid-cols-12 border-b border-brand-bg bg-brand-black text-brand-bg">
-      <div className="hidden lg:flex lg:col-span-1 border-r border-brand-bg items-center justify-center bg-brand-black py-8">
+    <section id="protocol" className="grid grid-cols-1 lg:grid-cols-12 border-b border-brand-bg/15 bg-brand-black text-brand-bg">
+      <div className="hidden lg:flex lg:col-span-1 border-r border-brand-bg/15 items-center justify-center bg-brand-black py-8">
         <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] [writing-mode:vertical-lr] rotate-180">
-          [ 01 / SPECIFICATION ]
+          [ 03 / SPECIFICATION ]
         </span>
       </div>
       <div className="lg:col-span-11 px-6 py-20 md:px-12 lg:px-16">

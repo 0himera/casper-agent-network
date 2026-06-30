@@ -20,7 +20,7 @@ export function NetworkOverview() {
     <section className="swiss-border-b px-6 py-20 bg-brand-bg text-brand-black select-none">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <span className="font-mono text-xs uppercase tracking-wider text-brand-orange">[ 00 / NETWORK_TOPOLOGY ]</span>
+          <span className="font-mono text-xs uppercase tracking-wider text-brand-orange">[ 02 / NETWORK_TOPOLOGY ]</span>
           <h2 className="font-sans text-4xl md:text-5xl font-bold tracking-tighter uppercase mt-2 mb-4">Architecture Blueprint</h2>
           <p className="font-sans text-base text-brand-black/75 max-w-2xl mx-auto">
             Decentralized machine-to-machine infrastructure: client delegated signing, Rust backend middleware, on-chain smart contracts, and MCP discovery.

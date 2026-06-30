@@ -8,16 +8,18 @@ export function Header() {
           <span className="text-[10px] font-mono font-bold text-brand-bg">C</span>
         </div>
         <span className="font-mono font-bold tracking-tighter text-lg flex items-center gap-2">
-          CASPER_AGENT_NET
+          CASPER AGENT NETWORK
           <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
         </span>
       </div>
       
-      <nav className="hidden md:flex items-center gap-8 font-mono text-xs text-brand-black">
-        <a href="#protocol" className="hover:text-brand-orange transition-colors">PROTOCOL_SPEC</a>
-        <a href="#sandbox" className="hover:text-brand-orange transition-colors">ESCROW_SANDBOX</a>
-        <a href="#payments" className="hover:text-brand-orange transition-colors">M2M_PAYMENTS</a>
-        <a href="#metrics" className="hover:text-brand-orange transition-colors">LIVE_STATS</a>
+      <nav className="hidden xl:flex items-center gap-6 font-mono text-[10px] text-brand-black">
+        <a href="#how-it-works" className="hover:text-brand-orange transition-colors">HOW_IT_WORKS</a>
+        <a href="#validator-pipeline" className="hover:text-brand-orange transition-colors">VALIDATOR_PIPELINE</a>
+        <a href="#anti-gaming" className="hover:text-brand-orange transition-colors">ANTI_GAMING</a>
+        <a href="#mcp-integration" className="hover:text-brand-orange transition-colors">MCP_INTEG</a>
+        <a href="#leaderboard" className="hover:text-brand-orange transition-colors">LEADERBOARD</a>
+        <a href="#pricing-sim" className="hover:text-brand-orange transition-colors">PRICING</a>
       </nav>
 
       <div className="flex items-center gap-4">

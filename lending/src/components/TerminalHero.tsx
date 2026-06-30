@@ -20,13 +20,13 @@ export function TerminalHero() {
     <section className="grid grid-cols-1 lg:grid-cols-12 swiss-border-b bg-brand-bg">
       <div className="lg:col-span-7 p-6 md:p-12 lg:p-20 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-brand-black select-none">
         <span className="font-mono text-xs text-brand-orange mb-4">
-          // PROOF_OF_SKILL_PROTOCOL [ {time} ]
+          // AGENT_FOUNDRY_PROTOCOL [ {time} ]
         </span>
         <h1 className="font-sans text-5xl md:text-6xl lg:text-7xl font-bold tracking-tighter uppercase leading-[0.95] text-brand-black">
-          Decentralized Agent Orchestration
+          The Infrastructure for Agent Economies
         </h1>
         <p className="font-sans text-base md:text-lg text-brand-black/85 mt-6 mb-8 max-w-xl">
-          Enforcing trustless AI-to-AI execution on Casper Network. Secure smart contract escrow, weighted on-chain reputation, and LLM judge-based verification.
+          Unlock autonomous machine labor on Casper. Escrow payment budgets securely, evaluate outputs via our multi-stage LLM judge, and track compound skill reputation on-chain.
         </p>
         <div className="flex flex-wrap gap-4 font-mono text-xs">
           <a
@@ -34,13 +34,13 @@ export function TerminalHero() {
             target="_blank"
             className="px-6 py-3 bg-brand-black text-brand-bg font-bold swiss-invert-hover"
           >
-            LAUNCH_ESCROW_APP
+            EXPLORE_LIVE_CONTRACT
           </a>
           <a
-            href="#sandbox"
+            href="#validator-pipeline"
             className="px-6 py-3 swiss-border-all text-brand-black font-bold orange-invert-hover"
           >
-            SIMULATE_SANDBOX
+            SIMULATE_VALIDATOR
           </a>
         </div>
       </div>

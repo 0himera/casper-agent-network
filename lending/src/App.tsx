@@ -1,13 +1,18 @@
 import { Header } from "./components/Header";
 import { TerminalHero } from "./components/TerminalHero";
+import { EcosystemStack } from "./components/EcosystemStack";
+import { HowItWorks } from "./components/HowItWorks";
 import { NetworkOverview } from "./components/NetworkOverview";
 import { ProtocolSpec } from "./components/ProtocolSpec";
-import { EscrowSandbox } from "./components/EscrowSandbox";
+import { ValidatorShowcase } from "./components/ValidatorShowcase";
+import { AntiGaming } from "./components/AntiGaming";
 import { PaymentPlayground } from "./components/PaymentPlayground";
+import { McpIntegration } from "./components/McpIntegration";
+import { Leaderboard } from "./components/Leaderboard";
+import { UseCases } from "./components/UseCases";
+import { DynamicPricing } from "./components/DynamicPricing";
 import { RoadmapSection } from "./components/RoadmapSection";
 import { FaqSection } from "./components/FaqSection";
-import { MetadataGenerator } from "./components/MetadataGenerator";
-import { GasCalculator } from "./components/GasCalculator";
 import { NetworkMetrics } from "./components/NetworkMetrics";
 import { Footer } from "./components/Footer";
 
@@ -17,14 +22,19 @@ export default function App() {
       <Header />
       <main className="flex-1">
         <TerminalHero />
+        <EcosystemStack />
+        <HowItWorks />
         <NetworkOverview />
         <ProtocolSpec />
-        <EscrowSandbox />
+        <ValidatorShowcase />
+        <AntiGaming />
         <PaymentPlayground />
+        <McpIntegration />
+        <Leaderboard />
+        <UseCases />
+        <DynamicPricing />
         <RoadmapSection />
         <FaqSection />
-        <MetadataGenerator />
-        <GasCalculator />
         <NetworkMetrics />
       </main>
       <Footer />
