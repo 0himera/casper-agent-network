@@ -32,9 +32,10 @@ export function SpecCard({ card }: SpecCardProps) {
 
   return (
     <div
-      className="swiss-border-all bg-brand-bg p-6 relative overflow-hidden flex flex-col justify-between h-[280px] group transition-all duration-150 select-none"
+      className="swiss-border-all bg-brand-bg p-6 relative overflow-hidden flex flex-col justify-between h-[280px] group transition-all duration-150 select-none cursor-pointer"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => setHovered(!hovered)}
     >
       <div className="z-10">
         <div className="flex justify-between items-center mb-1">

@@ -27,7 +27,7 @@ export function NetworkOverview() {
           </p>
         </div>
 
-        <div className="swiss-border-all bg-brand-bg p-8 relative min-h-[300px] flex items-center justify-center">
+        <div className="swiss-border-all bg-brand-bg p-8 relative min-h-[300px] md:min-h-[500px] flex items-center justify-start md:justify-center overflow-x-auto">
           <NetworkBlueprint pings={pings} />
         </div>
       </div>
