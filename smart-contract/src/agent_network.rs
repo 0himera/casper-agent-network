@@ -17,6 +17,11 @@ const SLASH_DISPUTE_BPS: u32 = 2000; // 20% slash for dispute → cancel
 const SLASH_LOW_SCORE_BPS: u32 = 500; // 5% slash for score < threshold
 const LOW_SCORE_THRESHOLD: u32 = 30;
 
+// Validator Settings
+const MINIMUM_VALIDATOR_STAKE: u64 = 100_000_000_000u64; // 100 CSPR
+const DEVIATION_TOLERANCE: u32 = 10;
+const SLASH_DEVIATION_BPS_PER_10: u32 = 500; // 5% per 10 points over tolerance
+
 #[odra::odra_type]
 pub struct AgentProfile {
     pub name: String,
@@ -64,6 +69,19 @@ pub struct StakeInfo {
     pub unbonding_start: u64,
 }
 
+#[odra::odra_type]
+pub struct ValidatorProfile {
+    pub stake: U512,
+    pub is_active: bool,
+    pub total_validations: u32,
+}
+
+#[odra::odra_type]
+pub struct Validation {
+    pub validator: Address,
+    pub score: u32,
+}
+
 #[odra::event]
 pub struct AgentRegistered {
     pub agent: Address,
@@ -100,6 +118,13 @@ pub struct TaskSubmitted {
 #[odra::event]
 pub struct TaskCompleted {
     pub task_id: String,
+    pub score: u32,
+}
+
+#[odra::event]
+pub struct ValidationSubmitted {
+    pub task_id: String,
+    pub validator: Address,
     pub score: u32,
 }
 
@@ -221,6 +246,26 @@ pub struct SlashApplied {
     pub remaining_stake: U512,
 }
 
+#[odra::event]
+pub struct ValidatorRegistered {
+    pub validator: Address,
+}
+
+#[odra::event]
+pub struct ValidatorStaked {
+    pub validator: Address,
+    pub amount: U512,
+    pub total_stake: U512,
+}
+
+#[odra::event]
+pub struct ValidatorSlashed {
+    pub validator: Address,
+    pub amount: U512,
+    pub remaining_stake: U512,
+    pub reason: String,
+}
+
 #[odra::odra_error]
 pub enum ContractErrors {
     AgentAlreadyExists = 3001,
@@ -256,6 +301,12 @@ pub enum ContractErrors {
     InvalidSlashRate = 3031,
     ActiveJobsExist = 3032,
     InvalidUnstakeAmount = 3033,
+    ValidatorAlreadyExists = 3034,
+    ValidatorNotFound = 3035,
+    ValidatorNotActive = 3036,
+    InsufficientValidatorStake = 3037,
+    TaskAlreadyValidated = 3038,
+    NoValidations = 3039,
 }
 
 #[odra::module(
@@ -284,7 +335,11 @@ pub enum ContractErrors {
         UnstakeRequested,
         StakeWithdrawn,
         UnstakeCancelled,
-        SlashApplied
+        SlashApplied,
+        ValidationSubmitted,
+        ValidatorRegistered,
+        ValidatorStaked,
+        ValidatorSlashed
     ]
 )]
 pub struct AgentNetwork {
@@ -300,6 +355,9 @@ pub struct AgentNetwork {
     fee_bps: Var<u32>,
     stakes: Mapping<Address, StakeInfo>,
     total_slashed: Var<U512>,
+    treasury_balance: Var<U512>,
+    validators: Mapping<Address, ValidatorProfile>,
+    task_validations: Mapping<(Address, String), Vec<Validation>>,
 }
 
 #[odra::module]
@@ -661,19 +719,143 @@ impl AgentNetwork {
         });
     }
 
-    pub fn complete_task(
-        &mut self,
-        creator: Address,
-        task_id: String,
-        skill: String,
-        score: u32,
-        weight: u32,
-    ) {
-        self.assert_admin();
+    // ── Validators ──────────────────────────────────────────────
+
+    #[odra(payable)]
+    pub fn register_validator(&mut self) {
+        let caller = self.env().caller();
+        let attached = self.env().attached_value();
+
+        if self.validators.get(&caller).is_some() {
+            self.env().revert(ContractErrors::ValidatorAlreadyExists);
+        }
+
+        if attached < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::InsufficientValidatorStake);
+        }
+
+        let profile = ValidatorProfile {
+            stake: attached,
+            is_active: true,
+            total_validations: 0,
+        };
+        self.validators.set(&caller, profile);
+
+        self.env().emit_event(ValidatorRegistered { validator: caller });
+        self.env().emit_event(ValidatorStaked {
+            validator: caller,
+            amount: attached,
+            total_stake: attached,
+        });
+    }
+
+    #[odra(payable)]
+    pub fn stake_validator(&mut self) {
+        let caller = self.env().caller();
+        let attached = self.env().attached_value();
+
+        let mut profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        profile.stake = profile
+            .stake
+            .checked_add(attached)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+
+        if profile.stake >= U512::from(MINIMUM_VALIDATOR_STAKE) {
+            profile.is_active = true;
+        }
+
+        self.validators.set(&caller, profile.clone());
+
+        self.env().emit_event(ValidatorStaked {
+            validator: caller,
+            amount: attached,
+            total_stake: profile.stake,
+        });
+    }
+
+    pub fn unstake_validator(&mut self, amount: U512) {
+        let caller = self.env().caller();
+        let mut profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if amount.is_zero() || amount > profile.stake {
+            self.env().revert(ContractErrors::InvalidUnstakeAmount);
+        }
+
+        profile.stake = profile.stake - amount;
+        if profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            profile.is_active = false;
+        }
+        self.validators.set(&caller, profile.clone());
+
+        self.env().transfer_tokens(&caller, &amount);
+
+        self.env().emit_event(ValidatorSlashed { // using Slashed event shape for unstake log or creating new one. Better to just transfer.
+            validator: caller,
+            amount: amount,
+            remaining_stake: profile.stake,
+            reason: "unstake".to_string(),
+        });
+    }
+
+    pub fn submit_validation(&mut self, creator: Address, task_id: String, score: u32) {
+        let caller = self.env().caller();
 
         if score > 100 {
             self.env().revert(ContractErrors::InvalidScore);
         }
+
+        let mut profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::ValidatorNotActive);
+        }
+
+        let key = (creator, task_id.clone());
+        let task = self
+            .tasks
+            .get(&key)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::TaskNotFound);
+
+        if task.status != TaskStatus::InProgress && task.status != TaskStatus::Disputed {
+            self.env().revert(ContractErrors::TaskNotAssigned);
+        }
+
+        if task.result_hash.is_empty() {
+            self.env().revert(ContractErrors::TaskNotSubmitted);
+        }
+
+        let mut validations = self.task_validations.get_or_default(&key);
+        if validations.iter().any(|v| v.validator == caller) {
+            self.env().revert(ContractErrors::TaskAlreadyValidated);
+        }
+
+        validations.push(Validation { validator: caller, score });
+        self.task_validations.set(&key, validations);
+
+        profile.total_validations = profile
+            .total_validations
+            .checked_add(1)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+        self.validators.set(&caller, profile);
+
+        self.env().emit_event(ValidationSubmitted {
+            task_id,
+            validator: caller,
+            score,
+        });
+    }
+
+    pub fn finalize_task(&mut self, creator: Address, task_id: String, skill: String, weight: u32) {
         if weight == 0 {
             self.env().revert(ContractErrors::InvalidWeight);
         }
@@ -688,9 +870,20 @@ impl AgentNetwork {
             self.env().revert(ContractErrors::TaskNotAssigned);
         }
 
-        if task.result_hash.is_empty() {
-            self.env().revert(ContractErrors::TaskNotSubmitted);
+        let validations = self.task_validations.get_or_default(&key);
+        if validations.is_empty() {
+            self.env().revert(ContractErrors::NoValidations);
         }
+
+        // Calculate median score
+        let mut scores: Vec<u32> = validations.iter().map(|v| v.score).collect();
+        scores.sort_unstable();
+        let mid = scores.len() / 2;
+        let median_score = if scores.len() % 2 == 0 {
+            (scores[mid - 1] + scores[mid]) / 2
+        } else {
+            scores[mid]
+        };
 
         let agent = task.assigned_agent.unwrap();
         let mut agent_profile = self
@@ -700,8 +893,8 @@ impl AgentNetwork {
 
         let budget = task.budget;
         let fee_rate = self.compute_fee_rate(agent, &skill);
-        let fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
-        let payout = budget - fee;
+        let total_fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
+        let payout = budget - total_fee;
 
         task.status = TaskStatus::Completed;
         self.tasks.set(&key, task);
@@ -712,23 +905,81 @@ impl AgentNetwork {
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         self.agents.set(&agent, agent_profile);
 
-        self.env().transfer_tokens(&agent, &payout);
-        if fee > U512::zero() {
-            if let Some(admin) = self.admin.get().flatten() {
-                self.env().transfer_tokens(&admin, &fee);
+        let mut reward_pool = total_fee * U512::from(5000u32) / U512::from(10_000u32);
+        let treasury_share = total_fee - reward_pool;
+        
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        treasury += treasury_share;
+
+        let mut eligible_stake = U512::zero();
+        let mut eligible_validators = Vec::new();
+
+        // Slashing logic based on deviation
+        for val in &validations {
+            let deviation = if val.score > median_score {
+                val.score - median_score
+            } else {
+                median_score - val.score
+            };
+
+            let mut profile = self.validators.get(&val.validator).unwrap();
+
+            if deviation <= DEVIATION_TOLERANCE {
+                eligible_stake += profile.stake;
+                eligible_validators.push((val.validator, profile.stake));
+            } else {
+                let diff = deviation - DEVIATION_TOLERANCE;
+                let penalty_factor = (diff / 10) * SLASH_DEVIATION_BPS_PER_10;
+                let penalty_bps = if penalty_factor > 10_000 { 10_000 } else { penalty_factor };
+                
+                if penalty_bps > 0 {
+                    let slash_amount = profile.stake * U512::from(penalty_bps) / U512::from(10_000u32);
+                    profile.stake = profile.stake - slash_amount;
+                    if profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+                        profile.is_active = false;
+                    }
+                    self.validators.set(&val.validator, profile.clone());
+                    
+                    treasury += slash_amount;
+                    let mut total_slashed = self.total_slashed.get().unwrap_or(U512::zero());
+                    total_slashed += slash_amount;
+                    self.total_slashed.set(total_slashed);
+
+                    self.env().emit_event(ValidatorSlashed {
+                        validator: val.validator,
+                        amount: slash_amount,
+                        remaining_stake: profile.stake,
+                        reason: "deviation".to_string(),
+                    });
+                }
             }
         }
+
+        if eligible_stake > U512::zero() {
+            for (val_addr, stake) in eligible_validators {
+                let reward = reward_pool * stake / eligible_stake;
+                self.env().transfer_tokens(&val_addr, &reward);
+            }
+        } else {
+            treasury += reward_pool;
+        }
+
+        self.treasury_balance.set(treasury);
+
+        self.env().transfer_tokens(&agent, &payout);
+        
         self.env().emit_event(FeeDeducted {
             task_id: task_id.clone(),
             agent,
-            fee,
+            fee: total_fee,
             payout,
         });
 
+        // Reputation update
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
         rep_state.weighted_sum = rep_state
             .weighted_sum
-            .checked_add((score as u64) * (weight as u64))
+            .checked_add((median_score as u64) * (weight as u64))
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         rep_state.total_weight = rep_state
             .total_weight
@@ -746,15 +997,14 @@ impl AgentNetwork {
         };
         self.reputations.set(&(agent, skill.clone()), rep_state);
 
-        self.env().emit_event(TaskCompleted { task_id, score });
+        self.env().emit_event(TaskCompleted { task_id: task_id.clone(), score: median_score });
         self.env().emit_event(ScoreUpdated {
             agent,
             skill,
             new_score,
         });
 
-        // Auto-slash on very low score
-        if score < LOW_SCORE_THRESHOLD {
+        if median_score < LOW_SCORE_THRESHOLD {
             self.apply_slash(agent, SLASH_LOW_SCORE_BPS);
         }
     }
@@ -933,6 +1183,14 @@ impl AgentNetwork {
         self.reputations.get_or_default(&(agent, skill))
     }
 
+    pub fn get_validator(&self, validator: Address) -> Option<ValidatorProfile> {
+        self.validators.get(&validator)
+    }
+
+    pub fn get_stake(&self, agent: Address) -> StakeInfo {
+        self.stakes.get_or_default(&agent)
+    }
+
     pub fn set_price(&mut self, price: U512) {
         let caller = self.env().caller();
         let mut profile = self
@@ -1107,10 +1365,6 @@ impl AgentNetwork {
         self.apply_slash(agent, bps);
     }
 
-    pub fn get_stake(&self, agent: Address) -> StakeInfo {
-        self.stakes.get_or_default(&agent)
-    }
-
     pub fn get_total_slashed(&self) -> U512 {
         self.total_slashed.get().unwrap_or(U512::zero())
     }
@@ -1137,10 +1391,10 @@ impl AgentNetwork {
 
         self.stakes.set(&agent, info.clone());
 
-        // Transfer slashed amount to admin treasury
-        if let Some(admin) = self.admin.get().flatten() {
-            self.env().transfer_tokens(&admin, &slash);
-        }
+        // Add slashed amount to treasury
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        treasury += slash;
+        self.treasury_balance.set(treasury);
 
         let mut total = self.total_slashed.get().unwrap_or(U512::zero());
         total = total
@@ -1189,6 +1443,26 @@ mod tests {
         contract
             .with_tokens(U512::from(STAKE_AMOUNT))
             .stake();
+    }
+
+    fn complete_task_as_validator(
+        env: &odra::host::HostEnv,
+        contract: &mut AgentNetworkHostRef,
+        creator: Address,
+        task_id: String,
+        skill: String,
+        score: u32,
+        weight: u32,
+    ) {
+        let validator = env.get_account(9);
+        env.set_caller(validator);
+        if contract.get_validator(validator).is_none() {
+            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator(); // MINIMUM_VALIDATOR_STAKE
+        }
+        contract.submit_validation(creator, task_id.clone(), score);
+        contract.finalize_task(creator, task_id, skill, weight);
+        // Reset caller to admin to not break subsequent test flow
+        env.set_caller(env.get_account(0));
     }
 
     #[test]
@@ -1279,7 +1553,7 @@ mod tests {
 
         let agent_balance_before = env.balance_of(&agent);
         env.set_caller(admin);
-        contract.complete_task(admin, "task_01".to_string(), "DeFi".to_string(), 90, 10);
+        complete_task_as_validator(&env, &mut contract, admin, "task_01".to_string(), "DeFi".to_string(), 90, 10);
 
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Completed);
@@ -1347,14 +1621,15 @@ mod tests {
 
         let balance_after = env.balance_of(&admin);
         let slash = U512::from(STAKE_AMOUNT) * U512::from(SLASH_DEADLINE_BPS) / U512::from(10_000u32);
-        assert_eq!(balance_after, balance_before + budget + slash);
+        assert_eq!(balance_after, balance_before + budget); // admin only gets budget back
+        assert_eq!(contract.get_total_slashed(), slash); // slash goes to treasury
 
         let agent_profile = contract.get_agent(agent).unwrap();
         assert_eq!(agent_profile.active_jobs, 0);
     }
 
     #[test]
-    fn it_prevents_unauthorized_complete_task() {
+    fn it_prevents_unauthorized_submit_validation() {
         let (env, mut contract, admin, agent) = setup();
         let non_admin = env.get_account(2);
         let budget = U512::from(5_000_000_000u64);
@@ -1373,9 +1648,9 @@ mod tests {
         let contract_address = contract.address();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
-            c.complete_task(admin, "task_01".to_string(), "DeFi".to_string(), 90, 10);
+            c.submit_validation(admin, "task_01".to_string(), 90);
         }));
-        assert!(result.is_err(), "Non-admin must not complete task");
+        assert!(result.is_err(), "Non-validator must not submit validation");
     }
 
     #[test]
@@ -1392,7 +1667,7 @@ mod tests {
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
         env.set_caller(admin);
-        contract.complete_task(admin, "t1".to_string(), "DeFi".to_string(), 90, 2);
+        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 90, 2);
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.weighted_sum / rep.total_weight, 90);
@@ -1402,7 +1677,7 @@ mod tests {
         env.set_caller(agent);
         contract.submit_result(admin, "t2".to_string(), "hash".to_string());
         env.set_caller(admin);
-        contract.complete_task(admin, "t2".to_string(), "DeFi".to_string(), 85, 5);
+        complete_task_as_validator(&env, &mut contract, admin, "t2".to_string(), "DeFi".to_string(), 85, 5);
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.weighted_sum, 605);
@@ -1501,7 +1776,7 @@ mod tests {
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert!(matches!(task.status, TaskStatus::Disputed));
 
-        contract.complete_task(admin, "task_01".to_string(), "DeFi".to_string(), 75, 5);
+        complete_task_as_validator(&env, &mut contract, admin, "task_01".to_string(), "DeFi".to_string(), 75, 5);
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert!(matches!(task.status, TaskStatus::Completed));
     }
@@ -1607,7 +1882,7 @@ mod tests {
 
         let agent_before = env.balance_of(&agent);
         env.set_caller(admin);
-        contract.complete_task(admin, "t1".to_string(), "DeFi".to_string(), 95, 10);
+        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 95, 10);
 
         let fee = budget * U512::from(500u32) / U512::from(10_000u32);
         let payout = budget - fee;
@@ -1623,7 +1898,7 @@ mod tests {
 
         let agent_before = env.balance_of(&agent);
         env.set_caller(admin);
-        contract.complete_task(admin, "t2".to_string(), "DeFi".to_string(), 95, 10);
+        complete_task_as_validator(&env, &mut contract, admin, "t2".to_string(), "DeFi".to_string(), 95, 10);
 
         let fee = budget * U512::from(100u32) / U512::from(10_000u32);
         let payout = budget - fee;
@@ -1761,7 +2036,7 @@ mod tests {
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
 
         env.set_caller(admin);
-        contract.complete_task(admin, "t1".to_string(), "DeFi".to_string(), 20, 10); // score < 30
+        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 20, 10); // score < 30
 
         let stake_after = contract.get_stake(agent).amount;
         let expected_slash = stake_before * U512::from(SLASH_LOW_SCORE_BPS) / U512::from(10_000u32);
@@ -1959,5 +2234,61 @@ mod tests {
             c.slash_agent(agent, 500);
         }));
         assert!(result.is_err(), "Non-admin should not slash");
+    }
+
+    #[test]
+    fn it_calculates_median_and_slashes_validators() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(10_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        // Create task
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t_yuma".to_string(), "meta".to_string(), deadline);
+        contract.assign_task("t_yuma".to_string(), agent);
+
+        // Submit result
+        env.set_caller(agent);
+        contract.submit_result(admin, "t_yuma".to_string(), "hash".to_string());
+
+        // Setup 3 validators
+        let v1 = env.get_account(3); // Score 90
+        let v2 = env.get_account(4); // Score 95
+        let v3 = env.get_account(5); // Score 60 (outlier)
+
+        let val_stake = U512::from(100_000_000_000u64);
+
+        env.set_caller(v1);
+        contract.with_tokens(val_stake).register_validator();
+        contract.submit_validation(admin, "t_yuma".to_string(), 90);
+
+        env.set_caller(v2);
+        contract.with_tokens(val_stake).register_validator();
+        contract.submit_validation(admin, "t_yuma".to_string(), 95);
+
+        env.set_caller(v3);
+        contract.with_tokens(val_stake).register_validator();
+        contract.submit_validation(admin, "t_yuma".to_string(), 60);
+
+        let v1_balance_before = env.balance_of(&v1);
+
+        // Finalize task (median of 60, 90, 95 is 90)
+        env.set_caller(admin);
+        contract.finalize_task(admin, "t_yuma".to_string(), "General".to_string(), 10);
+
+        // Check scores and slashes
+        let rep = contract.get_reputation(agent, "General".to_string());
+        assert_eq!(rep.weighted_sum / rep.total_weight, 90);
+
+        // V3 deviation is 30 points (90 - 60). Tolerance is 10. Diff is 20.
+        // Penalty factor = (20 / 10) * 500 bps = 1000 bps (10%)
+        let v3_profile = contract.get_validator(v3).unwrap();
+        assert_eq!(v3_profile.stake, val_stake * U512::from(90u32) / U512::from(100u32)); // 90% left
+
+        // V1 should have received rewards in their account balance
+        let v1_balance_after = env.balance_of(&v1);
+        assert!(v1_balance_after > v1_balance_before);
     }
 }
