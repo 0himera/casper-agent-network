@@ -986,6 +986,7 @@ mod validation_tests {
                 result_signature: None,
                 validator_audit: None,
                 timestamp: Utc::now(),
+                parent_task_id: None,
             };
             assert!(is_validate_noop(&task));
 
@@ -1016,6 +1017,7 @@ mod validation_tests {
                 result_signature: None,
                 validator_audit: Some(serde_json::json!({"pipeline":"exam","verdict":"passed"})),
                 timestamp: Utc::now(),
+                parent_task_id: None,
             };
             assert!(!is_validate_noop(&task));
             assert!(needs_submit_retry(&task));
