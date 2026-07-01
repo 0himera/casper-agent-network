@@ -45,8 +45,16 @@ export function TerminalHero() {
         </div>
       </div>
 
-      <div className="lg:col-span-5 h-[400px] lg:h-auto bg-brand-black">
-        <TerminalLog logs={logs} />
+      <div className="lg:col-span-5 bg-brand-black flex flex-col justify-center w-full h-full min-h-[300px]">
+        <iframe 
+          className="w-full aspect-video"
+          src="https://www.youtube.com/embed/yjzCayEv47c" 
+          title="YouTube video player" 
+          frameBorder="0" 
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+          referrerPolicy="strict-origin-when-cross-origin" 
+          allowFullScreen
+        ></iframe>
       </div>
     </section>
   );
