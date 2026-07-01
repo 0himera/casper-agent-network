@@ -4,20 +4,16 @@ A Casper Network smart contract for the **Casper Agent Network** — a decentral
 
 > **Deployed on Testnet:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
 
-## Overview
+## Overview: The Yuma-Lite Validator Architecture
 
-The contract manages the complete lifecycle of:
-- **Agent Registration & Updates** — On-chain profile storage with mutable metadata
-- **Task Escrow** — CSPR-denominated payment locking with validated deadlines
-- **Result Submission** — Agent or admin-submitted execution results (single-submission, deadline-enforced)
-- **Staking & Slashing** — Agents stake CSPR. Auto-slashing for low scores, missed deadlines, and lost disputes.
-- **Consensus & Finalization** — Validator network consensus via median scoring and deviation slashing.
-- **Payment Claim** — Agent self-claim after deadline + grace period if admin is unresponsive
-- **Dispute Resolution** — Creator or admin can dispute; admin resolves via complete or cancel
-- **Task Cancellation** — Refund logic for open, expired, and disputed tasks
-- **Dynamic Pricing** — Custom and validator-recommended price storage
-- **Ownership Management** — Two-step ownership transfer (Ownable2Step) with renounce option
-- **CEP-96 Metadata** — Updatable contract metadata (name, description, icon, project URI)
+The Casper Agent Network has evolved into a fully decentralized AI swarm protocol. The contract manages the complete lifecycle using a **Bittensor-inspired validator consensus model**:
+
+- **Decentralized Validator Network** — Validators stake CSPR to evaluate agent outputs independently. 
+- **Yuma-Lite Consensus (`finalize_task`)** — Replaces centralized admin grading. Validations are aggregated on-chain using a Median Consensus mechanism. Outliers are mathematically slashed.
+- **Agent-to-Agent (A2A) Swarms** — Agents can autonomously spawn sub-tasks using their own budgets via `parent_task_id`, creating on-chain dependency graphs.
+- **Time-Weighted Reputation Decay** — Reputation isn't static. It decays logarithmically over time. The decay math is computed off-chain and synchronized by active validators to save gas.
+- **Protocol Fee Treasury** — Escrow fees are routed to a global treasury pool, enabling decentralized tokenomics via `distribute_treasury` (yield payouts) and `burn_treasury` (deflationary pressure).
+- **Staking & Auto-Slashing** — Both Agents and Validators must stake CSPR. Sub-standard work, missed deadlines, or malicious validations result in immediate programmatic slashing.
 
 ## Entry Points
 
@@ -181,16 +177,15 @@ Higher-stakes tasks (larger budgets, complex domains) contribute proportionally 
 - `dispute_task` allows creator or admin to flag a task for admin resolution.
 - `cancel_task` refunds creator for `Open`, expired `InProgress` (no result), or `Disputed` tasks.
 
-### Task Namespacing
-- Tasks are keyed by `(creator_address, task_id)`. Different creators can use the same `task_id` without collision — no global squatting.
+### A2A Swarm Tracking
+- Agents can hire other agents using `parent_task_id` during task creation. The protocol inherently supports cascading dependency graphs for complex AI operations.
 
-### Staking & Slashing
-- Agents must stake ≥ 50 CSPR (`MINIMUM_STAKE`) to be assigned tasks.
-- If an agent's score is < 30, they are automatically slashed 5%.
-- If an agent misses a deadline, they are automatically slashed 10% upon cancellation.
-- If a task is disputed and cancelled (resolved against agent), they are automatically slashed 20%.
-- Unbonding takes 30 minutes (`UNBONDING_PERIOD`). During this time, agents cannot be assigned new jobs.
-- Slashed tokens are transferred to the `admin` (treasury).
+### Protocol Tokenomics & Slashing
+- **Validator Slashing**: Validators who submit scores deviating from the consensus median by > 20 points are slashed 5% of their stake immediately.
+- **Agent Slashing**: Agents scoring < 30 are slashed 5%. Missing deadlines costs 10%. Lost disputes cost 20%.
+- **Deflationary Treasury**: Slashed funds and protocol fees (`fee_bps`) are sent to the `treasury_balance`.
+- **Decentralized Payouts**: The network can call `distribute_treasury` to reward honest validators and highly-staked agents, or `burn_treasury` to create permanent deflation.
+- **Off-chain Reputation Sync**: Any active validator can call `sync_decayed_reputation` to push mathematically decayed reputation weights to the chain, keeping on-chain data fresh without expensive on-chain logarithm calculations.
 
 ## Prerequisites
 
