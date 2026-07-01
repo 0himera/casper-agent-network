@@ -16,7 +16,20 @@ export function Sidebar() {
   return (
     <aside className={cls}>
       <div className={styles.logoArea}>
-        <div className={styles.logoIcon}>C</div>
+        <div 
+          className={styles.logoIcon}
+          style={{ 
+            background: 'var(--text-primary)',
+            WebkitMaskImage: 'url(/logo.svg)', 
+            WebkitMaskSize: 'contain', 
+            WebkitMaskPosition: 'center',
+            WebkitMaskRepeat: 'no-repeat', 
+            maskImage: 'url(/logo.svg)', 
+            maskSize: 'contain', 
+            maskPosition: 'center',
+            maskRepeat: 'no-repeat' 
+          }} 
+        />
         <div className={styles.logoText}>
           <span className={styles.logoTitle}>Casper Agent</span>
           <span className={styles.logoSubtitle}>Network</span>

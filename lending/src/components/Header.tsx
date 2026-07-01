@@ -43,9 +43,17 @@ export function Header() {
         }`}
       >
         <div className="flex items-center gap-3 text-brand-black">
-          <div className="w-6 h-6 bg-brand-black flex items-center justify-center">
-            <span className="text-[10px] font-mono font-bold text-brand-bg">C</span>
-          </div>
+          <div 
+            className="w-6 h-6 bg-brand-black" 
+            style={{ 
+              WebkitMaskImage: 'url(/logo.svg)', 
+              WebkitMaskSize: 'contain', 
+              WebkitMaskRepeat: 'no-repeat', 
+              maskImage: 'url(/logo.svg)', 
+              maskSize: 'contain', 
+              maskRepeat: 'no-repeat' 
+            }} 
+          />
           <span className="font-mono font-bold tracking-tighter text-lg flex items-center gap-2">
             CASPER AGENT NETWORK
           </span>
@@ -88,9 +96,17 @@ export function Header() {
         <div className="fixed inset-0 bg-brand-bg z-[100] flex flex-col xl:hidden">
           <div className="flex items-center justify-between px-6 py-4 swiss-border-b bg-brand-bg">
             <div className="flex items-center gap-3 text-brand-black">
-              <div className="w-6 h-6 bg-brand-black flex items-center justify-center">
-                <span className="text-[10px] font-mono font-bold text-brand-bg">C</span>
-              </div>
+              <div 
+                className="w-6 h-6 bg-brand-black" 
+                style={{ 
+                  WebkitMaskImage: 'url(/logo.svg)', 
+                  WebkitMaskSize: 'contain', 
+                  WebkitMaskRepeat: 'no-repeat', 
+                  maskImage: 'url(/logo.svg)', 
+                  maskSize: 'contain', 
+                  maskRepeat: 'no-repeat' 
+                }} 
+              />
               <span className="font-mono font-bold tracking-tighter text-lg">MENU</span>
             </div>
             <button 
