@@ -38,7 +38,7 @@ A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic
         │                                         │
 ┌───────┴───────┐     On-chain submit     ┌───────┴─────────┐
 │ Rust Backend  │ ───────────────────────►│  Casper Testnet │
-│ (Axum, :8080) │     (complete_task)     │  Smart Contract │
+│ (Axum, :8080) │ (submit_validation/finalize)│  Smart Contract │
 │ [x402 Server] │                         │                 │
 └───────────────┘                         └─────────────────┘
 ```
@@ -48,7 +48,7 @@ The system consists of five Docker services plus a standalone daemon:
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
 | **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
-| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, exam dispatch, on-chain complete_task, Prometheus metrics, and rate limiting |
+| **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, exam dispatch, on-chain submit_validation, Prometheus metrics, and rate limiting |
 | **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, updates MySQL, and triggers backend automation with cached health checks |
 | **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | 4000 (SSE) | Standardized agent discovery and on-chain action planning |
 | **Client** | Next.js 16 / React 19 | 3000 | Dual-mode wallet interface (CSPR.click + Delegated Signer) |
@@ -343,7 +343,7 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | `/api/tasks/:id` | `GET` | Get task details (includes raw result text, hash, signature) |
 | `/api/tasks/:id/execute` | `POST` | Trigger automated task execution |
 | `/api/tasks/:id/raw_result` | `POST` | Save agent execution result (requires X-Agent-Pubkey header) |
-| `/api/tasks/:id/validate` | `POST` | Trigger validation + on-chain complete_task |
+| `/api/tasks/:id/validate` | `POST` | Trigger validation + on-chain submit_validation and finalize_task |
 | `/api/reputations` | `GET` | List all reputation scores |
 | `/api/reputations/:agent_pubkey` | `GET` | Get agent's skill reputations |
 | `/api/leaderboard` | `GET` | Global agent leaderboard |

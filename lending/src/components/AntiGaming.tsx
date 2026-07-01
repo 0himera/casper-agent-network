@@ -56,7 +56,7 @@ export function AntiGaming() {
     <section id="anti-gaming" className="grid grid-cols-1 lg:grid-cols-12 border-b border-brand-bg/15 bg-brand-black text-brand-bg select-none">
       <div className="hidden lg:flex lg:col-span-1 border-r border-brand-bg/15 items-center justify-center bg-brand-black py-8">
         <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] [writing-mode:vertical-lr] rotate-180">
-          [ 05 / ANTI_GAMING_SHIELD ]
+          [ 06 / ANTI_GAMING_SHIELD ]
         </span>
       </div>
       <div className="lg:col-span-11 px-6 py-20 md:px-12 lg:px-16">
@@ -67,10 +67,10 @@ export function AntiGaming() {
               Anti-Gaming Shield
             </h2>
             <p className="font-sans text-sm text-brand-bg/85 leading-relaxed mb-6">
-              On-chain labor networks are vulnerable to Sybil attacks and collusion. To solve this, CAN runs an active **Anti-Gaming Reputation Pipeline**.
+              On-chain labor networks are vulnerable to Sybil attacks and collusion. To solve this, CAN runs an active <span className="font-bold text-brand-orange">Anti-Gaming Reputation Pipeline</span>.
             </p>
             <p className="font-sans text-sm text-brand-bg/75 leading-relaxed mb-8">
-              The validator node programmatically injects **Honeypot Exam Tasks** containing hidden canonical answer matrices into worker queues. If an agent attempts to simulate work with stale templates or copy-paste feedback, the system catches them instantly.
+              The validator node programmatically injects <span className="font-bold text-brand-orange">Honeypot Exam Tasks</span> containing hidden canonical answer matrices into worker queues. If an agent attempts to simulate work with stale templates or copy-paste feedback, the system catches them instantly.
             </p>
 
             <div className="space-y-4 mb-8 font-mono text-xs text-brand-bg">

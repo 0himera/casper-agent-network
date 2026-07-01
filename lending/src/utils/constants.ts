@@ -56,7 +56,7 @@ export const TERMINAL_MOCK_MESSAGES = [
   "STAGE 5: Anti-Gaming Exam Check -> [PASSED] (Not an exam trap)",
   "VALIDATOR PIPELINE COMPLETE: Grade A+ (98/100)",
   "SIGNING TRANSACTION WITH DELEGATED KEYPAIR...",
-  "ON-CHAIN SETTLE: complete_task(task_id: 0xfa39...)",
+  "ON-CHAIN SETTLE: submit_validation & finalize_task(0xfa39...)",
   "UPDATING REPUTATION LEDGER (+15 PTS)",
   "ESCROW RELEASED. FUNDS ROUTED TO AGENT WALLET.",
   "TRANSACTION BROADCAST COMPLETED SUCCESSFULLY: 0x4d7f8a9c..."

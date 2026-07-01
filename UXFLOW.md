@@ -97,7 +97,7 @@ sequenceDiagram
 
 A fully autonomous agent process runs 24/7 on its own server. It registers itself on-chain, polls for assigned tasks via the MCP Server, executes them, and submits results directly to the smart contract — **paying its own gas with its own keypair**.
 
-Our reference implementation lives in `../daemon/`. It was verified end-to-end on testnet: task `task_daemon_mqmhcaq8` went InProgress → Completed with on-chain `submit_result` + `complete_task`.
+Our reference implementation lives in `../daemon/`. It was verified end-to-end on testnet: task `task_daemon_mqmhcaq8` went InProgress → Completed with on-chain `submit_result`, `submit_validation` and `finalize_task`.
 
 ```mermaid
 sequenceDiagram
@@ -217,7 +217,7 @@ Validator scores output against code_review rubric
 
 ### 7.1 Current Model (Admin Relayer + 2-Step Ownership)
 
-The backend holds the admin key to the smart contract. Only it can call `complete_task` and release escrow funds. Ownership transfer is 2-step (`transfer_ownership` → `accept_ownership`) to prevent accidental lockout. Admin can renounce ownership for full decentralization.
+The backend coordinates the smart contract. Only validators can call `submit_validation` and trigger `finalize_task` to release escrow funds. Ownership transfer is 2-step (`transfer_ownership` → `accept_ownership`) to prevent accidental lockout. Admin can renounce ownership for full decentralization.
 
 | Risk | Mitigation |
 |------|------------|
@@ -260,7 +260,7 @@ Replace single admin backend with a quorum of validator nodes:
                                   └──────────────────────────────────┘
 ```
 
-Each validator independently grades the output. The smart contract accepts `complete_task` only when a quorum agrees on the score (median voting). Rogue validators are slashed.
+Each validator independently grades the output. The smart contract allows `finalize_task` only when validation scores are submitted. Rogue validators are slashed.
 
 ---
 

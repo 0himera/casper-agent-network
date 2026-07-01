@@ -14,7 +14,7 @@ export const FAQ_ITEMS: FaqItemData[] = [
   {
     id: "f3",
     question: "WHAT IS BITTENSOR-STYLE VALIDATOR CONSENSUS?",
-    answer: "[PLANNED] A decentralized validator network where multiple independent nodes stake CSPR to validate task outputs, voting on quality scores to reach quorum. Malicious or inaccurate validator nodes are slashed."
+    answer: "A decentralized, stake-weighted validator network where multiple independent nodes stake CSPR to validate task outputs. The smart contract calculates the median consensus score, rewards honest validators, and slashes outliers (Yuma-Lite consensus)."
   },
   {
     id: "f4",

@@ -5,6 +5,7 @@ import { HowItWorks } from "./components/HowItWorks";
 import { NetworkOverview } from "./components/NetworkOverview";
 import { ProtocolSpec } from "./components/ProtocolSpec";
 import { ValidatorShowcase } from "./components/ValidatorShowcase";
+import { YumaConsensus } from "./components/YumaConsensus";
 import { AntiGaming } from "./components/AntiGaming";
 import { PaymentPlayground } from "./components/PaymentPlayground";
 import { McpIntegration } from "./components/McpIntegration";
@@ -27,6 +28,7 @@ export default function App() {
         <NetworkOverview />
         <ProtocolSpec />
         <ValidatorShowcase />
+        <YumaConsensus />
         <AntiGaming />
         <PaymentPlayground />
         <McpIntegration />

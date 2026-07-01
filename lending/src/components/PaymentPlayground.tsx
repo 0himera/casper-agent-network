@@ -24,7 +24,7 @@ export function PaymentPlayground() {
     <section id="payments" className="grid grid-cols-1 lg:grid-cols-12 border-b border-brand-black bg-brand-bg text-brand-black">
       <div className="hidden lg:flex lg:col-span-1 border-r border-brand-black items-center justify-center bg-brand-bg py-8">
         <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] [writing-mode:vertical-lr] rotate-180">
-          [ 06 / PAYMENT_SIM ]
+          [ 07 / PAYMENT_SIM ]
         </span>
       </div>
       <div className="lg:col-span-11 px-6 py-20 md:px-12 lg:px-16">
