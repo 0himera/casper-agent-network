@@ -11,6 +11,7 @@ import path from 'path';
 import {
   Args,
   CLTypeUInt8,
+  CLTypeString,
   CLValue,
   Hash,
   PublicKey,
@@ -30,7 +31,7 @@ const server = new McpServer({
 const TASK_PUBLIC_COLUMNS = `
   id, creator_public_key, assigned_agent_public_key, budget_motes, status,
   result_hash, result, metadata_uri, transaction_hash, domain, skill_id,
-  prompt, deadline, result_signature, validator_audit, timestamp
+  prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id
 `.trim();
 
 type PublicTaskRow = {
@@ -50,6 +51,7 @@ type PublicTaskRow = {
   result_signature: string | null;
   validator_audit: unknown;
   timestamp: Date;
+  parent_task_id: string | null;
 };
 
 function toPublicTask(row: RowDataPacket): PublicTaskRow {
@@ -70,6 +72,7 @@ function toPublicTask(row: RowDataPacket): PublicTaskRow {
     result_signature: row.result_signature ?? null,
     validator_audit: row.validator_audit ?? null,
     timestamp: row.timestamp,
+    parent_task_id: row.parent_task_id ?? null,
   };
 }
 
@@ -219,13 +222,15 @@ server.tool(
     budgetMotes: z.string().describe("Amount of CSPR to escrow (in motes, e.g. 5000000000 for 5 CSPR)"),
     metadataUri: z.string().describe("Off-chain task description URI"),
     deadline: z.number().describe("Unix timestamp deadline for task execution"),
+    parentTaskId: z.string().optional().describe("Optional parent task ID"),
   },
-  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline }) => {
+  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline, parentTaskId }) => {
     try {
       const tx = buildContractTransaction(senderHex, 'create_task', {
         task_id: CLValue.newCLString(taskId),
         metadata_uri: CLValue.newCLString(metadataUri),
-        deadline: CLValue.newCLUint64(deadline)
+        deadline: CLValue.newCLUint64(deadline),
+        parent_task_id: CLValue.newCLOption(parentTaskId ? CLValue.newCLString(parentTaskId) : null, CLTypeString)
       }, budgetMotes);
       return {
         content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
@@ -639,6 +644,118 @@ server.tool(
         content: [{ type: "text", text: `Error: ${err.message}` }],
         isError: true
       };
+    }
+  }
+);
+
+
+// 21. get_validators
+server.tool(
+  "get_validators",
+  {},
+  async () => {
+    const [validators] = await pool.query('SELECT * FROM validators ORDER BY stake_motes DESC');
+    return {
+      content: [{ type: "text", text: JSON.stringify(validators, null, 2) }]
+    };
+  }
+);
+
+// 22. get_subtasks
+server.tool(
+  "get_subtasks",
+  {
+    parentTaskId: z.string().describe("Parent task ID"),
+  },
+  async ({ parentTaskId }) => {
+    const [tasks] = await pool.query<RowDataPacket[]>(
+      `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE parent_task_id = ? ORDER BY timestamp DESC`,
+      [parentTaskId]
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(tasks.map(toPublicTask), null, 2) }]
+    };
+  }
+);
+
+// 23. register_validator
+server.tool(
+  "register_validator",
+  {
+    senderHex: z.string().describe("Casper public key of the validator"),
+  },
+  async ({ senderHex }) => {
+    try {
+      const tx = buildContractTransaction(senderHex, 'register_validator', {});
+      return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+// 24. submit_validation
+server.tool(
+  "submit_validation",
+  {
+    senderHex: z.string().describe("Casper public key of the validator"),
+    creatorHex: z.string().describe("Casper public key of the task creator"),
+    taskId: z.string().describe("Task ID"),
+    score: z.number().describe("Score between 0 and 100"),
+  },
+  async ({ senderHex, creatorHex, taskId, score }) => {
+    try {
+      const creatorKey = Key.newKey(PublicKey.fromHex(creatorHex).accountHash().toPrefixedString());
+      const tx = buildContractTransaction(senderHex, 'submit_validation', {
+        creator: CLValue.newCLKey(creatorKey),
+        task_id: CLValue.newCLString(taskId),
+        score: CLValue.newCLUInt32(score)
+      });
+      return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+// 25. finalize_task
+server.tool(
+  "finalize_task",
+  {
+    senderHex: z.string().describe("Casper public key of caller"),
+    creatorHex: z.string().describe("Casper public key of the task creator"),
+    taskId: z.string().describe("Task ID"),
+    skill: z.string().describe("Skill domain name"),
+    weight: z.number().describe("Reputation weight"),
+  },
+  async ({ senderHex, creatorHex, taskId, skill, weight }) => {
+    try {
+      const creatorKey = Key.newKey(PublicKey.fromHex(creatorHex).accountHash().toPrefixedString());
+      const tx = buildContractTransaction(senderHex, 'finalize_task', {
+        creator: CLValue.newCLKey(creatorKey),
+        task_id: CLValue.newCLString(taskId),
+        skill: CLValue.newCLString(skill),
+        weight: CLValue.newCLUInt32(weight)
+      });
+      return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+// 26. distribute_treasury
+server.tool(
+  "distribute_treasury",
+  {
+    senderHex: z.string().describe("Casper public key of caller"),
+  },
+  async ({ senderHex }) => {
+    try {
+      const tx = buildContractTransaction(senderHex, 'distribute_treasury', {});
+      return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
     }
   }
 );

@@ -1,6 +1,6 @@
 import {
   Args,
-  CLTypeUInt8,
+  CLTypeUInt8, CLTypeString,
   CLValue,
   Hash,
   PublicKey,
@@ -74,12 +74,14 @@ export const buildCreateTaskTx = async (
   taskId: string,
   budgetMotes: string,
   metadataUri: string,
-  deadline: number
+  deadline: number,
+  parentTaskId?: string
 ) => {
   return buildContractTransaction(senderHex, 'create_task', {
     task_id: CLValue.newCLString(taskId),
     metadata_uri: CLValue.newCLString(metadataUri),
-    deadline: CLValue.newCLUint64(deadline)
+    deadline: CLValue.newCLUint64(deadline),
+    parent_task_id: CLValue.newCLOption(parentTaskId ? CLValue.newCLString(parentTaskId) : null, CLTypeString)
   }, budgetMotes);
 };
 

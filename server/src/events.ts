@@ -8,6 +8,7 @@ export interface TaskCreatedPayload {
   creator: string;
   budget: string;
   deadline: string;
+  parent_task_id: string | null;
 }
 
 export interface TaskCancelledPayload {
@@ -101,6 +102,30 @@ export interface TaskBudgetIncreasedPayload {
   task_id: string;
   creator: string;
   new_budget: string;
+}
+
+
+export interface ValidatorRegisteredPayload {
+  validator: string;
+}
+
+export interface ValidatorStakedPayload {
+  validator: string;
+  amount: string;
+}
+
+export interface ValidatorUnstakedPayload {
+  validator: string;
+  amount: string;
+}
+
+export interface TreasuryDistributedPayload {
+  total_yield: string;
+  validators_paid: number;
+}
+
+export interface TreasuryBurnedPayload {
+  burned_amount: string;
 }
 
 export interface ContractEvent<T> {

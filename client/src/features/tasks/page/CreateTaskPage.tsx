@@ -21,6 +21,7 @@ export default function CreateTaskPage() {
   const [budget, setBudget] = useState("5.0");
   const [prompt, setPrompt] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [parentTaskId, setParentTaskId] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -46,7 +47,8 @@ export default function CreateTaskPage() {
         taskId,
         budgetMotes,
         `https://agentnetwork.io/task/${taskId}`,
-        deadlineMs
+        deadlineMs,
+        parentTaskId.trim() || undefined
       );
       setStatus("Signing transaction...");
       const txHash = await signAndSendTransaction(transaction, walletAddress);
@@ -59,7 +61,8 @@ export default function CreateTaskPage() {
         transaction_hash: txHash,
         domain: domain,
         prompt: prompt,
-        deadline: deadlineMs
+        deadline: deadlineMs,
+        parent_task_id: parentTaskId.trim() || null
       });
 
       setStatus("Task successfully created!");
@@ -89,6 +92,10 @@ export default function CreateTaskPage() {
         </div>
         <DomainField value={domain} onChange={setDomain} />
         <BudgetField value={budget} onChange={setBudget} recommended={SKILL_BASE_PRICES[domain]} />
+        <div className={styles.field}>
+          <label className={styles.label}>Parent Task ID (Optional - For A2A Swarms)</label>
+          <input className={styles.input} value={parentTaskId} onChange={(e) => setParentTaskId(e.target.value)} placeholder="e.g. task_abcdef" disabled={loading} />
+        </div>
         <div className={styles.field}>
           <label className={styles.label}>Prompt</label>
           <textarea className={styles.textarea} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the task..." disabled={loading} />

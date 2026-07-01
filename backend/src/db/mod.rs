@@ -89,9 +89,14 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN validator_audit JSON NULL")
         .execute(&pool)
         .await;
+
     let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN parent_task_id VARCHAR(128) NULL")
+        .execute(&pool)
+        .await;
+
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (
@@ -145,6 +150,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS exam_assignments (
             task_id VARCHAR(128) PRIMARY KEY,
@@ -162,6 +168,33 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS validators (
+            public_key VARCHAR(128) PRIMARY KEY,
+            stake_motes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            is_active TINYINT NOT NULL DEFAULT 1,
+            total_validations INT NOT NULL DEFAULT 0,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS validations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            task_id VARCHAR(128) NOT NULL,
+            validator_public_key VARCHAR(128) NOT NULL,
+            score INT NOT NULL,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (validator_public_key) REFERENCES validators(public_key) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
 
     tracing::info!("Database schema successfully checked/initialized.");
     Ok(pool)

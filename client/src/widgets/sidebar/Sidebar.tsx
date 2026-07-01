@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft , Shield, Landmark } from "lucide-react";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarNavLink } from "./SidebarNavLink";
@@ -24,6 +24,7 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.nav}>
+
         {NAV_ITEMS.map((section) => (
           <div key={section.section} className={styles.navSection}>
             <div className={styles.navSectionLabel}>{section.section}</div>

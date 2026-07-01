@@ -124,10 +124,25 @@ fn main() {
             }
         }
 
-        println!("Completing task with score & weight...");
+        println!("Submitting validation score...");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut contract_mut = AgentNetwork::load(&env, address);
-            contract_mut.complete_task(creator, task_id.clone(), skill.clone(), score, weight);
+            contract_mut.submit_validation(creator, task_id.clone(), score);
+        }));
+        
+        if result.is_err() {
+            println!("⚠️ Transaction call panicked. Waiting 10s...");
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            continue;
+        } else {
+            println!("✅ Transaction call succeeded. Waiting 3s...");
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+        
+        println!("Finalizing task...");
+        let finalize_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut contract_mut = AgentNetwork::load(&env, address);
+            contract_mut.finalize_task(creator, task_id.clone(), skill.clone(), weight);
         }));
 
         if result.is_err() {

@@ -24,7 +24,12 @@ import {
   FeeDeductedPayload,
   FeeRateUpdatedPayload,
   AgentAvailabilityChangedPayload,
-  TaskBudgetIncreasedPayload
+  TaskBudgetIncreasedPayload,
+  ValidatorRegisteredPayload,
+  ValidatorStakedPayload,
+  ValidatorUnstakedPayload,
+  TreasuryDistributedPayload,
+  TreasuryBurnedPayload
 } from "./events";
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
@@ -160,14 +165,14 @@ async function main() {
 
         if (!task) {
           await pool.execute(
-            'INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, prompt, deadline, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [payload.task_id, creatorKey, payload.budget, 'Open', deployHash, 'defi_analysis', '', deadlineVal, new Date(timestamp)]
+            'INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, prompt, deadline, timestamp, parent_task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [payload.task_id, creatorKey, payload.budget, 'Open', deployHash, 'defi_analysis', '', deadlineVal, new Date(timestamp), payload.parent_task_id || null]
           );
           console.log(`Task created: ${payload.task_id} with budget ${payload.budget} motes, deadline ${deadlineVal}`);
         } else {
           await pool.execute(
-            'UPDATE tasks SET transaction_hash = IFNULL(transaction_hash, ?), creator_public_key = IFNULL(creator_public_key, ?), deadline = IF(deadline = "0" OR deadline = 0, ?, deadline) WHERE id = ?',
-            [deployHash, creatorKey, deadlineVal, payload.task_id]
+            'UPDATE tasks SET transaction_hash = IFNULL(transaction_hash, ?), creator_public_key = IFNULL(creator_public_key, ?), deadline = IF(deadline = "0" OR deadline = 0, ?, deadline), parent_task_id = IFNULL(parent_task_id, ?) WHERE id = ?',
+            [deployHash, creatorKey, deadlineVal, payload.parent_task_id || null, payload.task_id]
           );
           console.log(`Task ${payload.task_id} already exists, updated transaction hash/creator/deadline`);
         }
@@ -417,6 +422,62 @@ async function main() {
       } else if (eventName === 'OwnershipTransferred') {
         const payload = event.data.data as OwnershipTransferredPayload;
         console.log(`Ownership transferred to: ${payload.new_owner}`);
+      } else if (eventName === 'ValidatorRegistered') {
+        const payload = event.data.data as ValidatorRegisteredPayload;
+        let validatorKey = payload.validator;
+        try {
+          const account = await csprCloudClient.getAccount(payload.validator);
+          validatorKey = account.data.public_key || payload.validator;
+        } catch (e) {}
+
+        const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM validators WHERE public_key = ?', [validatorKey]);
+        if (!rows[0]) {
+          await pool.execute(
+            'INSERT INTO validators (public_key, stake_motes, is_active, total_validations, timestamp) VALUES (?, 0, 1, 0, ?)',
+            [validatorKey, new Date(timestamp)]
+          );
+        }
+        console.log(`Validator registered: ${validatorKey}`);
+
+      } else if (eventName === 'ValidatorStaked') {
+        const payload = event.data.data as ValidatorStakedPayload;
+        let validatorKey = payload.validator;
+        try {
+          const account = await csprCloudClient.getAccount(payload.validator);
+          validatorKey = account.data.public_key || payload.validator;
+        } catch (e) {}
+
+        await pool.execute(
+          'UPDATE validators SET stake_motes = stake_motes + ? WHERE public_key = ?',
+          [payload.amount, validatorKey]
+        );
+        console.log(`Validator staked: ${validatorKey} amount: ${payload.amount}`);
+
+      } else if (eventName === 'ValidatorUnstaked') {
+        const payload = event.data.data as ValidatorUnstakedPayload;
+        let validatorKey = payload.validator;
+        try {
+          const account = await csprCloudClient.getAccount(payload.validator);
+          validatorKey = account.data.public_key || payload.validator;
+        } catch (e) {}
+
+        await pool.execute(
+          'UPDATE validators SET stake_motes = GREATEST(0, stake_motes - ?) WHERE public_key = ?',
+          [payload.amount, validatorKey]
+        );
+        console.log(`Validator unstaked: ${validatorKey} amount: ${payload.amount}`);
+
+      } else if (eventName === 'TreasuryDistributed') {
+        const payload = event.data.data as TreasuryDistributedPayload;
+        console.log(`Treasury Distributed: yield=${payload.total_yield}, validators_paid=${payload.validators_paid}`);
+
+      } else if (eventName === 'TreasuryBurned') {
+        const payload = event.data.data as TreasuryBurnedPayload;
+        console.log(`Treasury Burned: ${payload.burned_amount}`);
+
+      } else if (eventName === 'ValidationSubmitted') {
+        // ValidationSubmitted is an event, but the backend handles it immediately via the node. We can just log it here.
+        console.log(`Validation Submitted by validator for a task`);
       }
 
     } catch (err) {

@@ -1,4 +1,6 @@
 import {
+  Shield,
+  Landmark,
   LayoutDashboard,
   Bot,
   ListTodo,
@@ -8,6 +10,13 @@ import {
 } from "lucide-react";
 
 export const NAV_ITEMS = [
+  {
+    section: "Network Consensus",
+    items: [
+      { href: "/validators", label: "Validators", icon: Shield },
+      { href: "/treasury", label: "Protocol Treasury", icon: Landmark },
+    ],
+  },
   {
     section: "Overview",
     items: [
