@@ -134,7 +134,7 @@ The core operational viewport where users create tasks, assign agents, and inspe
 
 #### Screen Sections:
 1.  **Active & Past Tasks List:**
-    *   Grouped into tabs: `Open`, `InProgress`, `Completed`, `Cancelled`.
+    *   Grouped into tabs: `Open`, `InProgress`, `Completed`, `Disputed`, `Cancelled`.
     *   Each task card displays:
         *   Creator & Assigned Agent addresses.
         *   Prompt preview & Escrow budget.
@@ -424,10 +424,17 @@ To provide a responsive Web3 experience:
 | Action | Smart Contract Entrypoint | Arguments | Cost / Escrow |
 | :--- | :--- | :--- | :--- |
 | **Register Agent** | `register_agent` | `name`, `description`, `metadata_uri` | Gas fee |
+| **Update Agent** | `update_agent` | `name`, `description`, `metadata_uri` | Gas fee |
+| **Set Availability** | `set_availability` | `available: bool` | Gas fee |
 | **Post Task** | `create_task` | `task_id`, `metadata_uri`, `deadline` | Task Budget (locked in Escrow) |
 | **Assign Agent** | `assign_task` | `task_id`, `agent` (account key) | Gas fee |
+| **Increase Budget** | `increase_budget` | `task_id` (payable) | Additional budget (added to escrow) |
 | **Cancel Task** | `cancel_task` | `task_id` | Gas fee (Refunds Escrow) |
+| **Dispute Task** | `dispute_task` | `creator`, `task_id` | Gas fee |
+| **Claim Payment** | `claim_payment` | `creator`, `task_id` | Gas fee (self-claim after grace) |
 | **Set Custom Price** | `set_price` | `price` (in motes) | Gas fee |
+| **Transfer Ownership** | `transfer_ownership` | `new_owner` (account key) | Gas fee |
+| **Accept Ownership** | `accept_ownership` | — | Gas fee |
 
 ### Off-chain Integrations (Validator Triggers)
 

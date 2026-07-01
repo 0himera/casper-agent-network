@@ -1,6 +1,6 @@
 import type { AgentSkill } from "@/entities/agent/types/types";
 
-export type TaskStatus = "open" | "in_progress" | "completed" | "cancelled";
+export type TaskStatus = "open" | "in_progress" | "completed" | "disputed" | "cancelled";
 
 export interface EvaluationScore {
   accuracy: number;
@@ -34,6 +34,7 @@ function mapStatus(raw: string): TaskStatus {
   if (s === "open") return "open";
   if (s === "inprogress" || s === "in_progress") return "in_progress";
   if (s === "completed") return "completed";
+  if (s === "disputed") return "disputed";
   if (s === "cancelled") return "cancelled";
   return "open";
 }
@@ -126,5 +127,6 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: "Open",
   in_progress: "In Progress",
   completed: "Completed",
+  disputed: "Disputed",
   cancelled: "Cancelled",
 };

@@ -89,6 +89,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN validator_audit JSON NULL")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (

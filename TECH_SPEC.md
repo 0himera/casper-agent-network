@@ -14,7 +14,7 @@ The platform consists of five Docker microservices working in tandem, plus a sta
 2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution or validation on the backend.
 3. **Backend / Validator Server (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration engine. Handles registration with automated benchmarking, asynchronous agent execution via external APIs (any OpenAI-compatible provider), LLM-as-a-Judge grading via a multi-stage pipeline, exam dispatch, weighted reputation computation, dynamic pricing, and on-chain `complete_task`. Exposes metrics, rate-limiting, and graceful shutdown handlers. Exposes endpoints for autonomous agents: `POST /api/tasks/:id/raw_result` and `POST /api/tasks/:id/validate`.
 4. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
-5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 14 tools for agent discovery, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
+5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 20 tools for agent discovery, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
 6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
 
 ---
@@ -37,6 +37,7 @@ Both the Rust Backend and TypeScript Event Handler share access to the MySQL dat
 | `model` | VARCHAR(255) | LLM model identifier (e.g., any OpenAI-compatible model ID) |
 | `active_jobs` | INT | Current tasks in progress |
 | `status` | VARCHAR(50) | Status: `active`, `benchmarking` |
+| `is_available` | TINYINT | On-chain availability flag (1=available, 0=unavailable). Mirrors contract `AgentProfile.is_available`. |
 | `recommended_price_motes` | BIGINT UNSIGNED | Validator-calculated recommended price |
 | `custom_price_motes` | BIGINT UNSIGNED | Agent-set custom price |
 | `system_prompt` | TEXT | Custom prompt instructions for hosted models |
@@ -226,9 +227,10 @@ Programmatic micropayments are implemented using the **Google A2A x402 Specifica
 
 ### 4.7 Model Context Protocol (MCP) Server
 
-A TypeScript MCP server is implemented in the server module (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 14 tools:
+A TypeScript MCP server is implemented in the server module (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 20 tools:
 * `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`, `get_task_details`, `get_assigned_tasks`: Read-only queries directly mapping to database objects.
 * `create_task`, `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result`: Write tools that construct unsigned `Version1` Casper transactions and return them as JSON payload for signing.
+* `update_agent_profile`, `set_availability`, `increase_budget`, `dispute_task`, `claim_payment`, `set_fee_rate`: Write tools for new contract entry points (agent profile update, availability toggle, budget top-up, dispute, self-claim payment, admin fee rate).
 * `get_signing_instructions`: Documentation on how to sign.
 * `broadcast_transaction`: Broadcast signed transactions to the Casper network.
 
@@ -247,33 +249,51 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `admin` | `Var<Address>` | Contract administrator (set during `init`) |
-| `agents` | `Mapping<Address, AgentProfile>` | Registered agent profiles |
-| `tasks` | `Mapping<String, Task>` | Task state keyed by task ID |
+| `admin` | `Var<Option<Address>>` | Contract administrator (2-step transfer via `pending_admin`) |
+| `pending_admin` | `Var<Option<Address>>` | Pending ownership transfer target |
+| `agents` | `Mapping<Address, AgentProfile>` | Registered agent profiles (includes `is_available: bool`) |
+| `tasks` | `Mapping<(Address, String), Task>` | Task state keyed by `(creator, task_id)` — namespaced per creator |
 | `reputations` | `Mapping<(Address, String), ReputationState>` | Weighted reputation per agent per skill |
-| `metadata` | `SubModule<Cep96>` | CEP-96 standard metadata module |
+| `fee_bps` | `Var<u32>` | Platform fee rate in basis points (default 500 = 5%, max 3000 = 30%) |
+| `contract_name` | `Var<String>` | CEP-96 contract name (mutable via `update_metadata`) |
+| `contract_description` | `Var<String>` | CEP-96 contract description (mutable) |
+| `contract_icon_uri` | `Var<String>` | CEP-96 icon URI (mutable) |
+| `contract_project_uri` | `Var<String>` | CEP-96 project URI (mutable) |
 
 ### 5.2 Core Entry Points
 
 | Method | Caller | Arguments | Description |
 |--------|--------|-----------|-------------|
-| `init` | Deployer | `admin: Address` | Initialize contract with explicit admin address and metadata |
-| `register_agent` | Any | `name`, `description`, `metadata_uri` | Register new agent. Reverts if already exists (3001). |
-| `create_task` | Any | `task_id`, `metadata_uri`, `deadline` | Create task with ≥ 1 CSPR escrow. Reverts on duplicate (3012). |
-| `assign_task` | Task Creator | `task_id`, `agent` | Assign open task to registered agent. Status → `InProgress`. |
-| `cancel_task` | Task Creator | `task_id` | Cancel open task or expired in-progress task. Refunds escrow. |
-| `submit_result` | Agent **or Admin** | `task_id`, `result_hash` | Submit execution result hash. Admin bypass enables automated execution. |
-| `complete_task` | **Admin only** | `task_id`, `skill`, `score`, `weight` | Validate score (0–100), validate weight (≥ 1), transfer escrow to agent, update weighted reputation. |
+| `init` | Deployer | `admin: Address` | Initialize contract with admin, metadata, default fee (5%) |
+| `transfer_ownership` | Admin | `new_owner: &Address` | Start 2-step ownership transfer |
+| `accept_ownership` | Pending Admin | — | Complete ownership transfer |
+| `renounce_ownership` | Admin | — | Renounce ownership (admin = None) |
+| `register_agent` | Any | `name`, `description`, `metadata_uri` | Register new agent. Reverts if already exists (3001). `is_available` defaults to `true`. |
+| `update_agent` | Agent | `name`, `description`, `metadata_uri` | Update mutable agent profile |
+| `set_availability` | Agent | `available: bool` | Toggle availability — `assign_task` reverts if unavailable (3024) |
+| `create_task` | Any | `task_id`, `metadata_uri`, `deadline` | Create task with ≥ 1 CSPR escrow. Task ID max 128 chars. Deadline must be future. |
+| `assign_task` | Task Creator | `task_id`, `agent` | Assign open task to available, registered agent. |
+| `cancel_task` | Task Creator | `task_id` | Cancel open/expired/disputed task. Refunds escrow. |
+| `submit_result` | Agent **or Admin** | `creator: Address`, `task_id`, `result_hash` | Submit result hash. Tasks namespaced by `(creator, task_id)`. Single submission only (3019). |
+| `complete_task` | **Admin only** | `creator: Address`, `task_id`, `skill`, `score`, `weight` | Release escrow (minus fee), update reputation. Fee is reputation-tiered. |
+| `dispute_task` | Creator or Admin | `creator: Address`, `task_id` | Mark task as Disputed. Admin resolves via `complete_task` or `cancel_task`. |
+| `claim_payment` | Agent | `creator: Address`, `task_id` | Self-claim escrow after `deadline + 24h grace` if admin unresponsive. Flat fee applied. |
+| `increase_budget` | Task Creator | `task_id` | Payable — add budget to Open/InProgress task. |
 | `set_price` | Agent | `price` | Set agent's custom price. |
 | `update_recommended_price` | Admin | `agent`, `price` | Set validator-calculated recommended price. |
+| `set_fee_rate` | Admin | `fee_bps: u32` | Set platform fee (max 3000 bps = 30%). |
+| `get_fee_rate` | Any | — | Returns base fee rate in bps. |
+| `get_effective_fee_rate` | Any | `agent`, `skill` | Returns reputation-tiered fee rate for agent. |
+| `update_metadata` | Admin | `name?`, `description?`, `icon_uri?`, `project_uri?` | Update CEP-96 metadata (all optional). |
 | `contract_name` | Any | — | [CEP-96] Returns contract name. |
 | `contract_description` | Any | — | [CEP-96] Returns contract description. |
 | `contract_icon_uri` | Any | — | [CEP-96] Returns contract icon URI. |
 | `contract_project_uri` | Any | — | [CEP-96] Returns contract project URI. |
 | `get_admin` | Any | — | Returns contract admin address. |
+| `get_pending_owner` | Any | — | Returns pending admin address (2-step transfer). |
 | `get_agent` | Any | `agent` | Returns agent profile or `None`. |
-| `get_task` | Any | `task_id` | Returns task details or `None`. |
-| `get_reputation` | Any | `agent`, `skill` | Returns weighted average reputation score. |
+| `get_task` | Any | `creator: Address`, `task_id` | Returns task details or `None`. |
+| `get_reputation` | Any | `agent`, `skill` | Returns `ReputationState` (weighted_sum, total_weight, tasks_completed). |
 
 ### 5.3 Error Codes
 
@@ -281,20 +301,28 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 |------|------|-------------|
 | 3001 | `AgentAlreadyExists` | Agent already registered |
 | 3002 | `AgentNotFound` | Agent address not in registry |
-| 3003 | `TaskNotFound` | Task ID does not exist |
+| 3003 | `TaskNotFound` | Task ID does not exist for given creator |
 | 3004 | `TaskNotOpen` | Task is not in Open status |
-| 3005 | `TaskNotAssigned` | Task is not in InProgress status |
+| 3005 | `TaskNotAssigned` | Task is not in InProgress/Disputed status |
 | 3006 | `NotTaskCreator` | Caller is not the task creator |
 | 3007 | `NotAssignedAgent` | Caller is not the assigned agent or admin |
 | 3008 | `BelowMinimumBudget` | Attached value < 1 CSPR |
 | 3009 | `TaskNotSubmitted` | No result hash submitted yet |
 | 3010 | `TaskAlreadyAssigned` | Task already has an agent |
 | 3011 | `NotContractAdmin` | Caller is not the contract admin |
-| 3012 | `TaskAlreadyExists` | Task ID already in use |
+| 3012 | `TaskAlreadyExists` | Task ID already in use by this creator |
 | 3013 | `DeadlinePassed` | Task deadline has passed |
 | 3014 | `DeadlineNotPassed` | Task deadline has not yet passed |
 | 3015 | `InvalidScore` | Score exceeds 100 |
 | 3016 | `InvalidWeight` | Weight is zero |
+| 3017 | `TaskIdTooLong` | Task ID exceeds 128 characters |
+| 3018 | `DeadlineInPast` | Deadline is not in the future |
+| 3019 | `ResultAlreadySubmitted` | Result hash already submitted for this task |
+| 3020 | `ClaimTooEarly` | Grace period (24h) has not elapsed since deadline |
+| 3021 | `TaskNotDisputed` | Task is not in Disputed status |
+| 3022 | `ArithmeticOverflow` | Arithmetic overflow/underflow (checked_add/sub) |
+| 3023 | `InvalidFeeRate` | Fee rate exceeds 3000 bps (30%) |
+| 3024 | `AgentNotAvailable` | Agent has set `is_available = false` |
 
 ### 5.4 On-chain Reputation Model
 
@@ -311,6 +339,22 @@ pub struct ReputationState {
 ```
 
 This model ensures that higher-stakes tasks (larger budgets, more complex domains) contribute proportionally more to an agent's reputation.
+
+### 5.5 Reputation-Based Fee System
+
+The contract deducts a platform fee from each agent payout. The fee rate is tiered by the agent's reputation score for the relevant skill:
+
+| Avg Score | Fee Rate | Example (base 5%) |
+|-----------|----------|-------------------|
+| ≥ 90 | `base / 5` | 1% |
+| 50–89 | `base` | 5% |
+| < 50 | `base × 2` (capped at 30%) | 10% |
+| No history | `base` | 5% |
+
+- **`complete_task`**: fee computed from agent's reputation **before** this task's score update. Fee → admin. If admin is renounced (None), agent gets 100%.
+- **`claim_payment`**: flat base fee applied (skill unknown at claim time).
+- Admin can adjust base fee via `set_fee_rate` (max 3000 bps = 30%).
+- View: `get_fee_rate()`, `get_effective_fee_rate(agent, skill)`.
 
 ---
 
@@ -381,7 +425,7 @@ This model ensures that higher-stakes tasks (larger budgets, more complex domain
 
 | Component | Value |
 |-----------|-------|
-| **Contract Package Hash** | `e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699` |
+| **Contract Package Hash** | `f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600` |
 | **Network** | `casper-test` |
 | **Admin Account** | `ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8` |
-| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699) |
+| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600) |

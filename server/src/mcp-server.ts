@@ -328,12 +328,17 @@ server.tool(
   "submit_execution_result",
   {
     senderHex: z.string().describe("Casper public key of calling agent (must be assigned agent)"),
+    creatorHex: z.string().describe("Casper public key of the task creator (tasks are namespaced by creator)"),
     taskId: z.string().describe("Task ID"),
     resultHash: z.string().describe("SHA-256 result hash"),
   },
-  async ({ senderHex, taskId, resultHash }) => {
+  async ({ senderHex, creatorHex, taskId, resultHash }) => {
     try {
+      const creatorKeyStr = PublicKey.fromHex(creatorHex).accountHash().toPrefixedString();
+      const creatorKey = Key.newKey(creatorKeyStr);
+
       const tx = buildContractTransaction(senderHex, 'submit_result', {
+        creator: CLValue.newCLKey(creatorKey),
         task_id: CLValue.newCLString(taskId),
         result_hash: CLValue.newCLString(resultHash)
       });
@@ -472,6 +477,166 @@ server.tool(
     } catch (err: any) {
       return {
         content: [{ type: "text", text: `Error fetching assigned tasks: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 15. update_agent_profile
+server.tool(
+  "update_agent_profile",
+  {
+    senderHex: z.string().describe("Casper public key of the agent"),
+    name: z.string().describe("New display name"),
+    description: z.string().describe("New capabilities description"),
+    metadataUri: z.string().describe("New metadata URI"),
+  },
+  async ({ senderHex, name, description, metadataUri }) => {
+    try {
+      const sanitizeStr = (s: string) => s.replace(/[^\x00-\x7F]/g, '-');
+      const tx = buildContractTransaction(senderHex, 'update_agent', {
+        name: CLValue.newCLString(sanitizeStr(name)),
+        description: CLValue.newCLString(sanitizeStr(description)),
+        metadata_uri: CLValue.newCLString(sanitizeStr(metadataUri))
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 16. set_availability
+server.tool(
+  "set_availability",
+  {
+    senderHex: z.string().describe("Casper public key of the agent"),
+    available: z.boolean().describe("Whether the agent is available for new tasks"),
+  },
+  async ({ senderHex, available }) => {
+    try {
+      const tx = buildContractTransaction(senderHex, 'set_availability', {
+        available: CLValue.newCLValueBool(available)
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 17. increase_budget
+server.tool(
+  "increase_budget",
+  {
+    senderHex: z.string().describe("Casper public key of the task creator"),
+    taskId: z.string().describe("Task ID to increase budget for"),
+    additionalMotes: z.string().describe("Additional budget in motes"),
+  },
+  async ({ senderHex, taskId, additionalMotes }) => {
+    try {
+      const tx = buildContractTransaction(senderHex, 'increase_budget', {
+        task_id: CLValue.newCLString(taskId)
+      }, additionalMotes);
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 18. dispute_task
+server.tool(
+  "dispute_task",
+  {
+    senderHex: z.string().describe("Casper public key of the disputer (creator or admin)"),
+    creatorHex: z.string().describe("Casper public key of the task creator"),
+    taskId: z.string().describe("Task ID to dispute"),
+  },
+  async ({ senderHex, creatorHex, taskId }) => {
+    try {
+      const creatorKeyStr = PublicKey.fromHex(creatorHex).accountHash().toPrefixedString();
+      const creatorKey = Key.newKey(creatorKeyStr);
+
+      const tx = buildContractTransaction(senderHex, 'dispute_task', {
+        creator: CLValue.newCLKey(creatorKey),
+        task_id: CLValue.newCLString(taskId)
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 19. claim_payment
+server.tool(
+  "claim_payment",
+  {
+    senderHex: z.string().describe("Casper public key of the claiming agent"),
+    creatorHex: z.string().describe("Casper public key of the task creator"),
+    taskId: z.string().describe("Task ID to claim payment for"),
+  },
+  async ({ senderHex, creatorHex, taskId }) => {
+    try {
+      const creatorKeyStr = PublicKey.fromHex(creatorHex).accountHash().toPrefixedString();
+      const creatorKey = Key.newKey(creatorKeyStr);
+
+      const tx = buildContractTransaction(senderHex, 'claim_payment', {
+        creator: CLValue.newCLKey(creatorKey),
+        task_id: CLValue.newCLString(taskId)
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// 20. set_fee_rate
+server.tool(
+  "set_fee_rate",
+  {
+    senderHex: z.string().describe("Casper public key of the admin"),
+    feeBps: z.number().describe("Fee rate in basis points (e.g. 500 = 5%, max 3000 = 30%)"),
+  },
+  async ({ senderHex, feeBps }) => {
+    try {
+      const tx = buildContractTransaction(senderHex, 'set_fee_rate', {
+        fee_bps: CLValue.newCLUInt32(feeBps)
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
         isError: true
       };
     }

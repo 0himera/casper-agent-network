@@ -14,7 +14,17 @@ import {
   ScoreUpdatedPayload,
   PriceUpdatedPayload,
   RecommendedPriceUpdatedPayload,
-  TaskCancelledPayload
+  TaskCancelledPayload,
+  AgentUpdatedPayload,
+  TaskDisputedPayload,
+  PaymentClaimedPayload,
+  MetadataUpdatedPayload,
+  OwnershipTransferStartedPayload,
+  OwnershipTransferredPayload,
+  FeeDeductedPayload,
+  FeeRateUpdatedPayload,
+  AgentAvailabilityChangedPayload,
+  TaskBudgetIncreasedPayload
 } from "./events";
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
@@ -318,6 +328,95 @@ async function main() {
           }
           console.log(`Task ${payload.task_id} marked as cancelled in DB`);
         }
+
+      } else if (eventName === 'AgentUpdated') {
+        const payload = event.data.data as AgentUpdatedPayload;
+        
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        await pool.execute(
+          'UPDATE agents SET name = ?, timestamp = ? WHERE public_key = ?',
+          [payload.name, new Date(timestamp), agentKey]
+        );
+        console.log(`Agent updated: ${payload.name} (${agentKey})`);
+
+      } else if (eventName === 'TaskDisputed') {
+        const payload = event.data.data as TaskDisputedPayload;
+        
+        await pool.execute(
+          'UPDATE tasks SET status = "Disputed" WHERE id = ?',
+          [payload.task_id]
+        );
+        console.log(`Task ${payload.task_id} marked as disputed by ${payload.disputer}`);
+
+      } else if (eventName === 'PaymentClaimed') {
+        const payload = event.data.data as PaymentClaimedPayload;
+        
+        await pool.execute(
+          'UPDATE tasks SET status = "Completed" WHERE id = ?',
+          [payload.task_id]
+        );
+        
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        if (agentKey) {
+          await pool.execute(
+            'UPDATE agents SET active_jobs = GREATEST(0, active_jobs - 1) WHERE public_key = ?',
+            [agentKey]
+          );
+        }
+        console.log(`Payment claimed for task ${payload.task_id}: ${payload.amount} motes to agent ${agentKey}`);
+
+      } else if (eventName === 'FeeDeducted') {
+        const payload = event.data.data as FeeDeductedPayload;
+        console.log(`Fee deducted for task ${payload.task_id}: fee=${payload.fee} payout=${payload.payout}`);
+
+      } else if (eventName === 'FeeRateUpdated') {
+        const payload = event.data.data as FeeRateUpdatedPayload;
+        console.log(`Fee rate updated to ${payload.fee_bps} bps`);
+
+      } else if (eventName === 'AgentAvailabilityChanged') {
+        const payload = event.data.data as AgentAvailabilityChangedPayload;
+        
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        await pool.execute(
+          'UPDATE agents SET is_available = ? WHERE public_key = ?',
+          [payload.available ? 1 : 0, agentKey]
+        );
+        console.log(`Agent ${agentKey} availability changed to: ${payload.available}`);
+
+      } else if (eventName === 'TaskBudgetIncreased') {
+        const payload = event.data.data as TaskBudgetIncreasedPayload;
+        
+        await pool.execute(
+          'UPDATE tasks SET budget_motes = ? WHERE id = ?',
+          [payload.new_budget, payload.task_id]
+        );
+        console.log(`Task ${payload.task_id} budget increased to ${payload.new_budget} motes`);
+
+      } else if (eventName === 'MetadataUpdated') {
+        console.log(`Contract metadata updated`);
+
+      } else if (eventName === 'OwnershipTransferStarted') {
+        const payload = event.data.data as OwnershipTransferStartedPayload;
+        console.log(`Ownership transfer started: ${payload.previous_owner} -> ${payload.new_owner}`);
+
+      } else if (eventName === 'OwnershipTransferred') {
+        const payload = event.data.data as OwnershipTransferredPayload;
+        console.log(`Ownership transferred to: ${payload.new_owner}`);
       }
 
     } catch (err) {

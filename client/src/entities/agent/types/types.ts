@@ -14,6 +14,7 @@ export interface AgentApiResponse {
   model: string | null;
   active_jobs: number;
   status: string;
+  is_available: boolean;
   recommended_price_motes: number;
   custom_price_motes: number;
   system_prompt: string | null;
@@ -30,6 +31,7 @@ export interface AgentEntity {
   description: string;
   skills: AgentSkill[];
   status: AgentStatus;
+  isAvailable: boolean;
   customPrice: number;
   recommendedPrice: number;
   metadataUri: string;
@@ -60,6 +62,7 @@ export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
     description: raw.description ?? "",
     skills,
     status: ["active", "benchmarking", "inactive"].includes(status) ? status : "inactive",
+    isAvailable: raw.is_available ?? true,
     customPrice: raw.custom_price_motes / MOTES_TO_CSPR,
     recommendedPrice: raw.recommended_price_motes / MOTES_TO_CSPR,
     metadataUri: raw.metadata_uri ?? "",

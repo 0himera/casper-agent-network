@@ -4,6 +4,10 @@ use odra::prelude::*;
 const MINIMUM_BUDGET: u64 = 1_000_000_000u64; // 1 CSPR
 const MAX_TASK_ID_LEN: usize = 128;
 const CLAIM_GRACE_PERIOD: u64 = 86_400_000; // 24h in ms
+const FEE_TIER_HIGH: u32 = 90;
+const FEE_TIER_LOW: u32 = 50;
+const DEFAULT_FEE_BPS: u32 = 500; // 5%
+const MAX_FEE_BPS: u32 = 3000; // 30%
 
 #[odra::odra_type]
 pub struct AgentProfile {
@@ -13,6 +17,7 @@ pub struct AgentProfile {
     pub active_jobs: u32,
     pub custom_price: U512,
     pub recommended_price: U512,
+    pub is_available: bool,
 }
 
 #[odra::odra_type]
@@ -141,6 +146,32 @@ pub struct OwnershipTransferred {
     pub new_owner: Option<Address>,
 }
 
+#[odra::event]
+pub struct FeeDeducted {
+    pub task_id: String,
+    pub agent: Address,
+    pub fee: U512,
+    pub payout: U512,
+}
+
+#[odra::event]
+pub struct FeeRateUpdated {
+    pub fee_bps: u32,
+}
+
+#[odra::event]
+pub struct AgentAvailabilityChanged {
+    pub agent: Address,
+    pub available: bool,
+}
+
+#[odra::event]
+pub struct TaskBudgetIncreased {
+    pub task_id: String,
+    pub creator: Address,
+    pub new_budget: U512,
+}
+
 #[odra::odra_error]
 pub enum ContractErrors {
     AgentAlreadyExists = 3001,
@@ -165,6 +196,8 @@ pub enum ContractErrors {
     ClaimTooEarly = 3020,
     TaskNotDisputed = 3021,
     ArithmeticOverflow = 3022,
+    InvalidFeeRate = 3023,
+    AgentNotAvailable = 3024,
 }
 
 #[odra::module(
@@ -184,7 +217,11 @@ pub enum ContractErrors {
         PaymentClaimed,
         MetadataUpdated,
         OwnershipTransferStarted,
-        OwnershipTransferred
+        OwnershipTransferred,
+        FeeDeducted,
+        FeeRateUpdated,
+        AgentAvailabilityChanged,
+        TaskBudgetIncreased
     ]
 )]
 pub struct AgentNetwork {
@@ -197,6 +234,7 @@ pub struct AgentNetwork {
     contract_description: Var<String>,
     contract_icon_uri: Var<String>,
     contract_project_uri: Var<String>,
+    fee_bps: Var<u32>,
 }
 
 #[odra::module]
@@ -213,6 +251,7 @@ impl AgentNetwork {
         );
         self.contract_icon_uri.set("https://agent-network.casper.dev/icon.png".to_string());
         self.contract_project_uri.set("https://agent-network.casper.dev".to_string());
+        self.fee_bps.set(DEFAULT_FEE_BPS);
     }
 
     pub fn transfer_ownership(&mut self, new_owner: &Address) {
@@ -310,6 +349,86 @@ impl AgentNetwork {
         });
     }
 
+    pub fn set_fee_rate(&mut self, fee_bps: u32) {
+        self.assert_admin();
+        if fee_bps > MAX_FEE_BPS {
+            self.env().revert(ContractErrors::InvalidFeeRate);
+        }
+        self.fee_bps.set(fee_bps);
+        self.env().emit_event(FeeRateUpdated { fee_bps });
+    }
+
+    pub fn get_fee_rate(&self) -> u32 {
+        self.fee_bps.get().unwrap_or(DEFAULT_FEE_BPS)
+    }
+
+    pub fn get_effective_fee_rate(&self, agent: Address, skill: String) -> u32 {
+        self.compute_fee_rate(agent, &skill)
+    }
+
+    fn compute_fee_rate(&self, agent: Address, skill: &str) -> u32 {
+        let base = self.fee_bps.get().unwrap_or(DEFAULT_FEE_BPS);
+        let rep = self.reputations.get_or_default(&(agent, skill.to_string()));
+        if rep.total_weight == 0 {
+            return base;
+        }
+        let avg = (rep.weighted_sum / rep.total_weight) as u32;
+        if avg >= FEE_TIER_HIGH {
+            base / 5
+        } else if avg < FEE_TIER_LOW {
+            (base * 2).min(MAX_FEE_BPS)
+        } else {
+            base
+        }
+    }
+
+    pub fn set_availability(&mut self, available: bool) {
+        let caller = self.env().caller();
+        let mut profile = self
+            .agents
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
+        profile.is_available = available;
+        self.agents.set(&caller, profile);
+        self.env().emit_event(AgentAvailabilityChanged {
+            agent: caller,
+            available,
+        });
+    }
+
+    #[odra(payable)]
+    pub fn increase_budget(&mut self, task_id: String) {
+        let caller = self.env().caller();
+        let attached = self.env().attached_value();
+
+        if attached == U512::zero() {
+            self.env().revert(ContractErrors::BelowMinimumBudget);
+        }
+
+        let key = (caller, task_id.clone());
+        let mut task = self
+            .tasks
+            .get(&key)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::TaskNotFound);
+
+        match task.status {
+            TaskStatus::Open | TaskStatus::InProgress => {}
+            _ => self.env().revert(ContractErrors::TaskNotOpen),
+        }
+
+        task.budget = task
+            .budget
+            .checked_add(attached)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+        self.tasks.set(&key, task.clone());
+
+        self.env().emit_event(TaskBudgetIncreased {
+            task_id,
+            creator: caller,
+            new_budget: task.budget,
+        });
+    }
+
     pub fn register_agent(&mut self, name: String, description: String, metadata_uri: String) {
         let caller = self.env().caller();
         if self.agents.get(&caller).is_some() {
@@ -323,6 +442,7 @@ impl AgentNetwork {
             active_jobs: 0,
             custom_price: U512::zero(),
             recommended_price: U512::zero(),
+            is_available: true,
         };
 
         self.agents.set(&caller, profile);
@@ -413,6 +533,10 @@ impl AgentNetwork {
             .get(&agent)
             .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
 
+        if !agent_profile.is_available {
+            self.env().revert(ContractErrors::AgentNotAvailable);
+        }
+
         task.assigned_agent = Some(agent);
         task.status = TaskStatus::InProgress;
         self.tasks.set(&key, task);
@@ -501,6 +625,9 @@ impl AgentNetwork {
             .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
 
         let budget = task.budget;
+        let fee_rate = self.compute_fee_rate(agent, &skill);
+        let fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
+        let payout = budget - fee;
 
         task.status = TaskStatus::Completed;
         self.tasks.set(&key, task);
@@ -511,7 +638,18 @@ impl AgentNetwork {
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         self.agents.set(&agent, agent_profile);
 
-        self.env().transfer_tokens(&agent, &budget);
+        self.env().transfer_tokens(&agent, &payout);
+        if fee > U512::zero() {
+            if let Some(admin) = self.admin.get().flatten() {
+                self.env().transfer_tokens(&admin, &fee);
+            }
+        }
+        self.env().emit_event(FeeDeducted {
+            task_id: task_id.clone(),
+            agent,
+            fee,
+            payout,
+        });
 
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
         rep_state.weighted_sum = rep_state
@@ -651,6 +789,9 @@ impl AgentNetwork {
 
         let agent = task.assigned_agent.unwrap();
         let budget = task.budget;
+        let fee_rate = self.fee_bps.get().unwrap_or(DEFAULT_FEE_BPS);
+        let fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
+        let payout = budget - fee;
 
         task.status = TaskStatus::Completed;
         self.tasks.set(&key, task);
@@ -665,13 +806,24 @@ impl AgentNetwork {
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         self.agents.set(&agent, agent_profile);
 
-        self.env().transfer_tokens(&agent, &budget);
+        self.env().transfer_tokens(&agent, &payout);
+        if fee > U512::zero() {
+            if let Some(admin) = self.admin.get().flatten() {
+                self.env().transfer_tokens(&admin, &fee);
+            }
+        }
 
         self.env().emit_event(PaymentClaimed {
-            task_id,
+            task_id: task_id.clone(),
             creator,
             agent,
-            amount: budget,
+            amount: payout,
+        });
+        self.env().emit_event(FeeDeducted {
+            task_id,
+            agent,
+            fee,
+            payout,
         });
     }
 
@@ -837,7 +989,8 @@ mod tests {
         assert_eq!(agent_profile.active_jobs, 0);
 
         let agent_balance_after = env.balance_of(&agent);
-        assert_eq!(agent_balance_after, agent_balance_before + budget);
+        let expected_fee = budget * U512::from(500u32) / U512::from(10_000u32);
+        assert_eq!(agent_balance_after, agent_balance_before + budget - expected_fee);
     }
 
     #[test]
@@ -1086,7 +1239,8 @@ mod tests {
         assert!(matches!(task.status, TaskStatus::Completed));
 
         let balance_after = env.balance_of(&agent);
-        assert_eq!(balance_after, balance_before + budget);
+        let expected_fee = budget * U512::from(500u32) / U512::from(10_000u32);
+        assert_eq!(balance_after, balance_before + budget - expected_fee);
     }
 
     #[test]
@@ -1136,5 +1290,95 @@ mod tests {
             c.update_recommended_price(agent, U512::from(1u64));
         }));
         assert!(result.is_err(), "Non-admin should not set recommended price");
+    }
+
+    #[test]
+    fn it_applies_reputation_based_fee() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(10_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        env.set_caller(agent);
+        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+
+        assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 500);
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t1".to_string(), agent);
+        env.set_caller(agent);
+        contract.submit_result(admin, "t1".to_string(), "hash".to_string());
+
+        let agent_before = env.balance_of(&agent);
+        env.set_caller(admin);
+        contract.complete_task(admin, "t1".to_string(), "DeFi".to_string(), 95, 10);
+
+        let fee = budget * U512::from(500u32) / U512::from(10_000u32);
+        let payout = budget - fee;
+        assert_eq!(env.balance_of(&agent), agent_before + payout);
+
+        assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 100);
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t2".to_string(), agent);
+        env.set_caller(agent);
+        contract.submit_result(admin, "t2".to_string(), "hash".to_string());
+
+        let agent_before = env.balance_of(&agent);
+        env.set_caller(admin);
+        contract.complete_task(admin, "t2".to_string(), "DeFi".to_string(), 95, 10);
+
+        let fee = budget * U512::from(100u32) / U512::from(10_000u32);
+        let payout = budget - fee;
+        assert_eq!(env.balance_of(&agent), agent_before + payout);
+    }
+
+    #[test]
+    fn it_toggles_agent_availability() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        env.set_caller(agent);
+        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        assert!(contract.get_agent(agent).unwrap().is_available);
+
+        contract.set_availability(false);
+        assert!(!contract.get_agent(agent).unwrap().is_available);
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.assign_task("t1".to_string(), agent);
+        }));
+        assert!(result.is_err(), "Should not assign to unavailable agent");
+
+        env.set_caller(agent);
+        contract.set_availability(true);
+
+        env.set_caller(admin);
+        contract.assign_task("t1".to_string(), agent);
+        let task = contract.get_task(admin, "t1".to_string()).unwrap();
+        assert_eq!(task.status, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn it_increases_task_budget() {
+        let (env, contract, admin, _agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let extra = U512::from(3_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+
+        let task = contract.get_task(admin, "t1".to_string()).unwrap();
+        assert_eq!(task.budget, budget);
+
+        contract.with_tokens(extra).increase_budget("t1".to_string());
+
+        let task = contract.get_task(admin, "t1".to_string()).unwrap();
+        assert_eq!(task.budget, budget + extra);
     }
 }

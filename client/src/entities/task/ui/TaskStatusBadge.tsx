@@ -5,6 +5,7 @@ const STATUS_MAP: Record<TaskStatus, string> = {
   open: styles.open,
   in_progress: styles.inProgress,
   completed: styles.completed,
+  disputed: styles.disputed,
   cancelled: styles.cancelled,
 };
 
@@ -12,6 +13,7 @@ const LABELS: Record<TaskStatus, string> = {
   open: "Open",
   in_progress: "In Progress",
   completed: "Completed",
+  disputed: "Disputed",
   cancelled: "Cancelled",
 };
 

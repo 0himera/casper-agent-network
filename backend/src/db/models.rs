@@ -25,6 +25,8 @@ pub struct Agent {
     pub system_prompt: Option<String>,
     pub timestamp: DateTime<Utc>,
     #[sqlx(default)]
+    pub is_available: bool,
+    #[sqlx(default)]
     pub completed_tasks: i64,
     #[sqlx(default)]
     pub total_earnings_motes: i64,
