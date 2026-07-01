@@ -11,7 +11,7 @@ The contract manages the complete lifecycle of:
 - **Task Escrow** — CSPR-denominated payment locking with validated deadlines
 - **Result Submission** — Agent or admin-submitted execution results (single-submission, deadline-enforced)
 - **Staking & Slashing** — Agents stake CSPR. Auto-slashing for low scores, missed deadlines, and lost disputes.
-- **Task Completion** — Admin-only finalization with weighted reputation scoring and auto-slashing
+- **Consensus & Finalization** — Validator network consensus via median scoring and deviation slashing.
 - **Payment Claim** — Agent self-claim after deadline + grace period if admin is unresponsive
 - **Dispute Resolution** — Creator or admin can dispute; admin resolves via complete or cancel
 - **Task Cancellation** — Refund logic for open, expired, and disputed tasks
@@ -36,10 +36,11 @@ The contract manages the complete lifecycle of:
 | `create_task` | Any | `task_id`, `metadata_uri`, `deadline: u64` | Create a task with ≥ 1 CSPR attached as escrow. `deadline` must be a future Unix timestamp (ms). `task_id` max 128 chars. Task is namespaced by creator address — same `task_id` can be used by different creators. |
 | `assign_task` | Task Creator | `task_id`, `agent: Address` | Assign an open task to a registered agent. Reverts if deadline passed, agent lacks minimum stake (50 CSPR), or agent is unbonding. Status → `InProgress`. |
 | `submit_result` | Assigned Agent **or** Admin | `creator: Address`, `task_id`, `result_hash` | Submit execution result hash. Single submission only (no overwrite). Must be before deadline. Admin bypass enables automated platform execution. |
-| `complete_task` | **Admin only** | `creator: Address`, `task_id`, `skill`, `score: u32`, `weight: u32` | Validate score, transfer CSPR to the agent, update reputation. If `score` < 30, agent is auto-slashed 5%. Accepts `InProgress` or `Disputed` status. |
+| `submit_validation` | Validator | `creator: Address`, `task_id`, `score: u32` | Submit an independent score (0-100) for a completed task. Caller must be an active registered validator with ≥ 100 CSPR stake. |
+| `finalize_task` | Any | `creator: Address`, `task_id`, `skill`, `weight: u32` | Trigger median consensus. Calculates median score, pays agent, slashes outlier validators, and rewards accurate validators. Accepts `InProgress` or `Disputed` status. |
 | `cancel_task` | Task Creator | `task_id` | Cancel `Open`, expired `InProgress` (no result), or `Disputed` tasks. Refunds creator. Auto-slashes agent 10% for expired `InProgress` and 20% for `Disputed`. |
-| `dispute_task` | Task Creator **or** Admin | `creator: Address`, `task_id` | Flag an `InProgress` task (with submitted result) as `Disputed`. Admin resolves via `complete_task` (pay agent) or `cancel_task` (refund creator, slash agent 20%). |
-| `claim_payment` | Assigned Agent | `creator: Address`, `task_id` | Self-claim escrowed CSPR after deadline + 24h grace period if admin has not completed the task. No reputation update (no admin score). Status → `Completed`. |
+| `dispute_task` | Task Creator **or** Admin | `creator: Address`, `task_id` | Flag an `InProgress` task (with submitted result) as `Disputed`. |
+| `claim_payment` | Assigned Agent | `creator: Address`, `task_id` | Self-claim escrowed CSPR after deadline + 24h grace period if task was not finalized. No reputation update. Status → `Completed`. |
 
 ### Staking & Slashing
 
@@ -50,6 +51,9 @@ The contract manages the complete lifecycle of:
 | `withdraw_stake` | Agent | — | Withdraw unbonded CSPR after the 30-minute unbonding period has elapsed. |
 | `cancel_unstake` | Agent | — | Cancel an active unbonding request and keep the CSPR staked. |
 | `slash_agent` | Admin | `agent: Address`, `bps: u32` | Manually slash an agent's stake by a basis point percentage (max 2000 bps / 20%). |
+| `register_validator`| Any | — (payable) | Register as a validator. Requires attaching ≥ 100 CSPR. |
+| `stake_validator` | Validator | — (payable) | Add stake to an existing validator profile. |
+| `unstake_validator` | Validator | `amount: U512` | Withdraw validator stake immediately. Falls below 100 CSPR deactivates profile. |
 
 ### Admin / Ownership Operations
 
@@ -60,6 +64,7 @@ The contract manages the complete lifecycle of:
 | `renounce_ownership` | Admin | — | Permanently remove admin. All admin-gated functions become unavailable. |
 | `update_recommended_price` | Admin | `agent: Address`, `price: U512` | Set the validator-calculated recommended price for an agent. |
 | `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CEP-96 contract metadata. Only provided fields are updated. |
+| `sync_decayed_reputation` | Admin | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync time-weighted reputation decay calculated off-chain. |
 
 ### View Methods
 

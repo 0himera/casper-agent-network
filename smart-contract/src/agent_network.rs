@@ -59,6 +59,7 @@ pub struct ReputationState {
     pub weighted_sum: u64,
     pub total_weight: u64,
     pub tasks_completed: u32,
+    pub last_update: u64,
 }
 
 #[odra::odra_type]
@@ -133,6 +134,14 @@ pub struct ScoreUpdated {
     pub agent: Address,
     pub skill: String,
     pub new_score: u32,
+}
+
+#[odra::event]
+pub struct ReputationDecayed {
+    pub agent: Address,
+    pub skill: String,
+    pub new_weighted_sum: u64,
+    pub new_total_weight: u64,
 }
 
 #[odra::event]
@@ -989,6 +998,7 @@ impl AgentNetwork {
             .tasks_completed
             .checked_add(1)
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+        rep_state.last_update = self.env().get_block_time();
 
         let new_score = if rep_state.total_weight == 0 {
             0
@@ -1007,6 +1017,31 @@ impl AgentNetwork {
         if median_score < LOW_SCORE_THRESHOLD {
             self.apply_slash(agent, SLASH_LOW_SCORE_BPS);
         }
+    }
+
+    pub fn sync_decayed_reputation(
+        &mut self,
+        agent: Address,
+        skill: String,
+        decayed_weighted_sum: u64,
+        decayed_total_weight: u64,
+    ) {
+        self.assert_admin();
+
+        let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
+        
+        rep_state.weighted_sum = decayed_weighted_sum;
+        rep_state.total_weight = decayed_total_weight;
+        rep_state.last_update = self.env().get_block_time();
+        
+        self.reputations.set(&(agent, skill.clone()), rep_state);
+
+        self.env().emit_event(ReputationDecayed {
+            agent,
+            skill,
+            new_weighted_sum: decayed_weighted_sum,
+            new_total_weight: decayed_total_weight,
+        });
     }
 
     pub fn cancel_task(&mut self, task_id: String) {
@@ -2290,5 +2325,28 @@ mod tests {
         // V1 should have received rewards in their account balance
         let v1_balance_after = env.balance_of(&v1);
         assert!(v1_balance_after > v1_balance_before);
+    }
+
+    #[test]
+    fn it_syncs_decayed_reputation() {
+        let (env, mut contract, admin, agent) = setup();
+        
+        env.set_caller(admin);
+        contract.sync_decayed_reputation(agent, "General".to_string(), 450, 5);
+        
+        let rep = contract.get_reputation(agent, "General".to_string());
+        assert_eq!(rep.weighted_sum, 450);
+        assert_eq!(rep.total_weight, 5);
+        assert_eq!(rep.tasks_completed, 0); // shouldn't change
+        
+        // Ensure non-admin can't sync
+        let non_admin = env.get_account(2);
+        env.set_caller(non_admin);
+        let contract_address = contract.address();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.sync_decayed_reputation(agent, "General".to_string(), 400, 4);
+        }));
+        assert!(result.is_err());
     }
 }
