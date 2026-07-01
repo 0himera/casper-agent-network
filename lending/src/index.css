@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-bg: #f8fafc;
+  --color-black: #090d16;
+  --color-orange: #ea580c;
+}
+
+.dark {
+  --color-bg: #090d16;
+  --color-black: #f8fafc;
+  --color-orange: #f97316;
+}
+
+@theme {
+  --color-brand-bg: var(--color-bg);
+  --color-brand-black: var(--color-black);
+  --color-brand-orange: var(--color-orange);
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "Fira Code", monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-brand-bg);
+  color: var(--color-brand-black);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.swiss-border-b { border-bottom: 1px solid var(--color-brand-black); }
+.swiss-border-r { border-right: 1px solid var(--color-brand-black); }
+.swiss-border-l { border-left: 1px solid var(--color-brand-black); }
+.swiss-border-t { border-top: 1px solid var(--color-brand-black); }
+.swiss-border-all { border: 1px solid var(--color-brand-black); }
+
+.swiss-invert-hover { transition: all 0.15s ease-out; }
+.swiss-invert-hover:hover { background-color: var(--color-brand-black); color: var(--color-brand-bg); }
+.orange-invert-hover { transition: all 0.15s ease-out; }
+.orange-invert-hover:hover { background-color: var(--color-brand-black); color: var(--color-brand-orange); }
+
+@keyframes dash { to { stroke-dashoffset: -20; } }
+.animate-flow-line { stroke-dasharray: 6, 6; animation: dash 1.5s linear infinite; }
+
+@keyframes coinFlow {
+  0% { transform: translateX(0); opacity: 0; }
+  10%, 90% { opacity: 1; }
+  100% { transform: translateX(250px); opacity: 0; }
+}
+.animate-coin-1 { animation: coinFlow 2s linear infinite; }
+.animate-coin-2 { animation: coinFlow 2s linear infinite 0.6s; }
+.animate-coin-3 { animation: coinFlow 2s linear infinite 1.2s; }
+
+@keyframes slowSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-slow-spin { animation: slowSpin 25s linear infinite; transform-origin: center; }
+
+.bg-grid-parallax { position: relative; }
+.bg-grid-parallax::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: 0.08; z-index: -1;
+  background-image: radial-gradient(var(--color-brand-black) 1px, transparent 1px); background-size: 32px 32px;
+}

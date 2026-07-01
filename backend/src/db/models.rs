@@ -24,6 +24,16 @@ pub struct Agent {
     pub custom_price_motes: u64,
     pub system_prompt: Option<String>,
     pub timestamp: DateTime<Utc>,
+    #[sqlx(default)]
+    pub is_available: bool,
+    #[sqlx(default)]
+    pub completed_tasks: i64,
+    #[sqlx(default)]
+    pub total_earnings_motes: i64,
+    #[sqlx(default)]
+    pub reputation_score: i64,
+    #[sqlx(default)]
+    pub skills: Option<String>,
 }
 
 /// Live task row as stored in `tasks`. Internal use; prefer [`TaskPublic`] for HTTP responses.
@@ -46,6 +56,7 @@ pub struct Task {
     pub result_signature: Option<String>,
     pub validator_audit: Option<serde_json::Value>,
     pub timestamp: DateTime<Utc>,
+    pub parent_task_id: Option<String>,
 }
 
 /// Agent-facing task shape for REST/MCP. Explicit allowlist — no exam table fields.
@@ -67,6 +78,7 @@ pub struct TaskPublic {
     pub result_signature: Option<String>,
     pub validator_audit: Option<serde_json::Value>,
     pub timestamp: DateTime<Utc>,
+    pub parent_task_id: Option<String>,
 }
 
 impl From<Task> for TaskPublic {
@@ -88,6 +100,7 @@ impl From<Task> for TaskPublic {
             result_signature: task.result_signature,
             validator_audit: task.validator_audit,
             timestamp: task.timestamp,
+            parent_task_id: task.parent_task_id,
         }
     }
 }
@@ -122,7 +135,7 @@ pub struct ExamAssignment {
 pub const TASK_PUBLIC_COLUMNS: &str = "\
     id, creator_public_key, assigned_agent_public_key, budget_motes, status, \
     result_hash, result, metadata_uri, transaction_hash, domain, skill_id, \
-    prompt, deadline, result_signature, validator_audit, timestamp";
+    prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id";
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Reputation {
@@ -167,6 +180,7 @@ mod tests {
             result_signature: None,
             validator_audit: None,
             timestamp: Utc::now(),
+            parent_task_id: None,
         })
         .expect("serialize TaskPublic");
 

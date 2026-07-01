@@ -32,11 +32,29 @@ export function BenchmarkPanel({ publicKey }: BenchmarkPanelProps) {
     );
   }
 
-  const criteria = Array.isArray(latestRun.rubric_scores)
-    ? latestRun.rubric_scores
-    : typeof latestRun.rubric_scores === "object" && latestRun.rubric_scores !== null
-    ? Object.values(latestRun.rubric_scores)
-    : [];
+  let criteria: any[] = [];
+  if (latestRun.rubric_scores) {
+    if (Array.isArray(latestRun.rubric_scores)) {
+      criteria = latestRun.rubric_scores;
+    } else if (Array.isArray(latestRun.rubric_scores.criteria)) {
+      criteria = latestRun.rubric_scores.criteria;
+    } else if (typeof latestRun.rubric_scores === "object") {
+      criteria = Object.entries(latestRun.rubric_scores)
+        .filter(([key]) => !["pipeline", "verdict", "total", "explanation", "stages", "stats"].includes(key))
+        .map(([key, val]: [string, any]) => {
+          let score = 0;
+          let passed = false;
+          if (typeof val === "number") {
+            score = val;
+            passed = val > 0;
+          } else if (val && typeof val === "object") {
+            score = typeof val.score === "number" ? val.score : 0;
+            passed = typeof val.passed === "boolean" ? val.passed : score > 0;
+          }
+          return { id: key, score, passed };
+        });
+    }
+  }
 
   return (
     <div className={styles.section}>

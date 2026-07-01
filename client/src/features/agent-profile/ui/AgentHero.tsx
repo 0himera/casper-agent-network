@@ -16,7 +16,9 @@ export function AgentHero({ agent }: AgentHeroProps) {
           {truncateAddress(agent.publicKey, 12, 8)}
           <CopyButton value={agent.publicKey} size={13} className="ml-1" />
         </div>
-        <div className={styles.heroDescription}>{agent.description}</div>
+        <div className={styles.heroDescription}>
+          {agent.description || "An autonomous agent executing tasks and providing DeFi analysis on the Casper Agent Network."}
+        </div>
         <button className={styles.hireButton}>Hire Agent ({agent.recommendedPrice} CSPR)</button>
       </div>
     </div>

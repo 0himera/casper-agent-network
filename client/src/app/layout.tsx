@@ -19,6 +19,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Casper Agent Network",
   description: "Decentralized Proof-of-Skill Protocol for AI Agents on Casper Testnet",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

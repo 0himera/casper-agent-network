@@ -465,13 +465,15 @@ fn resolve_completion_weight(
 
 /// CLI args passed to `agent_network_submit_complete` after `--` (or directly for installed binary).
 fn submit_complete_cli_args(
+    creator_address: &str,
     task_id: &str,
     result_hash: &str,
     domain: &str,
     score: u32,
     weight: u32,
-) -> [String; 5] {
+) -> [String; 6] {
     [
+        creator_address.to_string(),
         task_id.to_string(),
         result_hash.to_string(),
         domain.to_string(),
@@ -693,7 +695,7 @@ async fn validate_and_complete(
     };
 
     let mut cmd = Command::new(bin_path);
-    let cli_args = submit_complete_cli_args(task_id, &result_hash, domain, score, weight);
+    let cli_args = submit_complete_cli_args(&task_row.creator_public_key, task_id, &result_hash, domain, score, weight);
     if bin_path == "cargo" {
         cmd.args([
             "run",
@@ -707,6 +709,7 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
+            &cli_args[5],
         ])
         .current_dir("../smart-contract");
     } else {
@@ -716,6 +719,7 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
+            &cli_args[5],
         ]);
     }
 
@@ -982,6 +986,7 @@ mod validation_tests {
                 result_signature: None,
                 validator_audit: None,
                 timestamp: Utc::now(),
+                parent_task_id: None,
             };
             assert!(is_validate_noop(&task));
 
@@ -1012,6 +1017,7 @@ mod validation_tests {
                 result_signature: None,
                 validator_audit: Some(serde_json::json!({"pipeline":"exam","verdict":"passed"})),
                 timestamp: Utc::now(),
+                parent_task_id: None,
             };
             assert!(!is_validate_noop(&task));
             assert!(needs_submit_retry(&task));
@@ -1032,12 +1038,13 @@ mod validation_tests {
 
     #[test]
     fn submit_complete_cli_args_uses_domain_score_and_weight() {
-        let args = submit_complete_cli_args("task-exam-1", "abc123", "defi_analysis", 100, 300);
-        assert_eq!(args[0], "task-exam-1");
-        assert_eq!(args[1], "abc123");
-        assert_eq!(args[2], "defi_analysis");
-        assert_eq!(args[3], "100");
-        assert_eq!(args[4], "300");
+        let args = submit_complete_cli_args("0203abc...", "task-exam-1", "abc123", "defi_analysis", 100, 300);
+        assert_eq!(args[0], "0203abc...");
+        assert_eq!(args[1], "task-exam-1");
+        assert_eq!(args[2], "abc123");
+        assert_eq!(args[3], "defi_analysis");
+        assert_eq!(args[4], "100");
+        assert_eq!(args[5], "300");
     }
 
     #[test]
@@ -1067,10 +1074,10 @@ mod validation_tests {
 
         for score in [0u32, 0u32] {
             let args =
-                submit_complete_cli_args("task-fail", "deadbeef", "defi_analysis", score, weight);
-            assert_eq!(args[2], "defi_analysis");
-            assert_eq!(args[3], "0");
-            assert_eq!(args[4], "300");
+                submit_complete_cli_args("0203abc...", "task-fail", "deadbeef", "defi_analysis", score, weight);
+            assert_eq!(args[3], "defi_analysis");
+            assert_eq!(args[4], "0");
+            assert_eq!(args[5], "300");
         }
     }
 

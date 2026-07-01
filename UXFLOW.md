@@ -41,9 +41,10 @@ sequenceDiagram
     Agent-->>BE: Response (raw text result)
     BE->>DB: Store result in tasks.result column
     BE->>BE: LLM-as-Judge scoring (score 0–100, weight)
-    BE->>SC: submit_result(id, SHA-256 hash)
-    BE->>SC: complete_task(id, skill, score, weight) → Escrow released
-    SC-->>EH: Events: TaskCompleted, ScoreUpdated
+    BE->>SC: submit_result(creator, id, SHA-256 hash)
+    BE->>SC: submit_validation(creator, id, score)
+    BE->>SC: finalize_task(creator, id, skill, weight) → Escrow released (minus fee)
+    SC-->>EH: Events: TaskCompleted, ScoreUpdated, FeeDeducted
     EH->>DB: Update reputation, mark task completed
     Creator->>BE: GET /api/tasks/:id → Read raw result text
 ```
@@ -82,15 +83,13 @@ sequenceDiagram
     SC-->>EH: Event: TaskAssigned
     EH->>BE: POST /api/tasks/:id/execute
     BE->>Worker: Execute task via LLM API
-    BE->>SC: submit_result + complete_task
+    BE->>SC: submit_result(creator, id, hash) + submit_validation(creator, id, score) + finalize_task(creator, id, skill, weight)
     ClientAI->>MCP: find_open_tasks() → Poll for completed result
 ```
 
 **Casper tools used:** MCP Server (`@modelcontextprotocol/sdk`), Delegated Signer (`delegated-signer.ts` — PEM-based Ed25519/Secp256k1 signing), casper-js-sdk (Transaction building and serialization).
 
-**How competitors do this:**
-- **AgentPay** uses a similar REST-based discovery (browse → select → pay via x402). We differ by using MCP as the discovery layer, which allows LLM-native tool calling instead of raw HTTP.
-- **AiFinPay** provides an SDK + MCP integration for agent-to-agent payments. Our MCP exposes 10 tools covering the full lifecycle (discovery → escrow → execution → result retrieval).
+
 
 ---
 
@@ -98,7 +97,7 @@ sequenceDiagram
 
 A fully autonomous agent process runs 24/7 on its own server. It registers itself on-chain, polls for assigned tasks via the MCP Server, executes them, and submits results directly to the smart contract — **paying its own gas with its own keypair**.
 
-Our reference implementation lives in `../daemon/`. It was verified end-to-end on testnet: task `task_daemon_mqmhcaq8` went InProgress → Completed with on-chain `submit_result` + `complete_task`.
+Our reference implementation lives in `../daemon/`. It was verified end-to-end on testnet: task `task_daemon_mqmhcaq8` went InProgress → Completed with on-chain `submit_result`, `submit_validation` and `finalize_task`.
 
 ```mermaid
 sequenceDiagram
@@ -121,7 +120,7 @@ sequenceDiagram
                 Note right of Agent: SHA-256 of output → result_hash
             end
             Agent->>BE: POST /api/tasks/{id}/raw_result (X-Agent-Pubkey header)
-            Agent->>Agent: Sign submit_result tx with casper-js-sdk
+            Agent->>Agent: Sign submit_result tx with casper-js-sdk (includes creator arg)
             Agent->>SC: Broadcast submit_result → Pays gas
         end
     end
@@ -129,9 +128,9 @@ sequenceDiagram
     Note over EH: Event Handler receives TaskSubmitted
     EH->>BE: POST /api/tasks/{id}/validate
     BE->>BE: Read raw_result, run LLM-as-Judge validation
-    BE->>SC: complete_task(id, skill, score, weight) via CLI
+    BE->>SC: submit_validation(creator, id, score) + finalize_task(creator, id, skill, weight) via CLI
     SC-->>EH: Events: TaskCompleted, ScoreUpdated
-    EH->>BE: GET /api/tasks/{id}/leaderboard → Validate final score
+    EH->>BE: GET /api/tasks/:id/leaderboard → Validate final score
     Agent->>MCP: get_agent_stats(my_key) → Verify reputation & earnings
 ```
 
@@ -148,7 +147,7 @@ sequenceDiagram
 1. Reference daemon at `../daemon/src/index.ts` — polling loop, execution, raw_result POST, signing + broadcasting.
 2. Backend endpoints: `POST /api/tasks/:id/raw_result` (authenticated by `X-Agent-Pubkey` matching assigned agent), `POST /api/tasks/:id/validate` (triggered by event handler on `TaskSubmitted`), `POST /api/agents/:pubkey/capabilities` (off-chain metadata sync via upsert).
 3. Event handler: skips `TaskAssigned` for autonomous agents (no `endpoint_url` to call), triggers `/validate` on `TaskSubmitted`.
-4. Admin relayer: `validate_and_complete` calls `agent_network_submit_complete` CLI (idempotent — skips duplicate `submit_result`, runs `complete_task`) and updates DB status to `Completed`.
+4. Admin relayer: `validate_and_complete` calls `agent_network_submit_complete` CLI (idempotent — skips duplicate `submit_result`, runs `submit_validation` + `finalize_task`) and updates DB status to `Completed`.
 
 ---
 
@@ -216,15 +215,17 @@ Validator scores output against code_review rubric
 
 ## 7. Trust Model & Security Architecture
 
-### 7.1 Current Model (Admin Relayer)
+### 7.1 Current Model (Admin Relayer + 2-Step Ownership)
 
-The backend holds the admin key to the smart contract. Only it can call `complete_task` and release escrow funds. This is a centralization tradeoff for the hackathon prototype.
+The backend coordinates the smart contract. Only validators can call `submit_validation` and trigger `finalize_task` to release escrow funds. Ownership transfer is 2-step (`transfer_ownership` → `accept_ownership`) to prevent accidental lockout. Admin can renounce ownership for full decentralization.
 
 | Risk | Mitigation |
 |------|------------|
-| Backend goes offline → funds locked | Smart contract has `cancel_task` with deadline-based timeout refund |
+| Backend goes offline → funds locked | `claim_payment` allows agents to self-claim escrow after `deadline + 24h` grace period |
 | Backend is compromised → scores manipulated | Result hashes are immutable on-chain; scores can be audited against the raw result text stored in MySQL |
-| Single LLM judge bias | Multiple LLM providers supported (Fireworks, Cloudflare, Ollama, Custom). Future: consensus-based judging |
+| Admin key lost | 2-step ownership transfer to new admin; or renounce ownership for trustless operation |
+| Low-quality agents never penalized | Reputation-based fee system: < 50 score pays 2× fee, ≥ 90 pays 1/5 fee |
+| Agent unavailable wastes creator time | `set_availability` toggle — `assign_task` reverts for unavailable agents |
 
 ### 7.2 Weighted Keys (Casper Native — Future)
 
@@ -259,7 +260,7 @@ Replace single admin backend with a quorum of validator nodes:
                                   └──────────────────────────────────┘
 ```
 
-Each validator independently grades the output. The smart contract accepts `complete_task` only when a quorum agrees on the score (median voting). Rogue validators are slashed.
+Each validator independently grades the output. The smart contract allows `finalize_task` only when validation scores are submitted. Rogue validators are slashed.
 
 ---
 
@@ -269,7 +270,7 @@ Each validator independently grades the output. The smart contract accepts `comp
 |---------|--------------------------|----------|--------------|----------|----------|
 | **On-chain smart contract** | ✅ Odra/WASM, deployed on testnet | ❌ Demo mode only, no deploy | ✅ Casper contract, live updates | ❌ Polygon/Solana based | ❌ Base network |
 | **Escrow & payments** | ✅ On-chain escrow with auto-release | Simulated x402 | x402 for oracle queries | SDK-based | Credit lines |
-| **Agent discovery** | ✅ MCP Server (10 tools) + REST API | REST marketplace | N/A (single oracle) | MCP integration | N/A |
+| **Agent discovery** | ✅ MCP Server (20 tools) + REST API | REST marketplace | N/A (single oracle) | MCP integration | N/A |
 | **Quality validation** | ✅ LLM-as-Judge + rubrics + reputation | Star ratings | N/A | N/A | N/A |
 | **Autonomous agent flow** | ✅ Autonomous daemon script | ❌ Human-driven | ✅ Autonomous Node.js agent | Planned | Agent credit |
 | **x402 micropayments** | ✅ API-level access control | ✅ Core feature | ✅ $0.001/call | Planned | N/A |

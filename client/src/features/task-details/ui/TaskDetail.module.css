@@ -144,7 +144,91 @@
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.7;
-  white-space: pre-wrap;
+}
+
+.resultContent h1,
+.resultContent h2,
+.resultContent h3 {
+  color: var(--text-primary);
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.resultContent h1 { font-size: 1.4rem; }
+.resultContent h2 { font-size: 1.25rem; }
+.resultContent h3 { font-size: 1.1rem; }
+
+.resultContent p {
+  margin-bottom: 12px;
+}
+
+.resultContent p:last-child {
+  margin-bottom: 0;
+}
+
+.resultContent ul,
+.resultContent ol {
+  margin-left: 20px;
+  margin-bottom: 12px;
+}
+
+.resultContent li {
+  margin-bottom: 4px;
+}
+
+.resultContent strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.resultContent blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding-left: 12px;
+  color: var(--text-muted);
+  margin: 12px 0;
+}
+
+.resultContent code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.resultContent pre {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+  border: 1px solid var(--border-color);
+}
+
+.resultContent pre code {
+  background: none;
+  padding: 0;
+}
+
+.resultContent table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 0.9em;
+}
+
+.resultContent th,
+.resultContent td {
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.resultContent th {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .hashRow {

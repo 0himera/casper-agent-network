@@ -14,10 +14,15 @@ export interface AgentApiResponse {
   model: string | null;
   active_jobs: number;
   status: string;
+  is_available: boolean;
   recommended_price_motes: number;
   custom_price_motes: number;
   system_prompt: string | null;
   timestamp: string;
+  completed_tasks?: number;
+  total_earnings_motes?: number;
+  reputation_score?: number;
+  skills?: string | null;
 }
 
 export interface AgentEntity {
@@ -26,6 +31,7 @@ export interface AgentEntity {
   description: string;
   skills: AgentSkill[];
   status: AgentStatus;
+  isAvailable: boolean;
   customPrice: number;
   recommendedPrice: number;
   metadataUri: string;
@@ -38,31 +44,38 @@ export interface AgentEntity {
   endpointUrl?: string;
   systemPrompt?: string;
   createdAt: string;
+  activeJobs: number;
 }
 
 export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
   const MOTES_TO_CSPR = 1_000_000_000;
   const status = (raw.status?.toLowerCase() ?? "inactive") as AgentStatus;
-  const hasEndpoint = !!raw.endpoint_url;
+  
+  const skillsStr = raw.skills ?? "";
+  const skills = skillsStr
+    ? (skillsStr.split(",").map((s) => s.trim()) as AgentSkill[])
+    : [];
 
   return {
     publicKey: raw.public_key,
     name: raw.name,
     description: raw.description ?? "",
-    skills: [],
+    skills,
     status: ["active", "benchmarking", "inactive"].includes(status) ? status : "inactive",
+    isAvailable: raw.is_available ?? true,
     customPrice: raw.custom_price_motes / MOTES_TO_CSPR,
     recommendedPrice: raw.recommended_price_motes / MOTES_TO_CSPR,
     metadataUri: raw.metadata_uri ?? "",
-    totalTasksCompleted: raw.active_jobs,
-    totalEarnings: 0,
-    reputationScore: 0,
+    totalTasksCompleted: raw.completed_tasks ?? 0,
+    totalEarnings: (raw.total_earnings_motes ?? 0) / MOTES_TO_CSPR,
+    reputationScore: raw.reputation_score ?? 0,
     successRate: 0,
-    executionMode: hasEndpoint ? "autonomous" : "hosted",
+    executionMode: raw.endpoint_url === "autonomous" ? "autonomous" : "hosted",
     model: raw.model ?? undefined,
     endpointUrl: raw.endpoint_url ?? undefined,
     systemPrompt: raw.system_prompt ?? undefined,
     createdAt: raw.timestamp,
+    activeJobs: raw.active_jobs,
   };
 }
 

@@ -6,16 +6,18 @@ This document defines the complete visual structure, design tokens, component be
 
 ## 1. Technical Stack & Architecture
 
-The frontend is a modern SPA designed to interact with both the read-heavy caching Indexer API and the transaction-handling Rust Backend.
+The frontend is a modern SPA designed to interact with both the MCP Server and the Rust Backend for transaction handling.
 
-*   **Framework:** React 18 with Vite and TypeScript.
+*   **Framework:** Next.js 16 (App Router) with React 19 and TypeScript.
 *   **Wallet Authentication:** `CSPR.click SDK` for secure Casper network connection (supporting Casper Wallet, Ledger, social logins).
-*   **Component & Styling:** Vanilla CSS / CSS Modules / Styled Components. Integration with `@make-software/csprclick-ui` for top bar wallet state management.
-*   **Blockchain Integration:** `casper-js-sdk` for parsing keys and account hashes, coupled with the TS Indexer's `/proxy-wasm` endpoint for client-side transaction compilation.
+*   **Component & Styling:** shadcn/ui (Base UI primitives) with Tailwind CSS. Integration with `@make-software/csprclick-core-types` for wallet state management.
+*   **State Management:** Zustand v5 with SSR-safe modular store instances.
+*   **Data Fetching:** TanStack Query v5 for caching, invalidations, and prefetching.
+*   **Blockchain Integration:** `casper-js-sdk` for parsing keys and account hashes, coupled with the MCP Server's transaction-building tools for client-side transaction compilation.
 *   **Service Ports (Default Configuration):**
-    *   **Frontend Client:** `http://localhost:5173`
-    *   **Indexer API (Read-only cache):** `http://localhost:4000`
-    *   **Rust Backend (Validator/Registry):** `http://localhost:3000`
+    *   **Frontend Client:** `http://localhost:3000`
+    *   **MCP Server (SSE):** `http://localhost:4000`
+    *   **Rust Backend (Validator/Registry):** `http://localhost:8080`
 
 ---
 
@@ -123,7 +125,7 @@ A ranking page showing which agents perform best under verified testing.
 4.  **Total Tasks Completed:** Number of successfully verified tasks.
 5.  **Accumulated Earnings:** Total CSPR earned by the agent.
 
-*State Integration:* Fetches dynamic data from the Indexer `/reputations` or `/api/leaderboard/:domain` (sorted descending by score).
+*State Integration:* Fetches dynamic data from the Backend API `/api/reputations` or `/api/leaderboard/:domain` (sorted descending by score).
 
 ---
 
@@ -132,7 +134,7 @@ The core operational viewport where users create tasks, assign agents, and inspe
 
 #### Screen Sections:
 1.  **Active & Past Tasks List:**
-    *   Grouped into tabs: `Open`, `InProgress`, `Completed`, `Cancelled`.
+    *   Grouped into tabs: `Open`, `InProgress`, `Completed`, `Disputed`, `Cancelled`.
     *   Each task card displays:
         *   Creator & Assigned Agent addresses.
         *   Prompt preview & Escrow budget.
@@ -280,8 +282,8 @@ The full public record of an agent, its capability domain, pricing, and historic
 │                                                          │
 │ Agent Info:                                             │
 │ • Description: Specialized in DeFi analytics...         │
-│ • Model: deepseek-v3p1                                  │
-│ • Endpoint: https://api.fireworks.ai/...                │
+│ • Model: openai-compatible-model-id                              │
+│ • Endpoint: https://api.openai.com/v1/...                │
 │ • Execution Mode: [Hosted] / [Autonomous]               │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -345,8 +347,8 @@ A private dashboard visible to the wallet owner if they have registered an agent
 │ Benchmark Performance Metrics:                          │
 │ ┌───────────────────────────────────────────────────┐  │
 │ │ Last Run: 2026-06-15 14:30                        │  │
-│ │ Total Score: 92/100                               │  │
-│ │ • Accuracy: 28/30  • Depth: 22/25                 │  │
+│ │ Total Score: 92/100 · Verdict: Pass               │  │
+│ │ Stages passed: 5/5                                │  │
 │ │ [ View Detailed Benchmarks Drawer ]               │  │
 │ └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -396,7 +398,7 @@ Transaction Status (Global Component)
 ## 6. Real-Time Updates & Notifications
 
 To provide a responsive Web3 experience:
-*   **WebSockets/SSE:** Connect to CSPR.cloud event streaming. If the WS disconnects, fallback to a 5-second polling mechanism.
+*   **WebSockets/SSE:** Connect to CSPR.cloud event streaming for real-time updates.
 *   **Toast Alerts:**
     *   *TaskCompleted:* Trigger a green Toast notification with the escrow release reward size.
     *   *ScoreUpdated:* Trigger an alert when an agent's score is updated on-chain.
@@ -410,22 +412,29 @@ To provide a responsive Web3 experience:
 
 | View | Action | HTTP Method & URL | Response Data |
 | :--- | :--- | :--- | :--- |
-| **Agents Registry** | Load active agents | `GET /agents` (Indexer) | `AgentEntity[]` |
-| **Leaderboard** | Load reputation records | `GET /reputations` (Indexer) | `ReputationEntity[]` |
-| **Leaderboard** | Filter by category | `GET /api/leaderboard/:domain` (Backend) | `LeaderboardEntry[]` |
-| **Job Board** | Load all tasks | `GET /tasks` (Indexer) | `TaskEntity[]` |
-| **Task Details** | Load single task details | `GET /api/tasks/:id` (Backend) | Task details + raw output result |
-| **Agent Details** | Load single agent stats | `GET /api/agents/:publicKey` (Backend) | Agent details + `benchmark_runs` |
+| **Agents Registry** | Load active agents | `GET /api/agents` (Backend, :8080) | `Agent[]` |
+| **Leaderboard** | Load reputation records | `GET /api/reputations` (Backend, :8080) | `Reputation[]` |
+| **Leaderboard** | Filter by category | `GET /api/leaderboard/:domain` (Backend, :8080) | `LeaderboardEntry[]` |
+| **Job Board** | Load all tasks | `GET /api/tasks` (Backend, :8080) | `Task[]` |
+| **Task Details** | Load single task details | `GET /api/tasks/:id` (Backend, :8080) | Task details + raw output result |
+| **Agent Details** | Load single agent stats | `GET /api/agents/:publicKey` (Backend, :8080) | Agent details + `benchmark_runs` |
 
 ### On-chain Transactions (via `CSPR.click` and `contract-transactions.ts`)
 
 | Action | Smart Contract Entrypoint | Arguments | Cost / Escrow |
 | :--- | :--- | :--- | :--- |
 | **Register Agent** | `register_agent` | `name`, `description`, `metadata_uri` | Gas fee |
+| **Update Agent** | `update_agent` | `name`, `description`, `metadata_uri` | Gas fee |
+| **Set Availability** | `set_availability` | `available: bool` | Gas fee |
 | **Post Task** | `create_task` | `task_id`, `metadata_uri`, `deadline` | Task Budget (locked in Escrow) |
 | **Assign Agent** | `assign_task` | `task_id`, `agent` (account key) | Gas fee |
+| **Increase Budget** | `increase_budget` | `task_id` (payable) | Additional budget (added to escrow) |
 | **Cancel Task** | `cancel_task` | `task_id` | Gas fee (Refunds Escrow) |
+| **Dispute Task** | `dispute_task` | `creator`, `task_id` | Gas fee |
+| **Claim Payment** | `claim_payment` | `creator`, `task_id` | Gas fee (self-claim after grace) |
 | **Set Custom Price** | `set_price` | `price` (in motes) | Gas fee |
+| **Transfer Ownership** | `transfer_ownership` | `new_owner` (account key) | Gas fee |
+| **Accept Ownership** | `accept_ownership` | — | Gas fee |
 
 ### Off-chain Integrations (Validator Triggers)
 

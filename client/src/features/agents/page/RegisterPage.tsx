@@ -78,9 +78,9 @@ export default function RegisterPage() {
         name,
         description: description || null,
         metadata_uri: "https://agentnetwork.io/metadata/" + walletAddress,
-        endpoint_url: agentType === "hosted" ? null : endpoint,
-        api_key: agentType === "hosted" ? null : apiKey,
-        model: agentType === "hosted" ? null : model,
+        endpoint_url: agentType === "hosted" ? endpoint : "autonomous",
+        api_key: agentType === "hosted" ? apiKey : null,
+        model: agentType === "hosted" ? model : null,
         system_prompt: systemPrompt.trim() || null,
         skills: skills
       }, {

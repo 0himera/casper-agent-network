@@ -1,6 +1,6 @@
 import {
   Args,
-  CLTypeUInt8,
+  CLTypeUInt8, CLTypeString,
   CLValue,
   Hash,
   PublicKey,
@@ -25,7 +25,7 @@ export const buildContractTransaction = async (
   attachedMotes: string = '0'
 ): Promise<any> => {
   const contractWasm = await getProxyWasm();
-  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || 'e8e0cba1a3e6c8d2f17a51066d60ebaae764e54e5476ebb965eadff6e56dc699';
+  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || 'f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600';
 
   const innerArgs = Args.fromMap(innerArgsMap);
 
@@ -74,12 +74,14 @@ export const buildCreateTaskTx = async (
   taskId: string,
   budgetMotes: string,
   metadataUri: string,
-  deadline: number
+  deadline: number,
+  parentTaskId?: string
 ) => {
   return buildContractTransaction(senderHex, 'create_task', {
     task_id: CLValue.newCLString(taskId),
     metadata_uri: CLValue.newCLString(metadataUri),
-    deadline: CLValue.newCLUint64(deadline)
+    deadline: CLValue.newCLUint64(deadline),
+    parent_task_id: CLValue.newCLOption(parentTaskId ? CLValue.newCLString(parentTaskId) : null, CLTypeString)
   }, budgetMotes);
 };
 
@@ -113,6 +115,84 @@ export const buildCancelTaskTx = async (
   return buildContractTransaction(senderHex, 'cancel_task', {
     task_id: CLValue.newCLString(taskId)
   });
+};
+
+export const buildUpdateAgentTx = async (
+  senderHex: string,
+  name: string,
+  description: string,
+  metadataUri: string
+) => {
+  return buildContractTransaction(senderHex, 'update_agent', {
+    name: CLValue.newCLString(name),
+    description: CLValue.newCLString(description),
+    metadata_uri: CLValue.newCLString(metadataUri)
+  });
+};
+
+export const buildSetAvailabilityTx = async (
+  senderHex: string,
+  available: boolean
+) => {
+  return buildContractTransaction(senderHex, 'set_availability', {
+    available: CLValue.newCLValueBool(available)
+  });
+};
+
+export const buildIncreaseBudgetTx = async (
+  senderHex: string,
+  taskId: string,
+  additionalMotes: string
+) => {
+  return buildContractTransaction(senderHex, 'increase_budget', {
+    task_id: CLValue.newCLString(taskId)
+  }, additionalMotes);
+};
+
+export const buildDisputeTaskTx = async (
+  senderHex: string,
+  creatorHex: string,
+  taskId: string
+) => {
+  const creatorKeyStr = PublicKey.fromHex(creatorHex).accountHash().toPrefixedString();
+  const creatorKey = Key.newKey(creatorKeyStr);
+
+  return buildContractTransaction(senderHex, 'dispute_task', {
+    creator: CLValue.newCLKey(creatorKey),
+    task_id: CLValue.newCLString(taskId)
+  });
+};
+
+export const buildClaimPaymentTx = async (
+  senderHex: string,
+  creatorHex: string,
+  taskId: string
+) => {
+  const creatorKeyStr = PublicKey.fromHex(creatorHex).accountHash().toPrefixedString();
+  const creatorKey = Key.newKey(creatorKeyStr);
+
+  return buildContractTransaction(senderHex, 'claim_payment', {
+    creator: CLValue.newCLKey(creatorKey),
+    task_id: CLValue.newCLString(taskId)
+  });
+};
+
+export const buildTransferOwnershipTx = async (
+  senderHex: string,
+  newOwnerHex: string
+) => {
+  const newOwnerKeyStr = PublicKey.fromHex(newOwnerHex).accountHash().toPrefixedString();
+  const newOwnerKey = Key.newKey(newOwnerKeyStr);
+
+  return buildContractTransaction(senderHex, 'transfer_ownership', {
+    new_owner: CLValue.newCLKey(newOwnerKey)
+  });
+};
+
+export const buildAcceptOwnershipTx = async (
+  senderHex: string
+) => {
+  return buildContractTransaction(senderHex, 'accept_ownership', {});
 };
 
 export const buildNativeTransferTx = (

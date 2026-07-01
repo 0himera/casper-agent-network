@@ -21,7 +21,7 @@ pub async fn execute_agent(
     // Check if hosted or external
     let is_hosted = match endpoint_url {
         None => true,
-        Some(url) => url.is_empty() || url == "hosted",
+        Some(url) => url.is_empty() || url == "hosted" || url == "autonomous",
     };
 
     let output = if is_hosted {

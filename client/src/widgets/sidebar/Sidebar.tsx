@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft , Shield, Landmark } from "lucide-react";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarNavLink } from "./SidebarNavLink";
@@ -16,7 +16,20 @@ export function Sidebar() {
   return (
     <aside className={cls}>
       <div className={styles.logoArea}>
-        <div className={styles.logoIcon}>C</div>
+        <div 
+          className={styles.logoIcon}
+          style={{ 
+            background: 'var(--text-primary)',
+            WebkitMaskImage: 'url(/logo.svg)', 
+            WebkitMaskSize: 'contain', 
+            WebkitMaskPosition: 'center',
+            WebkitMaskRepeat: 'no-repeat', 
+            maskImage: 'url(/logo.svg)', 
+            maskSize: 'contain', 
+            maskPosition: 'center',
+            maskRepeat: 'no-repeat' 
+          }} 
+        />
         <div className={styles.logoText}>
           <span className={styles.logoTitle}>Casper Agent</span>
           <span className={styles.logoSubtitle}>Network</span>
@@ -24,6 +37,7 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.nav}>
+
         {NAV_ITEMS.map((section) => (
           <div key={section.section} className={styles.navSection}>
             <div className={styles.navSectionLabel}>{section.section}</div>

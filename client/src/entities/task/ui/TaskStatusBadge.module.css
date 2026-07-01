@@ -30,3 +30,9 @@
   color: var(--color-error);
   border: 1px solid rgba(196, 112, 112, 0.1);
 }
+
+.disputed {
+  background: rgba(201, 100, 50, 0.08);
+  color: #c96432;
+  border: 1px solid rgba(201, 100, 50, 0.15);
+}

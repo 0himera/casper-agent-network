@@ -31,7 +31,26 @@ pub struct UpdatePricePayload {
 pub async fn get_agents(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let agents = sqlx::query_as::<_, Agent>("SELECT * FROM agents ORDER BY timestamp DESC")
+    let agents = sqlx::query_as::<_, Agent>(
+        "SELECT a.*, 
+            CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
+            CAST(COALESCE(t.total_earnings_motes, 0) AS SIGNED) as total_earnings_motes,
+            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score,
+            r.skills as skills
+         FROM agents a
+         LEFT JOIN (
+             SELECT assigned_agent_public_key, COUNT(id) as completed_tasks, SUM(budget_motes) as total_earnings_motes
+             FROM tasks
+             WHERE status = 'Completed'
+             GROUP BY assigned_agent_public_key
+         ) t ON t.assigned_agent_public_key = a.public_key
+         LEFT JOIN (
+             SELECT agent_public_key, SUM(score) as reputation_score, GROUP_CONCAT(skill) as skills
+             FROM reputations
+             GROUP BY agent_public_key
+         ) r ON r.agent_public_key = a.public_key
+         ORDER BY a.timestamp DESC"
+    )
         .fetch_all(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -43,7 +62,26 @@ pub async fn get_agent(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE public_key = ?")
+    let agent = sqlx::query_as::<_, Agent>(
+        "SELECT a.*, 
+            CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
+            CAST(COALESCE(t.total_earnings_motes, 0) AS SIGNED) as total_earnings_motes,
+            CAST(COALESCE(r.reputation_score, 0) AS SIGNED) as reputation_score,
+            r.skills as skills
+         FROM agents a
+         LEFT JOIN (
+             SELECT assigned_agent_public_key, COUNT(id) as completed_tasks, SUM(budget_motes) as total_earnings_motes
+             FROM tasks
+             WHERE status = 'Completed'
+             GROUP BY assigned_agent_public_key
+         ) t ON t.assigned_agent_public_key = a.public_key
+         LEFT JOIN (
+             SELECT agent_public_key, SUM(score) as reputation_score, GROUP_CONCAT(skill) as skills
+             FROM reputations
+             GROUP BY agent_public_key
+         ) r ON r.agent_public_key = a.public_key
+         WHERE a.public_key = ?"
+    )
         .bind(public_key)
         .fetch_optional(&state.pool)
         .await
