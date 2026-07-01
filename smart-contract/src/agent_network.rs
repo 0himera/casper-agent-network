@@ -51,6 +51,7 @@ pub struct Task {
     pub result_hash: String,
     pub metadata_uri: String,
     pub deadline: u64,
+    pub parent_task_id: Option<String>,
 }
 
 #[odra::odra_type]
@@ -101,6 +102,7 @@ pub struct TaskCreated {
     pub creator: Address,
     pub budget: U512,
     pub deadline: u64,
+    pub parent_task_id: Option<String>,
 }
 
 #[odra::event]
@@ -142,6 +144,18 @@ pub struct ReputationDecayed {
     pub skill: String,
     pub new_weighted_sum: u64,
     pub new_total_weight: u64,
+}
+
+
+#[odra::event]
+pub struct TreasuryDistributed {
+    pub agent: Address,
+    pub amount: U512,
+}
+
+#[odra::event]
+pub struct TreasuryBurned {
+    pub amount: U512,
 }
 
 #[odra::event]
@@ -597,7 +611,7 @@ impl AgentNetwork {
     }
 
     #[odra(payable)]
-    pub fn create_task(&mut self, task_id: String, metadata_uri: String, deadline: u64) {
+    pub fn create_task(&mut self, task_id: String, metadata_uri: String, deadline: u64, parent_task_id: Option<String>) {
         let caller = self.env().caller();
         let attached_value = self.env().attached_value();
         let current_time = self.env().get_block_time();
@@ -627,6 +641,7 @@ impl AgentNetwork {
             result_hash: String::new(),
             metadata_uri,
             deadline,
+            parent_task_id: parent_task_id.clone(),
         };
 
         self.tasks.set(&key, task);
@@ -635,6 +650,7 @@ impl AgentNetwork {
             creator: caller,
             budget: attached_value,
             deadline,
+            parent_task_id,
         });
     }
 
@@ -1017,6 +1033,32 @@ impl AgentNetwork {
         if median_score < LOW_SCORE_THRESHOLD {
             self.apply_slash(agent, SLASH_LOW_SCORE_BPS);
         }
+    }
+
+
+    pub fn distribute_treasury(&mut self, agent: Address, amount: U512) {
+        self.assert_admin();
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        if amount > treasury {
+            self.env().revert(ContractErrors::ArithmeticOverflow);
+        }
+        treasury -= amount;
+        self.treasury_balance.set(treasury);
+        self.env().transfer_tokens(&agent, &amount);
+        self.env().emit_event(TreasuryDistributed { agent, amount });
+    }
+
+    pub fn burn_treasury(&mut self, amount: U512) {
+        self.assert_admin();
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        if amount > treasury {
+            self.env().revert(ContractErrors::ArithmeticOverflow);
+        }
+        treasury -= amount;
+        self.treasury_balance.set(treasury);
+        // By decrementing the internal balance without transferring, 
+        // the tokens are permanently locked in the contract (burned).
+        self.env().emit_event(TreasuryBurned { amount });
     }
 
     pub fn sync_decayed_reputation(
@@ -1547,10 +1589,7 @@ mod tests {
         env.set_caller(admin);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.with_tokens(budget).create_task(
-                "past_task".to_string(),
-                "https://meta".to_string(),
-                0,
-            );
+                "past_task".to_string(), "https://meta".to_string(), 0, None);
         }));
         assert!(result.is_err(), "Should reject deadline=0");
     }
@@ -1565,10 +1604,7 @@ mod tests {
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task(
-            "task_01".to_string(),
-            "https://task_meta".to_string(),
-            deadline,
-        );
+            "task_01".to_string(), "https://task_meta".to_string(), deadline, None);
 
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Open);
@@ -1612,10 +1648,7 @@ mod tests {
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task(
-            "task_01".to_string(),
-            "https://meta".to_string(),
-            deadline,
-        );
+            "task_01".to_string(), "https://meta".to_string(), deadline, None);
 
         let balance_before = env.balance_of(&admin);
         contract.cancel_task("task_01".to_string());
@@ -1636,7 +1669,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("task_01".to_string(), agent);
 
         let contract_address = contract.address();
@@ -1673,7 +1706,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -1697,7 +1730,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
@@ -1707,7 +1740,7 @@ mod tests {
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.weighted_sum / rep.total_weight, 90);
 
-        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t2".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t2".to_string(), "hash".to_string());
@@ -1780,10 +1813,10 @@ mod tests {
         contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
 
         env.set_caller(_admin);
-        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline, None);
 
         env.set_caller(agent);
-        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline, None);
 
         let task_a = contract.get_task(_admin, "shared_id".to_string()).unwrap();
         let task_b = contract.get_task(agent, "shared_id".to_string()).unwrap();
@@ -1800,7 +1833,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -1825,7 +1858,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -1860,7 +1893,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -1910,7 +1943,7 @@ mod tests {
         assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 500);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
@@ -1926,7 +1959,7 @@ mod tests {
         assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 100);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t2".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t2".to_string(), "hash".to_string());
@@ -1954,7 +1987,7 @@ mod tests {
         assert!(!contract.get_agent(agent).unwrap().is_available);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
         }));
@@ -1977,7 +2010,7 @@ mod tests {
         let deadline = env.block_time() + 3_600_000;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
 
         let task = contract.get_task(admin, "t1".to_string()).unwrap();
         assert_eq!(task.budget, budget);
@@ -2026,7 +2059,7 @@ mod tests {
         // No stake — should fail
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
@@ -2064,7 +2097,7 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
 
         env.set_caller(agent);
@@ -2090,7 +2123,7 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
 
         // Agent doesn't submit, deadline passes
@@ -2115,7 +2148,7 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
 
         env.set_caller(agent);
@@ -2184,7 +2217,7 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
         contract.assign_task("t1".to_string(), agent);
 
         // Agent has active job — cannot unstake
@@ -2216,7 +2249,7 @@ mod tests {
         }
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
@@ -2281,7 +2314,7 @@ mod tests {
 
         // Create task
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t_yuma".to_string(), "meta".to_string(), deadline);
+        contract.with_tokens(budget).create_task("t_yuma".to_string(), "meta".to_string(), deadline, None);
         contract.assign_task("t_yuma".to_string(), agent);
 
         // Submit result
