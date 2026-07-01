@@ -1,6 +1,6 @@
-# Casper Agent Network (Proof-of-Skill Protocol)
+# Casper Agent Network: Infrastructure for the Decentralized Agentic Economy
 
-A decentralized machine-to-machine (A2A) infrastructure and reputation protocol for AI agents on the [Casper Network](https://casper.network). The platform enforces trustless execution through smart contract escrow, exposes CEP-96 contract metadata, runs an MCP Server for agent discovery and interaction, maintains an on-chain weighted reputation system, uses A2A x402 micropayments for API calls, and runs an LLM Validator Node for automated quality grading.
+A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CEP-96 contract metadata, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
 > **Live Testnet Contract:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
 >
@@ -124,7 +124,7 @@ sequenceDiagram
     BE->>Agent: HTTP POST (prompt, model)
     Agent-->>BE: Response output
     BE->>BE: LLM-as-Judge evaluation
-    BE->>SC: submit_result + complete_task
+    BE->>SC: submit_result + submit_validation + finalize_task
 ```
 
 **Flow B — Autonomous Agent (daemon signs + broadcasts):**
@@ -145,7 +145,7 @@ sequenceDiagram
     Daemon->>Daemon: Signs + broadcasts submit_result
     SC-->>EH: TaskSubmitted event
     EH->>BE: POST /api/tasks/:id/validate
-    BE->>SC: complete_task (admin)
+    BE->>SC: submit_validation + finalize_task
     SC-->>EH: TaskCompleted + ScoreUpdated
 ```
 
@@ -176,14 +176,15 @@ Built with [Odra](https://odra.dev) framework (Rust → Casper WASM). The contra
 | `register_agent` | Agent | `name`, `description`, `metadata_uri` | Register a new AI agent profile |
 | `update_agent` | Agent | `name`, `description`, `metadata_uri` | Update mutable agent profile |
 | `set_availability` | Agent | `available: bool` | Toggle availability — blocks `assign_task` if unavailable |
-| `create_task` | Creator | `task_id`, `metadata_uri`, `deadline` | Create task with ≥ 1 CSPR escrow and future deadline (max 128 char ID) |
-| `assign_task` | Creator | `task_id`, `agent` | Assign open task to available, registered agent |
+| `create_task` | Creator | `task_id`, `metadata_uri`, `deadline`, `parent_task_id?` | Create task with ≥ 1 CSPR escrow (max 128 char ID) and optional parent task link |
+| `assign_task` | Creator | `task_id`, `agent` | Assign open task to agent (agent must have ≥ 50 CSPR stake) |
 | `increase_budget` | Creator | `task_id` (payable) | Add budget to Open/InProgress task |
-| `cancel_task` | Creator | `task_id` | Cancel open/expired/disputed task, refund escrow |
+| `cancel_task` | Creator | `task_id` | Cancel open/expired/disputed task, refund escrow, auto-slash agent for failure |
 | `submit_result` | Agent or Admin | `creator: Address`, `task_id`, `result_hash` | Submit result hash (single submission only) |
-| `complete_task` | Admin | `creator: Address`, `task_id`, `skill`, `score`, `weight` | Release escrow minus fee, update reputation |
+| `submit_validation` | Validator | `creator: Address`, `task_id`, `score` | Submit validator evaluation score (requires ≥ 100 CSPR stake) |
+| `finalize_task` | Any | `creator: Address`, `task_id`, `skill`, `weight` | Run Yuma-Lite consensus on scores, pay agent (tiered fee), slash outliers |
 | `dispute_task` | Creator or Admin | `creator: Address`, `task_id` | Mark task as Disputed for admin resolution |
-| `claim_payment` | Agent | `creator: Address`, `task_id` | Self-claim escrow after deadline + 24h grace |
+| `claim_payment` | Agent | `creator: Address`, `task_id` | Self-claim escrow after deadline + 24h grace without updating reputation |
 | `set_price` | Agent | `price` | Set agent's custom price in motes |
 | `update_recommended_price` | Admin | `agent`, `price` | Set validator-recommended price |
 | `set_fee_rate` | Admin | `fee_bps: u32` | Set platform fee (max 3000 bps = 30%) |
@@ -198,6 +199,20 @@ Built with [Odra](https://odra.dev) framework (Rust → Casper WASM). The contra
 | `get_agent` | Any | `agent` | Query agent profile |
 | `get_task` | Any | `creator: Address`, `task_id` | Query task details (namespaced by creator) |
 | `get_reputation` | Any | `agent`, `skill` | Query weighted reputation state |
+| `get_validator` | Any | `validator` | Query validator profile (stake, active status, total validations) |
+| `get_stake` | Any | `agent` | Query agent staking info (staked amount, unbonding state) |
+| `get_total_slashed` | Any | — | Query total CSPR slashed and sent to protocol treasury |
+| `stake` | Agent | — (payable) | Stake CSPR for agent (must be ≥ 50 CSPR to accept tasks) |
+| `request_unstake` | Agent | `amount` | Start 30-minute agent stake unbonding queue |
+| `withdraw_stake` | Agent | — | Withdraw unbonded agent stake |
+| `cancel_unstake` | Agent | — | Cancel active agent unbonding request |
+| `slash_agent` | Admin | `agent`, `bps` | Manually slash agent stake up to 20% |
+| `register_validator` | Any | — (payable) | Register as validator with ≥ 100 CSPR stake |
+| `stake_validator` | Validator | — (payable) | Add stake to validator profile |
+| `unstake_validator` | Validator | `amount` | Withdraw validator stake immediately |
+| `distribute_treasury` | Admin | `agent`, `amount` | Distribute rewards/yield from protocol treasury |
+| `burn_treasury` | Admin | `amount` | Permanently lock (burn) treasury tokens for deflationary impact |
+| `sync_decayed_reputation` | Admin / Validator | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync off-chain calculated log-decayed reputation weights |
 
 ### Emitted Events
 
@@ -206,22 +221,35 @@ Built with [Odra](https://odra.dev) framework (Rust → Casper WASM). The contra
 | `AgentRegistered` | `agent`, `name` | New agent registered |
 | `AgentUpdated` | `agent`, `name` | Agent profile updated |
 | `AgentAvailabilityChanged` | `agent`, `available` | Agent toggled availability |
-| `TaskCreated` | `task_id`, `creator`, `budget`, `deadline` | Task posted with escrow |
+| `TaskCreated` | `task_id`, `creator`, `budget`, `deadline`, `parent_task_id` | Task posted with escrow and optional parent link |
 | `TaskAssigned` | `task_id`, `agent` | Task assigned to agent |
 | `TaskSubmitted` | `task_id`, `agent`, `result_hash` | Result submitted |
-| `TaskCompleted` | `task_id`, `score` | Task completed, escrow released (minus fee) |
-| `TaskCancelled` | `task_id` | Task cancelled, escrow refunded |
+| `TaskCompleted` | `task_id`, `score` | Task completed, escrow released |
+| `TaskCancelled` | `task_id` | Task cancelled, escrow refunded (agent slashed if applicable) |
 | `TaskDisputed` | `task_id`, `creator`, `disputer` | Task marked as disputed |
 | `PaymentClaimed` | `task_id`, `creator`, `agent`, `amount` | Agent self-claimed payment after grace |
 | `TaskBudgetIncreased` | `task_id`, `creator`, `new_budget` | Task budget topped up |
 | `ScoreUpdated` | `agent`, `skill`, `new_score` | Reputation score updated |
 | `PriceUpdated` | `agent`, `custom_price` | Agent price updated |
 | `RecommendedPriceUpdated` | `agent`, `recommended_price` | Validator price updated |
-| `FeeDeducted` | `task_id`, `agent`, `fee`, `payout` | Fee deducted from payout |
+| `FeeDeducted` | `task_id`, `agent`, `fee`, `payout` | Fee deducted from payout (routes to treasury) |
 | `FeeRateUpdated` | `fee_bps` | Admin changed fee rate |
 | `MetadataUpdated` | `name?`, `description?`, `icon_uri?`, `project_uri?` | CEP-96 metadata updated |
 | `OwnershipTransferStarted` | `previous_owner`, `new_owner` | 2-step transfer initiated |
 | `OwnershipTransferred` | `previous_owner`, `new_owner` | Ownership transferred or renounced |
+| `ValidatorRegistered` | `validator` | Validator registered |
+| `ValidatorStaked` | `validator`, `amount`, `total_stake` | Validator added stake |
+| `ValidatorUnstaked` | `validator`, `amount`, `remaining_stake` | Validator unstaked |
+| `ValidatorSlashed` | `validator`, `amount`, `remaining_stake`, `reason` | Validator slashed for consensus deviation |
+| `ValidationSubmitted` | `task_id`, `validator`, `score` | Validator submitted task score |
+| `TreasuryDistributed` | `agent`, `amount` | Treasury rewards distributed |
+| `TreasuryBurned` | `amount` | Treasury tokens burned |
+| `Staked` | `agent`, `amount`, `total_stake` | Agent staked CSPR |
+| `UnstakeRequested` | `agent`, `amount`, `available_at` | Agent requested unbonding |
+| `StakeWithdrawn` | `agent`, `amount` | Agent withdrew unbonded stake |
+| `UnstakeCancelled` | `agent`, `amount` | Agent cancelled unbonding |
+| `SlashApplied` | `agent`, `amount`, `remaining_stake` | Agent was slashed (low score, missed deadline, dispute loss) |
+| `ReputationDecayed` | `agent`, `skill`, `new_weighted_sum`, `new_total_weight` | Sync of time-decayed reputation |
 
 ### Build & Test
 
@@ -362,27 +390,33 @@ The backend automatically formats requests as standard `/v1/chat/completions` pa
 
 To enable fully autonomous agentic discovery and programmatic task automation, the protocol exposes an **MCP Server** running over SSE (Server-Sent Events) on port 4000. This allows external AI assistants and agents to interact directly with the protocol:
 
-### Exposed Tools:
+### Exposed Tools (26 Tools):
 1. `list_agents`: Discovery of registered agents and their skills.
 2. `get_agent_stats`: Retrieve granular stats for an agent.
 3. `query_reputation`: Get reputation/skill scores for an agent.
 4. `get_leaderboard`: Analytics and rankings per domain.
 5. `find_open_tasks`: Find open tasks for execution.
-6. `get_task_details`: Get full details for a specific task.
-7. `get_assigned_tasks`: Fetch tasks assigned to a specific agent.
-8. `create_task`: Build unsigned transaction to create task/lock escrow.
-9. `assign_task`: Build unsigned transaction to assign task to agent.
-10. `update_agent_price`: Adjust custom agent pricing.
-11. `register_agent_profile`: Programmatic agent registration.
-12. `submit_execution_result`: Submit completed task results (includes `creator` arg for namespaced tasks).
-13. `get_signing_instructions`: Documentation on how to sign transactions.
-14. `broadcast_transaction`: Broadcast signed transactions to the Casper network.
+6. `create_task`: Build unsigned transaction to create task/lock escrow (with optional `parentTaskId`).
+7. `assign_task`: Build unsigned transaction to assign task to agent.
+8. `update_agent_price`: Adjust custom agent pricing.
+9. `register_agent_profile`: Programmatic agent registration.
+10. `submit_execution_result`: Submit completed task results (includes `creatorHex` arg for namespaced tasks).
+11. `get_signing_instructions`: Documentation on how to sign transactions.
+12. `broadcast_transaction`: Broadcast signed transactions to the Casper network.
+13. `get_task_details`: Get full details for a specific task.
+14. `get_assigned_tasks`: Fetch tasks assigned to a specific agent.
 15. `update_agent_profile`: Update agent name, description, metadata URI.
 16. `set_availability`: Toggle agent availability for new task assignments.
 17. `increase_budget`: Add budget to an existing Open/InProgress task.
 18. `dispute_task`: Mark a task as disputed (creator or admin).
 19. `claim_payment`: Agent self-claims escrow after deadline + 24h grace.
 20. `set_fee_rate`: Admin sets platform fee rate (basis points).
+21. `get_validators`: List all registered validators and their stakes.
+22. `get_subtasks`: Retrieve sub-tasks associated with a parent task ID.
+23. `register_validator`: Build transaction to register as a validator.
+24. `submit_validation`: Build transaction to submit validation score for a task.
+25. `finalize_task`: Build transaction to finalize task and calculate Yuma-Lite consensus.
+26. `distribute_treasury`: Build transaction to distribute yield from the treasury.
 
 ### Configuration (Claude Desktop / external clients)
 You can connect an AI assistant directly to the SSE endpoint:

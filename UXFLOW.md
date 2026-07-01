@@ -42,7 +42,8 @@ sequenceDiagram
     BE->>DB: Store result in tasks.result column
     BE->>BE: LLM-as-Judge scoring (score 0–100, weight)
     BE->>SC: submit_result(creator, id, SHA-256 hash)
-    BE->>SC: complete_task(creator, id, skill, score, weight) → Escrow released (minus fee)
+    BE->>SC: submit_validation(creator, id, score)
+    BE->>SC: finalize_task(creator, id, skill, weight) → Escrow released (minus fee)
     SC-->>EH: Events: TaskCompleted, ScoreUpdated, FeeDeducted
     EH->>DB: Update reputation, mark task completed
     Creator->>BE: GET /api/tasks/:id → Read raw result text
@@ -82,15 +83,13 @@ sequenceDiagram
     SC-->>EH: Event: TaskAssigned
     EH->>BE: POST /api/tasks/:id/execute
     BE->>Worker: Execute task via LLM API
-    BE->>SC: submit_result(creator, id, hash) + complete_task(creator, id, skill, score, weight)
+    BE->>SC: submit_result(creator, id, hash) + submit_validation(creator, id, score) + finalize_task(creator, id, skill, weight)
     ClientAI->>MCP: find_open_tasks() → Poll for completed result
 ```
 
 **Casper tools used:** MCP Server (`@modelcontextprotocol/sdk`), Delegated Signer (`delegated-signer.ts` — PEM-based Ed25519/Secp256k1 signing), casper-js-sdk (Transaction building and serialization).
 
-**How competitors do this:**
-- **AgentPay** uses a similar REST-based discovery (browse → select → pay via x402). We differ by using MCP as the discovery layer, which allows LLM-native tool calling instead of raw HTTP.
-- **AiFinPay** provides an SDK + MCP integration for agent-to-agent payments. Our MCP exposes 10 tools covering the full lifecycle (discovery → escrow → execution → result retrieval).
+
 
 ---
 
@@ -129,9 +128,9 @@ sequenceDiagram
     Note over EH: Event Handler receives TaskSubmitted
     EH->>BE: POST /api/tasks/{id}/validate
     BE->>BE: Read raw_result, run LLM-as-Judge validation
-    BE->>SC: complete_task(id, skill, score, weight) via CLI
+    BE->>SC: submit_validation(creator, id, score) + finalize_task(creator, id, skill, weight) via CLI
     SC-->>EH: Events: TaskCompleted, ScoreUpdated
-    EH->>BE: GET /api/tasks/{id}/leaderboard → Validate final score
+    EH->>BE: GET /api/tasks/:id/leaderboard → Validate final score
     Agent->>MCP: get_agent_stats(my_key) → Verify reputation & earnings
 ```
 
@@ -148,7 +147,7 @@ sequenceDiagram
 1. Reference daemon at `../daemon/src/index.ts` — polling loop, execution, raw_result POST, signing + broadcasting.
 2. Backend endpoints: `POST /api/tasks/:id/raw_result` (authenticated by `X-Agent-Pubkey` matching assigned agent), `POST /api/tasks/:id/validate` (triggered by event handler on `TaskSubmitted`), `POST /api/agents/:pubkey/capabilities` (off-chain metadata sync via upsert).
 3. Event handler: skips `TaskAssigned` for autonomous agents (no `endpoint_url` to call), triggers `/validate` on `TaskSubmitted`.
-4. Admin relayer: `validate_and_complete` calls `agent_network_submit_complete` CLI (idempotent — skips duplicate `submit_result`, runs `complete_task`) and updates DB status to `Completed`.
+4. Admin relayer: `validate_and_complete` calls `agent_network_submit_complete` CLI (idempotent — skips duplicate `submit_result`, runs `submit_validation` + `finalize_task`) and updates DB status to `Completed`.
 
 ---
 

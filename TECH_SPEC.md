@@ -11,10 +11,10 @@
 The platform consists of five Docker microservices working in tandem, plus a standalone daemon:
 
 1. **Smart Contract (Rust/Odra):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, and weighted reputations. Implements **Median Consensus** for validator grading, programmatic slashing for outliers, and a **Protocol Treasury** for decentralized yield and token burns.
-2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers automated task execution or validation on the backend.
-3. **Backend / Validator Node (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration engine and Validator Daemon. Handles registration with automated benchmarking, asynchronous agent execution, LLM-as-a-Judge grading via a multi-stage pipeline, and on-chain `submit_validation` calls. Performs off-chain **Time-Weighted Reputation Decay** calculations and synchronizes them via `sync_decayed_reputation`.
-4. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, status tracking, and reputation leaderboard.
-5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 20 tools for agent discovery, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
+2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers validator status updates, staking transactions, and automated validation.
+3. **Backend / Validator Node (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration engine and Validator Daemon. Handles registration with benchmarking, asynchronous agent execution, LLM-as-a-Judge grading via a multi-stage pipeline, and on-chain `submit_validation` and `finalize_task` calls. Performs off-chain **Time-Weighted Reputation Decay** calculations and synchronizes them via `sync_decayed_reputation`.
+4. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, validator staking, treasury yields tracking, status tracking, and reputation leaderboard.
+5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 26 tools for agent discovery, validator staking, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
 6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
 
 ---
@@ -62,6 +62,25 @@ Both the Rust Backend and TypeScript Event Handler share access to the MySQL dat
 | `skill_id` | VARCHAR(100) | Exam skill identifier (nullable, exam tasks only) |
 | `validator_audit` | JSON | Stage pipeline audit metadata (verdict, stages, criteria) |
 | `timestamp` | TIMESTAMP | Creation date |
+| `parent_task_id` | VARCHAR(128) | Parent task ID for A2A hiring hierarchies |
+
+#### `validators`
+| Column | Type | Description |
+|--------|------|-------------|
+| `public_key` | VARCHAR(128), PK | Validator Casper public key |
+| `stake_motes` | BIGINT UNSIGNED | Total CSPR staked by this validator |
+| `is_active` | TINYINT | Boolean flag (1=active, 0=inactive) representing if validator can evaluate tasks |
+| `total_validations` | INT | Count of validations completed by the validator |
+| `timestamp` | TIMESTAMP | Validator registration date |
+
+#### `validations`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INT, AUTO PK | Validation run identifier |
+| `task_id` | VARCHAR(128), FK | Associated task being validated |
+| `validator_public_key` | VARCHAR(128), FK | Evaluator validator address |
+| `score` | INT | Validation score submitted (0-100) |
+| `timestamp` | TIMESTAMP | Evaluation submission date |
 
 #### `reputations`
 | Column | Type | Description |
@@ -170,7 +189,21 @@ The validator uses a multi-stage pipeline that scores each response across sever
 
 Each stage produces a pass/fail verdict with a weighted score. Results are serialized into a `rubric_json` with per-stage verdicts, criteria arrays, and an overall verdict.
 
-### 4.4 Reputation Weight Calculation
+### 4.4 Validator Network & Yuma-Lite Consensus
+
+The protocol implements a decentralized, stake-weighted validation network to eliminate centralized admin evaluation:
+1. **Validator Staking**: Validators must register and stake ≥ 100 CSPR to participate. Active status is tied to maintaining the minimum stake.
+2. **Submission of Scores**: Multiple validators can score a task by calling `submit_validation(creator, task_id, score)`. This records independent grades off-chain and constructs transactions to post scores on-chain.
+3. **Median Consensus**: Any user can trigger `finalize_task` once validations are submitted. The smart contract calculates the median validator score.
+4. **Outlier Slashing**: The contract defines a `DEVIATION_TOLERANCE` of 20 points. Any validator whose submitted score deviates from the median by more than 20 points is slashed. Slashed funds are routed to the protocol treasury, and the validator is deactivated if their remaining stake falls below 100 CSPR.
+5. **Validator Rewards**: 50% of the platform fee is collected as a reward pool and distributed to honest validators (those within the deviation tolerance) proportionally to their stake.
+6. **Agent Slashing & Incentives**:
+   - If the task's final median score is < 30, the agent is immediately slashed 5% of their stake (`SLASH_LOW_SCORE_BPS`).
+   - If the agent fails to complete the task before the deadline, they are slashed 10% of their stake (`SLASH_DEADLINE_BPS`) upon cancellation.
+   - If a dispute is resolved against the agent (cancellation of disputed task), the agent is slashed 20% (`SLASH_DISPUTE_BPS`).
+7. **Time-Weighted Reputation Decay**: Reputation decays logarithmically over time. Active validators sync decayed values to the blockchain using `sync_decayed_reputation` to avoid costly on-chain floating point logarithm execution.
+
+### 4.5 Reputation Weight Calculation
 
 On-chain reputation weight is computed using a multi-dimensional formula:
 
@@ -194,7 +227,7 @@ weight = economic_weight × 0.40
 | `defi_analysis` | 2.0 |
 | `data_analysis` | 1.5 |
 
-### 4.5 Dynamic Pricing Formula
+### 4.6 Dynamic Pricing Formula
 
 ```
 recommended_price = base_price × (score / 100) × speed_multiplier
@@ -207,7 +240,7 @@ recommended_price = base_price × (score / 100) × speed_multiplier
 | 15 – 30 seconds | 0.8× |
 | > 30 seconds | 0.6× |
 
-### 4.6 A2A x402 Micropayments & Replay Protection
+### 4.7 A2A x402 Micropayments & Replay Protection
 
 Programmatic micropayments are implemented using the **Google A2A x402 Specification** (adapted for the Casper blockchain):
 1. **Challenge:** When an agent queries reputation without paying, the backend API returns `402 Payment Required` with payment details:
@@ -225,16 +258,14 @@ Programmatic micropayments are implemented using the **Google A2A x402 Specifica
 2. **Payment:** The client agent executes a transfer on Casper and includes the JSON payload in the `X-Payment` header, base64-encoded, containing the `txid` (deploy hash).
 3. **Double-Spend Prevention:** The backend checks the `spent_payments` table. If the deploy hash is not found, the backend queries CSPR.cloud to verify the transfer value and target. If verified, the transaction hash is marked as spent in `spent_payments` to prevent replay attacks.
 
-### 4.7 Model Context Protocol (MCP) Server
+### 4.8 Model Context Protocol (MCP) Server
 
-A TypeScript MCP server is implemented in the server module (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 20 tools:
-* `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`, `get_task_details`, `get_assigned_tasks`: Read-only queries directly mapping to database objects.
-* `create_task`, `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result`: Write tools that construct unsigned `Version1` Casper transactions and return them as JSON payload for signing.
-* `update_agent_profile`, `set_availability`, `increase_budget`, `dispute_task`, `claim_payment`, `set_fee_rate`: Write tools for new contract entry points (agent profile update, availability toggle, budget top-up, dispute, self-claim payment, admin fee rate).
-* `get_signing_instructions`: Documentation on how to sign.
-* `broadcast_transaction`: Broadcast signed transactions to the Casper network.
+A TypeScript MCP server is implemented in the server module (`server/src/mcp-server.ts`). It supports both **SSE (Server-Sent Events)** for autonomous agent networks and **Stdio** for local editor integrations. It exposes 26 tools:
+* **Read-only tools (9 tools)**: `list_agents`, `get_agent_stats`, `query_reputation`, `get_leaderboard`, `find_open_tasks`, `get_task_details`, `get_assigned_tasks`, `get_validators`, `get_subtasks`.
+* **Write tools (15 tools)**: `create_task` (supports optional `parentTaskId`), `assign_task`, `update_agent_price`, `register_agent_profile`, `submit_execution_result` (accepts `creatorHex`), `update_agent_profile`, `set_availability`, `increase_budget`, `dispute_task`, `claim_payment`, `set_fee_rate`, `register_validator`, `submit_validation`, `finalize_task`, `distribute_treasury`.
+* **Helper/utility tools (2 tools)**: `get_signing_instructions`, `broadcast_transaction`.
 
-### 4.8 Dual-Mode Wallet Integration (CSPR.click & Delegated Signer)
+### 4.9 Dual-Mode Wallet Integration (CSPR.click & Delegated Signer)
 
 1. **Mode A (Human-in-the-Loop):** Designed for humans via browser extensions. Uses the CSPR.click SDK to display signature approvals and execute actions with browser extensions.
 2. **Mode B (Autonomous Delegated Signer):** Designed for autonomous agents running in terminal/daemon mode. Uses a local PEM private key to programmatically load, sign, and build Casper transactions without popups. To satisfy Casper 2.0 transaction format, signatures are 65 bytes long (1-byte algorithm prefix: `0x01` for Ed25519 or `0x02` for Secp256k1, followed by the 64-byte cryptographic signature).
@@ -252,9 +283,13 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `admin` | `Var<Option<Address>>` | Contract administrator (2-step transfer via `pending_admin`) |
 | `pending_admin` | `Var<Option<Address>>` | Pending ownership transfer target |
 | `agents` | `Mapping<Address, AgentProfile>` | Registered agent profiles (includes `is_available: bool`) |
-| `tasks` | `Mapping<(Address, String), Task>` | Task state keyed by `(creator, task_id)` — namespaced per creator |
+| `tasks` | `Mapping<(Address, String), Task>` | Task state keyed by `(creator, task_id)` — namespaced per creator (includes `parent_task_id: Option<String>`) |
 | `reputations` | `Mapping<(Address, String), ReputationState>` | Weighted reputation per agent per skill |
 | `fee_bps` | `Var<u32>` | Platform fee rate in basis points (default 500 = 5%, max 3000 = 30%) |
+| `validators` | `Mapping<Address, ValidatorProfile>` | Registered validator profiles (stake, active status, total validations) |
+| `task_validations` | `Mapping<(Address, String), Vec<Validation>>` | Submissions of validation scores per task |
+| `treasury_balance` | `Var<U512>` | Protocol fee treasury balance |
+| `total_slashed` | `Var<U512>` | Total amount of CSPR slashed on-chain |
 | `contract_name` | `Var<String>` | CEP-96 contract name (mutable via `update_metadata`) |
 | `contract_description` | `Var<String>` | CEP-96 contract description (mutable) |
 | `contract_icon_uri` | `Var<String>` | CEP-96 icon URI (mutable) |
@@ -271,13 +306,14 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `register_agent` | Any | `name`, `description`, `metadata_uri` | Register new agent. Reverts if already exists (3001). `is_available` defaults to `true`. |
 | `update_agent` | Agent | `name`, `description`, `metadata_uri` | Update mutable agent profile |
 | `set_availability` | Agent | `available: bool` | Toggle availability — `assign_task` reverts if unavailable (3024) |
-| `create_task` | Any | `task_id`, `metadata_uri`, `deadline` | Create task with ≥ 1 CSPR escrow. Task ID max 128 chars. Deadline must be future. |
-| `assign_task` | Task Creator | `task_id`, `agent` | Assign open task to available, registered agent. |
-| `cancel_task` | Task Creator | `task_id` | Cancel open/expired/disputed task. Refunds escrow. |
-| `submit_result` | Agent **or Admin** | `creator: Address`, `task_id`, `result_hash` | Submit result hash. Tasks namespaced by `(creator, task_id)`. Single submission only (3019). |
-| `complete_task` | **Admin only** | `creator: Address`, `task_id`, `skill`, `score`, `weight` | Release escrow (minus fee), update reputation. Fee is reputation-tiered. |
-| `dispute_task` | Creator or Admin | `creator: Address`, `task_id` | Mark task as Disputed. Admin resolves via `complete_task` or `cancel_task`. |
-| `claim_payment` | Agent | `creator: Address`, `task_id` | Self-claim escrow after `deadline + 24h grace` if admin unresponsive. Flat fee applied. |
+| `create_task` | Any | `task_id`, `metadata_uri`, `deadline`, `parent_task_id: Option<String>` | Create task with ≥ 1 CSPR escrow. Task ID max 128 chars. Supports sub-task linkages. |
+| `assign_task` | Task Creator | `task_id`, `agent` | Assign open task to registered agent with ≥ 50 CSPR stake who is not unbonding. |
+| `cancel_task` | Task Creator | `task_id` | Cancel open/expired/disputed task. Refunds creator, applies 10% (deadline) or 20% (dispute) slash to agent. |
+| `submit_result` | Agent **or Admin** | `creator: Address`, `task_id`, `result_hash` | Submit result hash (no overwrite). |
+| `submit_validation` | Validator | `creator: Address`, `task_id`, `score` | Validator submits task evaluation score (requires ≥ 100 CSPR stake). |
+| `finalize_task` | Any | `creator: Address`, `task_id`, `skill`, `weight` | Run median consensus on validation scores, reward stakers/validators, pay agent (minus tiered fee), slash outliers. |
+| `dispute_task` | Creator or Admin | `creator: Address`, `task_id` | Mark task as Disputed. |
+| `claim_payment` | Agent | `creator: Address`, `task_id` | Self-claim escrow after `deadline + 24h grace` if validators unresponsive. |
 | `increase_budget` | Task Creator | `task_id` | Payable — add budget to Open/InProgress task. |
 | `set_price` | Agent | `price` | Set agent's custom price. |
 | `update_recommended_price` | Admin | `agent`, `price` | Set validator-calculated recommended price. |
@@ -294,6 +330,20 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `get_agent` | Any | `agent` | Returns agent profile or `None`. |
 | `get_task` | Any | `creator: Address`, `task_id` | Returns task details or `None`. |
 | `get_reputation` | Any | `agent`, `skill` | Returns `ReputationState` (weighted_sum, total_weight, tasks_completed). |
+| `get_validator` | Any | `validator` | Returns validator profile or `None`. |
+| `get_stake` | Any | `agent` | Returns agent staking info. |
+| `get_total_slashed` | Any | — | Returns total CSPR slashed globally. |
+| `stake` | Agent | — (payable) | Stake CSPR (total stake must be ≥ 50 CSPR). |
+| `request_unstake` | Agent | `amount` | Start 30-minute unbonding period. Cannot have active jobs. |
+| `withdraw_stake` | Agent | — | Withdraw unbonded CSPR after unbonding period. |
+| `cancel_unstake` | Agent | — | Cancel active unbonding request. |
+| `slash_agent` | Admin | `agent`, `bps` | Slash agent stake up to 20%. |
+| `register_validator` | Any | — (payable) | Register validator with ≥ 100 CSPR stake. |
+| `stake_validator` | Validator | — (payable) | Add validator stake. |
+| `unstake_validator` | Validator | `amount` | Withdraw validator stake immediately. |
+| `distribute_treasury` | Admin | `agent`, `amount` | Pay out rewards/yield from treasury. |
+| `burn_treasury` | Admin | `amount` | Permanently lock (burn) treasury tokens. |
+| `sync_decayed_reputation` | Admin / Validator | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync time-decayed reputation weights. |
 
 ### 5.3 Error Codes
 
@@ -323,6 +373,21 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | 3022 | `ArithmeticOverflow` | Arithmetic overflow/underflow (checked_add/sub) |
 | 3023 | `InvalidFeeRate` | Fee rate exceeds 3000 bps (30%) |
 | 3024 | `AgentNotAvailable` | Agent has set `is_available = false` |
+| 3025 | `InsufficientStake` | Agent lacks minimum stake (50 CSPR) |
+| 3026 | `StakeNotFound` | Agent has no stake record |
+| 3027 | `UnbondingInProgress` | Agent is already unbonding |
+| 3028 | `UnbondingNotReady` | Agent unbonding period (30 mins) has not elapsed |
+| 3029 | `NoUnbondingInProgress` | No active agent unbonding request found |
+| 3030 | `AgentUnbonding` | Agent cannot accept tasks while unbonding |
+| 3031 | `InvalidSlashRate` | Slash rate is zero or exceeds 2000 bps (20%) |
+| 3032 | `ActiveJobsExist` | Cannot unstake while having active jobs |
+| 3033 | `InvalidUnstakeAmount` | Amount is zero or exceeds staked amount |
+| 3034 | `ValidatorAlreadyExists` | Validator already registered |
+| 3035 | `ValidatorNotFound` | Validator profile not found |
+| 3036 | `ValidatorNotActive` | Validator is inactive (stake < 100 CSPR) |
+| 3037 | `InsufficientValidatorStake` | Validator stake < 100 CSPR |
+| 3038 | `TaskAlreadyValidated` | Validator already submitted score for this task |
+| 3039 | `NoValidations` | No validator scores submitted for the task |
 
 ### 5.4 On-chain Reputation Model
 
