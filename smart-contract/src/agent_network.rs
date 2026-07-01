@@ -282,6 +282,13 @@ pub struct ValidatorStaked {
 }
 
 #[odra::event]
+pub struct ValidatorUnstaked {
+    pub validator: Address,
+    pub amount: U512,
+    pub remaining_stake: U512,
+}
+
+#[odra::event]
 pub struct ValidatorSlashed {
     pub validator: Address,
     pub amount: U512,
@@ -821,12 +828,11 @@ impl AgentNetwork {
 
         self.env().transfer_tokens(&caller, &amount);
 
-        self.env().emit_event(ValidatorSlashed { // using Slashed event shape for unstake log or creating new one. Better to just transfer.
+        self.env().emit_event(ValidatorUnstaked {
             validator: caller,
-            amount: amount,
+            amount,
             remaining_stake: profile.stake,
-            reason: "unstake".to_string(),
-        });
+            });
     }
 
     pub fn submit_validation(&mut self, creator: Address, task_id: String, score: u32) {
@@ -1068,7 +1074,15 @@ impl AgentNetwork {
         decayed_weighted_sum: u64,
         decayed_total_weight: u64,
     ) {
-        self.assert_admin();
+        let caller = self.env().caller();
+        let profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::ValidatorNotActive);
+        }
 
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
         
@@ -1210,9 +1224,13 @@ impl AgentNetwork {
 
         let agent = task.assigned_agent.unwrap();
         let budget = task.budget;
-        let fee_rate = self.fee_bps.get().unwrap_or(DEFAULT_FEE_BPS);
-        let fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
-        let payout = budget - fee;
+        let fee_rate = self.compute_fee_rate(agent, &"General".to_string());
+        let total_fee = budget * U512::from(fee_rate) / U512::from(10_000u32);
+        let payout = budget - total_fee;
+
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        treasury += total_fee;
+        self.treasury_balance.set(treasury);
 
         task.status = TaskStatus::Completed;
         self.tasks.set(&key, task);
@@ -1228,11 +1246,7 @@ impl AgentNetwork {
         self.agents.set(&agent, agent_profile);
 
         self.env().transfer_tokens(&agent, &payout);
-        if fee > U512::zero() {
-            if let Some(admin) = self.admin.get().flatten() {
-                self.env().transfer_tokens(&admin, &fee);
-            }
-        }
+
 
         self.env().emit_event(PaymentClaimed {
             task_id: task_id.clone(),
@@ -1243,7 +1257,7 @@ impl AgentNetwork {
         self.env().emit_event(FeeDeducted {
             task_id,
             agent,
-            fee,
+            fee: total_fee,
             payout,
         });
     }
@@ -2363,8 +2377,13 @@ mod tests {
     #[test]
     fn it_syncs_decayed_reputation() {
         let (env, mut contract, admin, agent) = setup();
+        let validator = env.get_account(3);
         
-        env.set_caller(admin);
+        // Register and stake validator
+        env.set_caller(validator);
+        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+        
+        env.set_caller(validator);
         contract.sync_decayed_reputation(agent, "General".to_string(), 450, 5);
         
         let rep = contract.get_reputation(agent, "General".to_string());
@@ -2372,9 +2391,9 @@ mod tests {
         assert_eq!(rep.total_weight, 5);
         assert_eq!(rep.tasks_completed, 0); // shouldn't change
         
-        // Ensure non-admin can't sync
-        let non_admin = env.get_account(2);
-        env.set_caller(non_admin);
+        // Ensure non-validator can't sync
+        let non_validator = env.get_account(2);
+        env.set_caller(non_validator);
         let contract_address = contract.address();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
