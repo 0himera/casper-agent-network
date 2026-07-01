@@ -10,7 +10,8 @@ The contract manages the complete lifecycle of:
 - **Agent Registration & Updates** — On-chain profile storage with mutable metadata
 - **Task Escrow** — CSPR-denominated payment locking with validated deadlines
 - **Result Submission** — Agent or admin-submitted execution results (single-submission, deadline-enforced)
-- **Task Completion** — Admin-only finalization with weighted reputation scoring
+- **Staking & Slashing** — Agents stake CSPR. Auto-slashing for low scores, missed deadlines, and lost disputes.
+- **Task Completion** — Admin-only finalization with weighted reputation scoring and auto-slashing
 - **Payment Claim** — Agent self-claim after deadline + grace period if admin is unresponsive
 - **Dispute Resolution** — Creator or admin can dispute; admin resolves via complete or cancel
 - **Task Cancellation** — Refund logic for open, expired, and disputed tasks
@@ -33,12 +34,22 @@ The contract manages the complete lifecycle of:
 | Method | Caller | Arguments | Description |
 |--------|--------|-----------|-------------|
 | `create_task` | Any | `task_id`, `metadata_uri`, `deadline: u64` | Create a task with ≥ 1 CSPR attached as escrow. `deadline` must be a future Unix timestamp (ms). `task_id` max 128 chars. Task is namespaced by creator address — same `task_id` can be used by different creators. |
-| `assign_task` | Task Creator | `task_id`, `agent: Address` | Assign an open task to a registered agent. Reverts if deadline has passed. Status → `InProgress`. |
+| `assign_task` | Task Creator | `task_id`, `agent: Address` | Assign an open task to a registered agent. Reverts if deadline passed, agent lacks minimum stake (50 CSPR), or agent is unbonding. Status → `InProgress`. |
 | `submit_result` | Assigned Agent **or** Admin | `creator: Address`, `task_id`, `result_hash` | Submit execution result hash. Single submission only (no overwrite). Must be before deadline. Admin bypass enables automated platform execution. |
-| `complete_task` | **Admin only** | `creator: Address`, `task_id`, `skill`, `score: u32`, `weight: u32` | Validate score (0–100) and weight (≥ 1), transfer escrowed CSPR to the agent, update weighted reputation. Accepts `InProgress` or `Disputed` status. |
-| `cancel_task` | Task Creator | `task_id` | Cancel an `Open` task, an `InProgress` task past its deadline (if no result submitted), or a `Disputed` task. Refunds escrowed CSPR. |
-| `dispute_task` | Task Creator **or** Admin | `creator: Address`, `task_id` | Flag an `InProgress` task (with submitted result) as `Disputed`. Admin resolves via `complete_task` (pay agent) or `cancel_task` (refund creator). |
+| `complete_task` | **Admin only** | `creator: Address`, `task_id`, `skill`, `score: u32`, `weight: u32` | Validate score, transfer CSPR to the agent, update reputation. If `score` < 30, agent is auto-slashed 5%. Accepts `InProgress` or `Disputed` status. |
+| `cancel_task` | Task Creator | `task_id` | Cancel `Open`, expired `InProgress` (no result), or `Disputed` tasks. Refunds creator. Auto-slashes agent 10% for expired `InProgress` and 20% for `Disputed`. |
+| `dispute_task` | Task Creator **or** Admin | `creator: Address`, `task_id` | Flag an `InProgress` task (with submitted result) as `Disputed`. Admin resolves via `complete_task` (pay agent) or `cancel_task` (refund creator, slash agent 20%). |
 | `claim_payment` | Assigned Agent | `creator: Address`, `task_id` | Self-claim escrowed CSPR after deadline + 24h grace period if admin has not completed the task. No reputation update (no admin score). Status → `Completed`. |
+
+### Staking & Slashing
+
+| Method | Caller | Arguments | Description |
+|--------|--------|-----------|-------------|
+| `stake` | Agent | — (payable) | Stake attached CSPR. Total stake must be ≥ 50 CSPR to accept jobs. |
+| `request_unstake` | Agent | `amount: U512` | Initiate unbonding (30 mins). Cannot be called if agent has active jobs. Unstaking below 50 CSPR forces a full unstake and marks agent unavailable. |
+| `withdraw_stake` | Agent | — | Withdraw unbonded CSPR after the 30-minute unbonding period has elapsed. |
+| `cancel_unstake` | Agent | — | Cancel an active unbonding request and keep the CSPR staked. |
+| `slash_agent` | Admin | `agent: Address`, `bps: u32` | Manually slash an agent's stake by a basis point percentage (max 2000 bps / 20%). |
 
 ### Admin / Ownership Operations
 
@@ -59,6 +70,8 @@ The contract manages the complete lifecycle of:
 | `get_agent` | `agent: Address` | `Option<AgentProfile>` | Agent profile details. |
 | `get_task` | `creator: Address`, `task_id: String` | `Option<Task>` | Task state and details. |
 | `get_reputation` | `agent: Address`, `skill: String` | `ReputationState` | Full reputation state: `weighted_sum`, `total_weight`, `tasks_completed`. `total_weight == 0` means no data. |
+| `get_stake` | `agent: Address` | `StakeInfo` | Current stake amount and unbonding state. |
+| `get_total_slashed`| — | `U512` | Total amount of CSPR slashed globally and sent to the treasury. |
 | `contract_name` | — | `Option<String>` | CEP-96: Returns contract name. |
 | `contract_description` | — | `Option<String>` | CEP-96: Returns contract description. |
 | `contract_icon_uri` | — | `Option<String>` | CEP-96: Returns contract icon URI. |
@@ -80,6 +93,12 @@ The contract manages the complete lifecycle of:
 | `PaymentClaimed` | `task_id`, `creator`, `agent`, `amount` | Agent self-claimed payment after grace period |
 | `PriceUpdated` | `agent`, `custom_price` | Agent custom price updated |
 | `RecommendedPriceUpdated` | `agent`, `recommended_price` | Validator price updated |
+| `Staked` | `agent`, `amount`, `total_stake` | Agent staked CSPR |
+| `UnstakeRequested` | `agent`, `amount`, `available_at` | Agent requested unbonding |
+| `StakeWithdrawn` | `agent`, `amount` | Unbonded stake withdrawn |
+| `UnstakeCancelled` | `agent`, `amount` | Unbonding request cancelled |
+| `SlashApplied` | `agent`, `amount`, `remaining_stake` | Agent was slashed |
+| `AgentAvailabilityChanged`| `agent`, `available` | Agent automatically made unavailable on full unstake |
 | `MetadataUpdated` | `name`, `description`, `icon_uri`, `project_uri` | CEP-96 metadata updated |
 | `OwnershipTransferred` | `previous_owner`, `new_owner` | Admin transferred (from Ownable2Step) |
 | `OwnershipTransferStarted` | `previous_owner`, `new_owner` | 2-step transfer initiated (from Ownable2Step) |
@@ -110,6 +129,15 @@ The contract manages the complete lifecycle of:
 | 3020 | `ClaimTooEarly` | Grace period (deadline + 24h) has not elapsed |
 | 3021 | `TaskNotDisputed` | Task is not in Disputed status |
 | 3022 | `ArithmeticOverflow` | Integer overflow in reputation or active_jobs arithmetic |
+| 3023 | `AgentUnbonding` | Agent cannot accept tasks while unbonding |
+| 3024 | `InsufficientStake` | Agent lacks minimum stake (50 CSPR) |
+| 3025 | `StakeNotFound` | Agent has no stake record |
+| 3026 | `UnbondingInProgress` | Agent is already unbonding |
+| 3027 | `ActiveJobsExist` | Cannot unstake while having active jobs |
+| 3028 | `InvalidUnstakeAmount` | Amount is zero or leaves stake < 50 CSPR |
+| 3029 | `NoUnbondingInProgress` | No active unbonding request found |
+| 3030 | `UnbondingNotReady` | Unbonding period (30 mins) has not elapsed |
+| 3031 | `InvalidSlashRate` | Slash bps is zero or exceeds 2000 (20%) |
 | 20000 | `OwnerNotSet` | Owner has been renounced (from Ownable2Step) |
 | 20001 | `CallerNotTheOwner` | Caller is not the owner (from Ownable2Step) |
 | 20002 | `CallerNotTheNewOwner` | Caller is not the pending owner (from Ownable2Step) |
@@ -148,6 +176,14 @@ Higher-stakes tasks (larger budgets, complex domains) contribute proportionally 
 
 ### Task Namespacing
 - Tasks are keyed by `(creator_address, task_id)`. Different creators can use the same `task_id` without collision — no global squatting.
+
+### Staking & Slashing
+- Agents must stake ≥ 50 CSPR (`MINIMUM_STAKE`) to be assigned tasks.
+- If an agent's score is < 30, they are automatically slashed 5%.
+- If an agent misses a deadline, they are automatically slashed 10% upon cancellation.
+- If a task is disputed and cancelled (resolved against agent), they are automatically slashed 20%.
+- Unbonding takes 30 minutes (`UNBONDING_PERIOD`). During this time, agents cannot be assigned new jobs.
+- Slashed tokens are transferred to the `admin` (treasury).
 
 ## Prerequisites
 

@@ -9,6 +9,14 @@ const FEE_TIER_LOW: u32 = 50;
 const DEFAULT_FEE_BPS: u32 = 500; // 5%
 const MAX_FEE_BPS: u32 = 3000; // 30%
 
+// Staking & Slashing
+const MINIMUM_STAKE: u64 = 50_000_000_000u64; // 50 CSPR
+const UNBONDING_PERIOD: u64 = 1_800_000u64; // 30 min in ms (testing)
+const SLASH_DEADLINE_BPS: u32 = 1000; // 10% slash for missed deadline
+const SLASH_DISPUTE_BPS: u32 = 2000; // 20% slash for dispute → cancel
+const SLASH_LOW_SCORE_BPS: u32 = 500; // 5% slash for score < threshold
+const LOW_SCORE_THRESHOLD: u32 = 30;
+
 #[odra::odra_type]
 pub struct AgentProfile {
     pub name: String,
@@ -46,6 +54,14 @@ pub struct ReputationState {
     pub weighted_sum: u64,
     pub total_weight: u64,
     pub tasks_completed: u32,
+}
+
+#[odra::odra_type]
+#[derive(Default)]
+pub struct StakeInfo {
+    pub amount: U512,
+    pub unbonding_amount: U512,
+    pub unbonding_start: u64,
 }
 
 #[odra::event]
@@ -172,6 +188,39 @@ pub struct TaskBudgetIncreased {
     pub new_budget: U512,
 }
 
+#[odra::event]
+pub struct Staked {
+    pub agent: Address,
+    pub amount: U512,
+    pub total_stake: U512,
+}
+
+#[odra::event]
+pub struct UnstakeRequested {
+    pub agent: Address,
+    pub amount: U512,
+    pub available_at: u64,
+}
+
+#[odra::event]
+pub struct StakeWithdrawn {
+    pub agent: Address,
+    pub amount: U512,
+}
+
+#[odra::event]
+pub struct UnstakeCancelled {
+    pub agent: Address,
+    pub amount: U512,
+}
+
+#[odra::event]
+pub struct SlashApplied {
+    pub agent: Address,
+    pub amount: U512,
+    pub remaining_stake: U512,
+}
+
 #[odra::odra_error]
 pub enum ContractErrors {
     AgentAlreadyExists = 3001,
@@ -198,6 +247,15 @@ pub enum ContractErrors {
     ArithmeticOverflow = 3022,
     InvalidFeeRate = 3023,
     AgentNotAvailable = 3024,
+    InsufficientStake = 3025,
+    StakeNotFound = 3026,
+    UnbondingInProgress = 3027,
+    UnbondingNotReady = 3028,
+    NoUnbondingInProgress = 3029,
+    AgentUnbonding = 3030,
+    InvalidSlashRate = 3031,
+    ActiveJobsExist = 3032,
+    InvalidUnstakeAmount = 3033,
 }
 
 #[odra::module(
@@ -221,7 +279,12 @@ pub enum ContractErrors {
         FeeDeducted,
         FeeRateUpdated,
         AgentAvailabilityChanged,
-        TaskBudgetIncreased
+        TaskBudgetIncreased,
+        Staked,
+        UnstakeRequested,
+        StakeWithdrawn,
+        UnstakeCancelled,
+        SlashApplied
     ]
 )]
 pub struct AgentNetwork {
@@ -235,6 +298,8 @@ pub struct AgentNetwork {
     contract_icon_uri: Var<String>,
     contract_project_uri: Var<String>,
     fee_bps: Var<u32>,
+    stakes: Mapping<Address, StakeInfo>,
+    total_slashed: Var<U512>,
 }
 
 #[odra::module]
@@ -537,6 +602,15 @@ impl AgentNetwork {
             self.env().revert(ContractErrors::AgentNotAvailable);
         }
 
+        // Staking: agent must have minimum stake and not be unbonding
+        let stake_info = self.stakes.get_or_default(&agent);
+        if stake_info.amount < U512::from(MINIMUM_STAKE) {
+            self.env().revert(ContractErrors::InsufficientStake);
+        }
+        if stake_info.unbonding_amount > U512::zero() {
+            self.env().revert(ContractErrors::AgentUnbonding);
+        }
+
         task.assigned_agent = Some(agent);
         task.status = TaskStatus::InProgress;
         self.tasks.set(&key, task);
@@ -678,6 +752,11 @@ impl AgentNetwork {
             skill,
             new_score,
         });
+
+        // Auto-slash on very low score
+        if score < LOW_SCORE_THRESHOLD {
+            self.apply_slash(agent, SLASH_LOW_SCORE_BPS);
+        }
     }
 
     pub fn cancel_task(&mut self, task_id: String) {
@@ -711,6 +790,21 @@ impl AgentNetwork {
 
         let budget = task.budget;
         let assigned_agent = task.assigned_agent;
+
+        // Slash agent if applicable
+        if let Some(agent_addr) = assigned_agent {
+            match task.status {
+                TaskStatus::InProgress => {
+                    // Missed deadline — slash 10%
+                    self.apply_slash(agent_addr, SLASH_DEADLINE_BPS);
+                }
+                TaskStatus::Disputed => {
+                    // Dispute resolved against agent — slash 20%
+                    self.apply_slash(agent_addr, SLASH_DISPUTE_BPS);
+                }
+                _ => {}
+            }
+        }
 
         task.status = TaskStatus::Cancelled;
         self.tasks.set(&key, task);
@@ -866,12 +960,208 @@ impl AgentNetwork {
             recommended_price: price,
         });
     }
+
+    // ── Staking ────────────────────────────────────────────────
+
+    #[odra(payable)]
+    pub fn stake(&mut self) {
+        let caller = self.env().caller();
+        let attached = self.env().attached_value();
+
+        // Agent must be registered
+        self.agents
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
+
+        let mut info = self.stakes.get_or_default(&caller);
+        info.amount = info
+            .amount
+            .checked_add(attached)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+        self.stakes.set(&caller, info.clone());
+
+        self.env().emit_event(Staked {
+            agent: caller,
+            amount: attached,
+            total_stake: info.amount,
+        });
+    }
+
+    pub fn request_unstake(&mut self, amount: U512) {
+        let caller = self.env().caller();
+        let current_time = self.env().get_block_time();
+
+        let mut info = self
+            .stakes
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::StakeNotFound);
+
+        // Cannot unstake while already unbonding
+        if !info.unbonding_amount.is_zero() {
+            self.env().revert(ContractErrors::UnbondingInProgress);
+        }
+
+        // Cannot unstake with active jobs
+        if let Some(profile) = self.agents.get(&caller) {
+            if profile.active_jobs > 0 {
+                self.env().revert(ContractErrors::ActiveJobsExist);
+            }
+        }
+
+        // Amount must be valid
+        if amount.is_zero() || amount > info.amount {
+            self.env().revert(ContractErrors::InvalidUnstakeAmount);
+        }
+
+        // Remaining stake must be >= MINIMUM_STAKE or amount == full stake (exit)
+        let remaining = info.amount - amount;
+        if !remaining.is_zero() && remaining < U512::from(MINIMUM_STAKE) {
+            self.env().revert(ContractErrors::InvalidUnstakeAmount);
+        }
+
+        info.unbonding_amount = amount;
+        info.unbonding_start = current_time;
+        self.stakes.set(&caller, info);
+
+        // If full unstake, mark agent unavailable
+        if remaining.is_zero() {
+            if let Some(mut profile) = self.agents.get(&caller) {
+                profile.is_available = false;
+                self.agents.set(&caller, profile);
+                self.env().emit_event(AgentAvailabilityChanged {
+                    agent: caller,
+                    available: false,
+                });
+            }
+        }
+
+        let available_at = current_time + UNBONDING_PERIOD;
+        self.env().emit_event(UnstakeRequested {
+            agent: caller,
+            amount,
+            available_at,
+        });
+    }
+
+    pub fn withdraw_stake(&mut self) {
+        let caller = self.env().caller();
+        let current_time = self.env().get_block_time();
+
+        let mut info = self
+            .stakes
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::StakeNotFound);
+
+        if info.unbonding_amount.is_zero() {
+            self.env().revert(ContractErrors::NoUnbondingInProgress);
+        }
+
+        if current_time < info.unbonding_start + UNBONDING_PERIOD {
+            self.env().revert(ContractErrors::UnbondingNotReady);
+        }
+
+        let withdraw_amount = info.unbonding_amount;
+        info.amount = info.amount - withdraw_amount;
+        info.unbonding_amount = U512::zero();
+        info.unbonding_start = 0;
+        self.stakes.set(&caller, info);
+
+        self.env().transfer_tokens(&caller, &withdraw_amount);
+
+        self.env().emit_event(StakeWithdrawn {
+            agent: caller,
+            amount: withdraw_amount,
+        });
+    }
+
+    pub fn cancel_unstake(&mut self) {
+        let caller = self.env().caller();
+
+        let mut info = self
+            .stakes
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::StakeNotFound);
+
+        if info.unbonding_amount.is_zero() {
+            self.env().revert(ContractErrors::NoUnbondingInProgress);
+        }
+
+        let cancelled_amount = info.unbonding_amount;
+        info.unbonding_amount = U512::zero();
+        info.unbonding_start = 0;
+        self.stakes.set(&caller, info);
+
+        self.env().emit_event(UnstakeCancelled {
+            agent: caller,
+            amount: cancelled_amount,
+        });
+    }
+
+    pub fn slash_agent(&mut self, agent: Address, bps: u32) {
+        self.assert_admin();
+
+        if bps == 0 || bps > MAX_FEE_BPS {
+            self.env().revert(ContractErrors::InvalidSlashRate);
+        }
+
+        self.apply_slash(agent, bps);
+    }
+
+    pub fn get_stake(&self, agent: Address) -> StakeInfo {
+        self.stakes.get_or_default(&agent)
+    }
+
+    pub fn get_total_slashed(&self) -> U512 {
+        self.total_slashed.get().unwrap_or(U512::zero())
+    }
+
+    // ── Internal ──────────────────────────────────────────────
+
+    fn apply_slash(&mut self, agent: Address, bps: u32) {
+        let mut info = self.stakes.get_or_default(&agent);
+        if info.amount.is_zero() {
+            return;
+        }
+
+        let slash = info.amount * U512::from(bps) / U512::from(10_000u32);
+        if slash.is_zero() {
+            return;
+        }
+
+        info.amount = info.amount - slash;
+
+        // Also reduce unbonding_amount if needed (can't withdraw more than remaining)
+        if info.unbonding_amount > info.amount {
+            info.unbonding_amount = info.amount;
+        }
+
+        self.stakes.set(&agent, info.clone());
+
+        // Transfer slashed amount to admin treasury
+        if let Some(admin) = self.admin.get().flatten() {
+            self.env().transfer_tokens(&admin, &slash);
+        }
+
+        let mut total = self.total_slashed.get().unwrap_or(U512::zero());
+        total = total
+            .checked_add(slash)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
+        self.total_slashed.set(total);
+
+        self.env().emit_event(SlashApplied {
+            agent,
+            amount: slash,
+            remaining_stake: info.amount,
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use odra::host::{Deployer, HostRef, HostRefLoader};
+
+    const STAKE_AMOUNT: u64 = 60_000_000_000u64; // 60 CSPR (above 50 CSPR minimum)
 
     fn setup() -> (odra::host::HostEnv, AgentNetworkHostRef, Address, Address) {
         let env = odra_test::env();
@@ -882,6 +1172,23 @@ mod tests {
         let contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: admin });
 
         (env, contract, admin, agent)
+    }
+
+    /// Register agent and stake the minimum. Call with agent as caller.
+    fn register_and_stake(
+        env: &odra::host::HostEnv,
+        contract: &mut AgentNetworkHostRef,
+        agent: Address,
+    ) {
+        env.set_caller(agent);
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic Agent".to_string(),
+            "https://meta".to_string(),
+        );
+        contract
+            .with_tokens(U512::from(STAKE_AMOUNT))
+            .stake();
     }
 
     #[test]
@@ -945,12 +1252,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent(
-            "Agent_1".to_string(),
-            "Generic Agent".to_string(),
-            "https://meta".to_string(),
-        );
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task(
@@ -1022,8 +1324,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
@@ -1045,7 +1346,8 @@ mod tests {
         assert!(matches!(task.status, TaskStatus::Cancelled));
 
         let balance_after = env.balance_of(&admin);
-        assert_eq!(balance_after, balance_before + budget);
+        let slash = U512::from(STAKE_AMOUNT) * U512::from(SLASH_DEADLINE_BPS) / U512::from(10_000u32);
+        assert_eq!(balance_after, balance_before + budget + slash);
 
         let agent_profile = contract.get_agent(agent).unwrap();
         assert_eq!(agent_profile.active_jobs, 0);
@@ -1058,8 +1360,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
@@ -1083,8 +1384,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
@@ -1187,8 +1487,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
@@ -1213,8 +1512,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
@@ -1249,8 +1547,7 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline);
@@ -1298,8 +1595,7 @@ mod tests {
         let budget = U512::from(10_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
 
         assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 500);
 
@@ -1340,10 +1636,10 @@ mod tests {
         let budget = U512::from(5_000_000_000u64);
         let deadline = env.block_time() + 3_600_000;
 
-        env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        register_and_stake(&env, &mut contract, agent);
         assert!(contract.get_agent(agent).unwrap().is_available);
 
+        env.set_caller(agent);
         contract.set_availability(false);
         assert!(!contract.get_agent(agent).unwrap().is_available);
 
@@ -1380,5 +1676,288 @@ mod tests {
 
         let task = contract.get_task(admin, "t1".to_string()).unwrap();
         assert_eq!(task.budget, budget + extra);
+    }
+
+    // ── Staking & Slashing Tests ────────────────────────────────
+
+    #[test]
+    fn it_stakes_and_reads_stake() {
+        let (env, mut contract, _admin, agent) = setup();
+        let stake = U512::from(STAKE_AMOUNT);
+
+        env.set_caller(agent);
+        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+
+        let info = contract.get_stake(agent);
+        assert_eq!(info.amount, U512::zero());
+
+        contract.with_tokens(stake).stake();
+
+        let info = contract.get_stake(agent);
+        assert_eq!(info.amount, stake);
+        assert_eq!(info.unbonding_amount, U512::zero());
+        assert_eq!(info.unbonding_start, 0);
+
+        // Stake more
+        let extra = U512::from(10_000_000_000u64);
+        contract.with_tokens(extra).stake();
+        let info = contract.get_stake(agent);
+        assert_eq!(info.amount, stake + extra);
+    }
+
+    #[test]
+    fn it_requires_minimum_stake_for_assignment() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        env.set_caller(agent);
+        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        // No stake — should fail
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.assign_task("t1".to_string(), agent);
+        }));
+        assert!(result.is_err(), "Should not assign without minimum stake");
+
+        // Stake below minimum
+        env.set_caller(agent);
+        contract.with_tokens(U512::from(10_000_000_000u64)).stake(); // 10 CSPR < 50 CSPR
+
+        env.set_caller(admin);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.assign_task("t1".to_string(), agent);
+        }));
+        assert!(result.is_err(), "Should not assign with insufficient stake");
+
+        // Stake above minimum
+        env.set_caller(agent);
+        contract.with_tokens(U512::from(50_000_000_000u64)).stake(); // total 60 CSPR
+
+        env.set_caller(admin);
+        contract.assign_task("t1".to_string(), agent);
+        let task = contract.get_task(admin, "t1".to_string()).unwrap();
+        assert_eq!(task.status, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn it_slashes_on_low_score() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        let stake_before = contract.get_stake(agent).amount;
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t1".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "t1".to_string(), "hash".to_string());
+
+        env.set_caller(admin);
+        contract.complete_task(admin, "t1".to_string(), "DeFi".to_string(), 20, 10); // score < 30
+
+        let stake_after = contract.get_stake(agent).amount;
+        let expected_slash = stake_before * U512::from(SLASH_LOW_SCORE_BPS) / U512::from(10_000u32);
+        assert_eq!(stake_after, stake_before - expected_slash);
+        assert!(contract.get_total_slashed() > U512::zero());
+    }
+
+    #[test]
+    fn it_slashes_on_deadline_miss() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        let stake_before = contract.get_stake(agent).amount;
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t1".to_string(), agent);
+
+        // Agent doesn't submit, deadline passes
+        env.advance_block_time(3_600_001);
+
+        env.set_caller(admin);
+        contract.cancel_task("t1".to_string());
+
+        let stake_after = contract.get_stake(agent).amount;
+        let expected_slash = stake_before * U512::from(SLASH_DEADLINE_BPS) / U512::from(10_000u32);
+        assert_eq!(stake_after, stake_before - expected_slash);
+    }
+
+    #[test]
+    fn it_slashes_on_dispute_cancel() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        let stake_before = contract.get_stake(agent).amount;
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t1".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "t1".to_string(), "bad_hash".to_string());
+
+        // Admin disputes
+        env.set_caller(admin);
+        contract.dispute_task(admin, "t1".to_string());
+
+        // Admin cancels disputed task → 20% slash
+        contract.cancel_task("t1".to_string());
+
+        let stake_after = contract.get_stake(agent).amount;
+        let expected_slash = stake_before * U512::from(SLASH_DISPUTE_BPS) / U512::from(10_000u32);
+        assert_eq!(stake_after, stake_before - expected_slash);
+    }
+
+    #[test]
+    fn it_handles_unstake_lifecycle() {
+        let (env, mut contract, _admin, agent) = setup();
+
+        register_and_stake(&env, &mut contract, agent);
+        let stake = contract.get_stake(agent).amount;
+
+        // Request full unstake
+        env.set_caller(agent);
+        contract.request_unstake(stake);
+
+        let info = contract.get_stake(agent);
+        assert_eq!(info.unbonding_amount, stake);
+        assert!(info.unbonding_start >= 0); // block_time may be 0 in tests
+
+        // Agent should be marked unavailable on full unstake
+        assert!(!contract.get_agent(agent).unwrap().is_available);
+
+        // Cannot withdraw before unbonding period
+        let contract_address = contract.address();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.withdraw_stake();
+        }));
+        assert!(result.is_err(), "Should not withdraw before unbonding period");
+
+        // Advance past unbonding period (30 min)
+        env.advance_block_time(UNBONDING_PERIOD + 1);
+
+        let balance_before = env.balance_of(&agent);
+        env.set_caller(agent);
+        contract.withdraw_stake();
+
+        let balance_after = env.balance_of(&agent);
+        assert_eq!(balance_after, balance_before + stake);
+
+        let info = contract.get_stake(agent);
+        assert_eq!(info.amount, U512::zero());
+        assert_eq!(info.unbonding_amount, U512::zero());
+        assert_eq!(info.unbonding_start, 0);
+    }
+
+    #[test]
+    fn it_prevents_unstake_with_active_jobs() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+        contract.assign_task("t1".to_string(), agent);
+
+        // Agent has active job — cannot unstake
+        env.set_caller(agent);
+        let stake = contract.get_stake(agent).amount;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.request_unstake(stake);
+        }));
+        assert!(result.is_err(), "Should not unstake with active jobs");
+    }
+
+    #[test]
+    fn it_prevents_assignment_during_unbonding() {
+        let (env, mut contract, admin, agent) = setup();
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        // Request partial unstake (keep above minimum)
+        env.set_caller(agent);
+        let stake = contract.get_stake(agent).amount;
+        let partial = stake - U512::from(MINIMUM_STAKE); // unstake just enough to stay above min
+        if partial > U512::zero() {
+            contract.request_unstake(partial);
+        } else {
+            // If stake == minimum, request full unstake
+            contract.request_unstake(stake);
+        }
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.assign_task("t1".to_string(), agent);
+        }));
+        assert!(result.is_err(), "Should not assign to unbonding agent");
+    }
+
+    #[test]
+    fn it_cancels_unstake() {
+        let (env, mut contract, _admin, agent) = setup();
+
+        register_and_stake(&env, &mut contract, agent);
+        let stake = contract.get_stake(agent).amount;
+
+        env.set_caller(agent);
+        contract.request_unstake(stake);
+
+        let info = contract.get_stake(agent);
+        assert!(!info.unbonding_amount.is_zero());
+
+        contract.cancel_unstake();
+
+        let info = contract.get_stake(agent);
+        assert_eq!(info.unbonding_start, 0);
+        assert_eq!(info.unbonding_amount, U512::zero());
+        assert_eq!(info.amount, stake); // Stake unchanged
+    }
+
+    #[test]
+    fn it_admin_slashes_explicitly() {
+        let (env, mut contract, admin, agent) = setup();
+
+        register_and_stake(&env, &mut contract, agent);
+        let stake_before = contract.get_stake(agent).amount;
+
+        env.set_caller(admin);
+        contract.slash_agent(agent, 1500); // 15%
+
+        let stake_after = contract.get_stake(agent).amount;
+        let expected_slash = stake_before * U512::from(1500u32) / U512::from(10_000u32);
+        assert_eq!(stake_after, stake_before - expected_slash);
+        assert_eq!(contract.get_total_slashed(), expected_slash);
+
+        // Non-admin cannot slash
+        let non_admin = env.get_account(2);
+        env.set_caller(non_admin);
+        let contract_address = contract.address();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.slash_agent(agent, 500);
+        }));
+        assert!(result.is_err(), "Non-admin should not slash");
     }
 }
