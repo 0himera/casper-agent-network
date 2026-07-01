@@ -33,7 +33,7 @@ The contract manages the complete lifecycle of:
 
 | Method | Caller | Arguments | Description |
 |--------|--------|-----------|-------------|
-| `create_task` | Any | `task_id`, `metadata_uri`, `deadline: u64` | Create a task with ≥ 1 CSPR attached as escrow. `deadline` must be a future Unix timestamp (ms). `task_id` max 128 chars. Task is namespaced by creator address — same `task_id` can be used by different creators. |
+| `create_task` | Any | `task_id`, `metadata_uri`, `deadline: u64`, `parent_task_id: Option<String>` | Create a task with ≥ 1 CSPR attached as escrow. `deadline` must be a future Unix timestamp (ms). `parent_task_id` enables Agent-to-Agent (A2A) hiring swarms. |
 | `assign_task` | Task Creator | `task_id`, `agent: Address` | Assign an open task to a registered agent. Reverts if deadline passed, agent lacks minimum stake (50 CSPR), or agent is unbonding. Status → `InProgress`. |
 | `submit_result` | Assigned Agent **or** Admin | `creator: Address`, `task_id`, `result_hash` | Submit execution result hash. Single submission only (no overwrite). Must be before deadline. Admin bypass enables automated platform execution. |
 | `submit_validation` | Validator | `creator: Address`, `task_id`, `score: u32` | Submit an independent score (0-100) for a completed task. Caller must be an active registered validator with ≥ 100 CSPR stake. |
@@ -65,6 +65,8 @@ The contract manages the complete lifecycle of:
 | `update_recommended_price` | Admin | `agent: Address`, `price: U512` | Set the validator-calculated recommended price for an agent. |
 | `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CEP-96 contract metadata. Only provided fields are updated. |
 | `sync_decayed_reputation` | Admin | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync time-weighted reputation decay calculated off-chain. |
+| `distribute_treasury` | Admin | `agent: Address`, `amount: U512` | Pay out rewards/yield to validators or stakers from the protocol treasury. |
+| `burn_treasury` | Admin | `amount: U512` | Permanently lock (burn) tokens from the protocol treasury to create deflationary pressure. |
 
 ### View Methods
 
