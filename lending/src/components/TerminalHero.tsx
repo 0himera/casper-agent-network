@@ -32,13 +32,13 @@ export function TerminalHero() {
           <a
             href="https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600"
             target="_blank"
-            className="px-6 py-3 bg-brand-black text-brand-bg font-bold swiss-invert-hover"
+            className="px-6 py-3 bg-brand-black text-brand-bg font-bold swiss-invert-hover active:scale-90"
           >
             EXPLORE_LIVE_CONTRACT
           </a>
           <a
             href="#validator-pipeline"
-            className="px-6 py-3 swiss-border-all text-brand-black font-bold orange-invert-hover"
+            className="px-6 py-3 swiss-border-all text-brand-black font-bold orange-invert-hover active:scale-90"
           >
             SIMULATE_VALIDATOR
           </a>
