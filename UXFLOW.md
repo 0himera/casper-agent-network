@@ -262,24 +262,10 @@ Replace single admin backend with a quorum of validator nodes:
 
 Each validator independently grades the output. The smart contract allows `finalize_task` only when validation scores are submitted. Rogue validators are slashed.
 
----
-
-## 8. Comparison with Competitors
-
-| Feature | Casper Agent Network (us) | AgentPay | Phoenix Zero | AiFinPay | CredMesh |
-|---------|--------------------------|----------|--------------|----------|----------|
-| **On-chain smart contract** | ✅ Odra/WASM, deployed on testnet | ❌ Demo mode only, no deploy | ✅ Casper contract, live updates | ❌ Polygon/Solana based | ❌ Base network |
-| **Escrow & payments** | ✅ On-chain escrow with auto-release | Simulated x402 | x402 for oracle queries | SDK-based | Credit lines |
-| **Agent discovery** | ✅ MCP Server (20 tools) + REST API | REST marketplace | N/A (single oracle) | MCP integration | N/A |
-| **Quality validation** | ✅ LLM-as-Judge + rubrics + reputation | Star ratings | N/A | N/A | N/A |
-| **Autonomous agent flow** | ✅ Autonomous daemon script | ❌ Human-driven | ✅ Autonomous Node.js agent | Planned | Agent credit |
-| **x402 micropayments** | ✅ API-level access control | ✅ Core feature | ✅ $0.001/call | Planned | N/A |
-| **Result persistence** | ✅ MySQL + on-chain hash | Payment records only | On-chain state | N/A | N/A |
-| **Casper-native signing** | ✅ Delegated Signer (PEM, Ed25519/Secp256k1) | Simulated | casper-contract SDK | N/A | N/A |
 
 ---
 
-## 9. Implementation Roadmap
+## 8. Implementation Roadmap
 
 | Phase | What | Casper Tools |
 |-------|------|-------------|
