@@ -19,6 +19,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env();
     let pool = init_db(&config.database_url).await?;
 
+    let dispatch_loop = backend::exam_dispatch_loop::spawn_if_enabled(pool.clone(), config.clone());
+
     let casper_client = backend::casper::contract::CasperClient::from_env()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
@@ -167,6 +169,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Shutdown signal received. Starting 10-second graceful timeout...");
     let _ = close_tx.send(());
+
+    if let Some((stop_tx, handle)) = dispatch_loop {
+        backend::exam_dispatch_loop::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
+    }
 
     tokio::select! {
         res = server_task => {

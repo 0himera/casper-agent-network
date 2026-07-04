@@ -118,6 +118,17 @@ pub struct ExamTemplate {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Per-agent exam urgency and smoothing state (internal only; Phase 2 data layer).
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct AgentExamState {
+    pub agent_public_key: String,
+    pub exam_urgency: f64,
+    pub smoothed_score: Option<f64>,
+    pub last_exam_at: Option<DateTime<Utc>>,
+    pub tasks_since_last_exam: i32,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// Internal linkage: live task → exam template → assigned agent.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ExamAssignment {

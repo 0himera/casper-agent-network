@@ -77,8 +77,14 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
         )
         .route("/api/tasks/{id}", get(tasks::get_task))
         .route("/api/tasks/{id}/execute", post(tasks::execute_task_handler))
-        .route("/api/tasks/{id}/raw_result", post(tasks::raw_result_handler))
-        .route("/api/tasks/{id}/validate", post(tasks::validate_task_handler))
+        .route(
+            "/api/tasks/{id}/raw_result",
+            post(tasks::raw_result_handler),
+        )
+        .route(
+            "/api/tasks/{id}/validate",
+            post(tasks::validate_task_handler),
+        )
         .route("/api/reputations", get(reputations::get_reputations))
         .route(
             "/api/reputations/{agent_pubkey}",

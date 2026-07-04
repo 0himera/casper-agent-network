@@ -12,6 +12,7 @@ interface Config {
   nodeUrl: string;
   dbURI: string;
   pingCheckIntervalInMilliseconds: number;
+  useSmoothedLeaderboard: boolean;
 }
 
 export const config: Config = {
@@ -23,4 +24,5 @@ export const config: Config = {
   nodeUrl: process.env.CASPER_NODE_URL || 'https://node.testnet.casper.network/rpc',
   dbURI: process.env.DB_URI as string,
   pingCheckIntervalInMilliseconds: 60000,
+  useSmoothedLeaderboard: process.env.EXAM_LEADERBOARD_USE_SMOOTHED === '1' || process.env.EXAM_LEADERBOARD_USE_SMOOTHED?.toLowerCase() === 'true',
 };

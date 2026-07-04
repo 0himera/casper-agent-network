@@ -27,3 +27,4 @@ rand = "0.8"
 [dev-dependencies]
 temp-env = { version = "0.3", features = ["async_closure"] }
 tower = { version = "0.5", features = ["util"] }
+tracing-test = "0.2"

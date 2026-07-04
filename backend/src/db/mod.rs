@@ -97,7 +97,6 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
         .execute(&pool)
         .await;
 
-
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (
             id VARCHAR(255) PRIMARY KEY,
@@ -150,7 +149,6 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS exam_assignments (
             task_id VARCHAR(128) PRIMARY KEY,
@@ -168,6 +166,23 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS agent_exam_state (
+            agent_public_key VARCHAR(128) PRIMARY KEY,
+            exam_urgency DOUBLE NOT NULL DEFAULT 0,
+            smoothed_score DOUBLE NULL,
+            last_exam_at TIMESTAMP NULL,
+            tasks_since_last_exam INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (agent_public_key) REFERENCES agents(public_key) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    exam::ensure_agent_exam_state_for_active_agents(&pool).await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS validators (
@@ -194,7 +209,6 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     )
     .execute(&pool)
     .await?;
-
 
     tracing::info!("Database schema successfully checked/initialized.");
     Ok(pool)

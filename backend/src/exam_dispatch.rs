@@ -1,10 +1,10 @@
 //! E4 admin exam dispatch: bucket policy, frequency cap, task + assignment creation.
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use serde::Serialize;
 
-use crate::config::Config;
+use crate::config::{Config, ExamSelectionMode, clamp_dispatch_probability};
 use crate::db::DbPool;
 use crate::db::exam::{
     DispatchCandidate, DispatchedExamTaskParams, count_recent_exam_assignments,
@@ -96,6 +96,15 @@ pub fn passes_frequency_cap(recent_count: i64, config: &Config) -> bool {
     recent_count < i64::from(config.exam_max_per_agent_per_period)
 }
 
+/// Per-agent probabilistic gate in urgency mode; probability grows with urgency.
+pub fn passes_urgency_probability(urgency: f64, roll: f32, config: &Config) -> bool {
+    let prob = clamp_dispatch_probability(config.exam_urgency_base_prob + urgency as f32);
+    if prob <= 0.0 {
+        return false;
+    }
+    roll < prob
+}
+
 fn generate_task_id() -> String {
     format!(
         "exam-dispatch-{}-{}",
@@ -107,6 +116,83 @@ fn generate_task_id() -> String {
 struct EligibleCandidate {
     candidate: DispatchCandidate,
     bucket: Bucket,
+}
+
+async fn collect_bucket_eligible(
+    pool: &DbPool,
+    candidates: Vec<DispatchCandidate>,
+    config: &Config,
+    since: DateTime<Utc>,
+) -> Result<(Vec<EligibleCandidate>, bool, bool), String> {
+    let mut eligible: Vec<EligibleCandidate> = Vec::new();
+    let mut saw_cap_block = false;
+    let mut saw_prob_block = false;
+
+    for candidate in candidates {
+        let Some(bucket) = classify_bucket(&candidate, config) else {
+            continue;
+        };
+        let roll = rand::thread_rng().gen_range(0.0f32..1.0f32);
+        if !passes_probability(bucket, roll, config) {
+            saw_prob_block = true;
+            continue;
+        }
+        let recent = count_recent_exam_assignments(pool, &candidate.public_key, since)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !passes_frequency_cap(recent, config) {
+            saw_cap_block = true;
+            continue;
+        }
+        eligible.push(EligibleCandidate { candidate, bucket });
+    }
+
+    Ok((eligible, saw_cap_block, saw_prob_block))
+}
+
+async fn collect_urgency_eligible(
+    pool: &DbPool,
+    candidates: Vec<DispatchCandidate>,
+    config: &Config,
+    since: DateTime<Utc>,
+) -> Result<(Vec<EligibleCandidate>, bool, bool), String> {
+    if candidates.is_empty() {
+        return Ok((Vec::new(), false, false));
+    }
+
+    let max_urgency = candidates
+        .iter()
+        .map(|c| c.exam_urgency)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let mut eligible: Vec<EligibleCandidate> = Vec::new();
+    let mut saw_cap_block = false;
+    let mut saw_prob_block = false;
+
+    for candidate in candidates {
+        if candidate.exam_urgency < max_urgency - f64::EPSILON {
+            continue;
+        }
+
+        let bucket = classify_bucket(&candidate, config).unwrap_or(Bucket::Audit);
+        let roll = rand::thread_rng().gen_range(0.0f32..1.0f32);
+        if !passes_urgency_probability(candidate.exam_urgency, roll, config) {
+            saw_prob_block = true;
+            continue;
+        }
+
+        let recent = count_recent_exam_assignments(pool, &candidate.public_key, since)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !passes_frequency_cap(recent, config) {
+            saw_cap_block = true;
+            continue;
+        }
+
+        eligible.push(EligibleCandidate { candidate, bucket });
+    }
+
+    Ok((eligible, saw_cap_block, saw_prob_block))
 }
 
 /// Run one dispatch cycle: pick agent + template, create task and exam_assignment.
@@ -130,28 +216,12 @@ pub async fn dispatch_once(pool: &DbPool, config: &Config) -> Result<DispatchOut
     let since =
         Utc::now() - Duration::hours(config.exam_dispatch_period_hours.try_into().unwrap_or(24));
 
-    let mut eligible: Vec<EligibleCandidate> = Vec::new();
-    let mut saw_cap_block = false;
-    let mut saw_prob_block = false;
-
-    for candidate in candidates {
-        let Some(bucket) = classify_bucket(&candidate, config) else {
-            continue;
+    let (eligible, saw_cap_block, saw_prob_block) =
+        if config.exam_selection_mode == ExamSelectionMode::Urgency {
+            collect_urgency_eligible(pool, candidates, config, since).await?
+        } else {
+            collect_bucket_eligible(pool, candidates, config, since).await?
         };
-        let roll = rand::thread_rng().gen_range(0.0f32..1.0f32);
-        if !passes_probability(bucket, roll, config) {
-            saw_prob_block = true;
-            continue;
-        }
-        let recent = count_recent_exam_assignments(pool, &candidate.public_key, since)
-            .await
-            .map_err(|e| e.to_string())?;
-        if !passes_frequency_cap(recent, config) {
-            saw_cap_block = true;
-            continue;
-        }
-        eligible.push(EligibleCandidate { candidate, bucket });
-    }
 
     if eligible.is_empty() {
         if saw_cap_block && !saw_prob_block {
@@ -240,14 +310,32 @@ mod tests {
             exam_dispatch_budget_motes: 5_000_000_000,
             exam_dispatch_creator_public_key: "admin-pk".into(),
             exam_llm_equality: false,
+            exam_dispatch_loop_enabled: false,
+            exam_dispatch_loop_interval_secs: 300,
+            exam_selection_mode: ExamSelectionMode::Bucket,
+            exam_urgency_base_prob: 0.1,
+            exam_urgency_task_weight: 0.05,
+            exam_urgency_variance_weight: 0.2,
+            exam_urgency_recent_verdicts: 5,
+            exam_smoothed_ema_alpha: 0.3,
+            exam_leaderboard_use_smoothed: false,
         }
     }
 
     fn candidate(reputation_score: i64, active_jobs: i32) -> DispatchCandidate {
+        candidate_with_urgency(reputation_score, active_jobs, 0.0)
+    }
+
+    fn candidate_with_urgency(
+        reputation_score: i64,
+        active_jobs: i32,
+        exam_urgency: f64,
+    ) -> DispatchCandidate {
         DispatchCandidate {
             public_key: "agent-1".into(),
             active_jobs,
             reputation_score,
+            exam_urgency,
         }
     }
 
@@ -313,6 +401,20 @@ mod tests {
         let config = sample_config();
         assert!(passes_frequency_cap(0, &config));
         assert!(!passes_frequency_cap(1, &config));
+    }
+
+    #[test]
+    fn passes_urgency_probability_grows_with_urgency() {
+        let config = sample_config();
+        assert!(!passes_urgency_probability(0.0, 0.5, &config));
+        assert!(passes_urgency_probability(0.9, 0.5, &config));
+    }
+
+    #[test]
+    fn passes_urgency_probability_zero_base_and_zero_urgency_never_passes() {
+        let mut config = sample_config();
+        config.exam_urgency_base_prob = 0.0;
+        assert!(!passes_urgency_probability(0.0, 0.0, &config));
     }
 
     #[cfg(test)]
@@ -381,6 +483,26 @@ mod tests {
             config.exam_dispatch_prob_rehab = prob;
             config.exam_dispatch_creator_public_key = "e4-creator".into();
             config
+        }
+
+        fn urgency_dispatch_config() -> Config {
+            let mut config = dispatch_config(0.99);
+            config.exam_selection_mode = ExamSelectionMode::Urgency;
+            config.exam_urgency_base_prob = 0.99;
+            config
+        }
+
+        async fn seed_agent_exam_urgency(pool: &DbPool, public_key: &str, urgency: f64) {
+            sqlx::query(
+                "INSERT INTO agent_exam_state (agent_public_key, exam_urgency)
+                 VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE exam_urgency = VALUES(exam_urgency)",
+            )
+            .bind(public_key)
+            .bind(urgency)
+            .execute(pool)
+            .await
+            .expect("seed agent exam urgency");
         }
 
         async fn seed_agent_with_reputation(
@@ -479,6 +601,25 @@ mod tests {
             .bind(keep)
             .execute(pool)
             .await;
+            pks
+        }
+
+        async fn save_and_deactivate_agents_except(pool: &DbPool, keep: &[&str]) -> Vec<String> {
+            let rows = sqlx::query("SELECT public_key FROM agents WHERE status='active'")
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+            let pks: Vec<String> = rows
+                .iter()
+                .map(|r| r.try_get::<String, _>("public_key").unwrap())
+                .filter(|pk| !keep.contains(&pk.as_str()))
+                .collect();
+            for pk in &pks {
+                let _ = sqlx::query("UPDATE agents SET status='inactive' WHERE public_key = ?")
+                    .bind(pk)
+                    .execute(pool)
+                    .await;
+            }
             pks
         }
 
@@ -699,6 +840,214 @@ mod tests {
 
             cleanup_e4_fixtures(&pool, "exam-dispatch-e4-audit").await;
             cleanup_agent(&pool, HIGH_REP_AGENT, "exam-dispatch-e4-audit").await;
+            restore_templates(&pool, &saved_templates).await;
+            restore_agents(&pool, &saved_agents).await;
+        }
+
+        #[tokio::test]
+        #[ignore = "requires MySQL: DATABASE_URL; cargo test --lib db_exam_dispatch_urgency -- --ignored --test-threads=1"]
+        async fn db_exam_dispatch_urgency_prefers_high_urgency_agent() {
+            const LOW_URGENCY_AGENT: &str = "e4-dispatch-low-urgency";
+            const HIGH_URGENCY_AGENT: &str = "e4-dispatch-high-urgency";
+            let pool = connect_test_pool().await;
+            cleanup_agent(&pool, LOW_URGENCY_AGENT, "exam-dispatch-e4-urgency").await;
+            cleanup_agent(&pool, HIGH_URGENCY_AGENT, "exam-dispatch-e4-urgency").await;
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency").await;
+            let saved_templates = save_and_deactivate_all_templates(&pool).await;
+
+            seed_agent_with_reputation(&pool, LOW_URGENCY_AGENT, 0, 10).await;
+            seed_agent_with_reputation(&pool, HIGH_URGENCY_AGENT, 0, 10).await;
+            seed_agent_exam_urgency(&pool, LOW_URGENCY_AGENT, 0.1).await;
+            seed_agent_exam_urgency(&pool, HIGH_URGENCY_AGENT, 0.9).await;
+
+            sqlx::query(
+                "INSERT INTO exam_templates (id, prompt, expected_answer_canonical, domain, status)
+                 VALUES (?, 'Return strictly: ANSWER: 42 usd', '42 usd', 'defi_analysis', 'active')
+                 ON DUPLICATE KEY UPDATE status = 'active'",
+            )
+            .bind(E4_TEMPLATE_ID)
+            .execute(&pool)
+            .await
+            .expect("seed template");
+
+            let saved_agents =
+                save_and_deactivate_agents_except(&pool, &[LOW_URGENCY_AGENT, HIGH_URGENCY_AGENT])
+                    .await;
+
+            let config = urgency_dispatch_config();
+            let outcome = dispatch_once(&pool, &config).await.expect("dispatch");
+
+            assert!(
+                outcome.created,
+                "expected created: {:?}",
+                outcome.skip_reason
+            );
+            assert_eq!(
+                outcome.agent_public_key.as_deref(),
+                Some(HIGH_URGENCY_AGENT)
+            );
+
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency").await;
+            cleanup_agent(&pool, LOW_URGENCY_AGENT, "exam-dispatch-e4-urgency").await;
+            cleanup_agent(&pool, HIGH_URGENCY_AGENT, "exam-dispatch-e4-urgency").await;
+            restore_templates(&pool, &saved_templates).await;
+            restore_agents(&pool, &saved_agents).await;
+        }
+
+        #[tokio::test]
+        #[ignore = "requires MySQL: DATABASE_URL; cargo test --lib db_exam_dispatch_urgency -- --ignored --test-threads=1"]
+        async fn db_exam_dispatch_urgency_no_fallback_when_high_tier_capped() {
+            const LOW_URGENCY_AGENT: &str = "e4-dispatch-low-urgency-cap";
+            const HIGH_URGENCY_AGENT: &str = "e4-dispatch-high-urgency-cap";
+            let pool = connect_test_pool().await;
+            cleanup_agent(
+                &pool,
+                LOW_URGENCY_AGENT,
+                "exam-dispatch-e4-urgency-no-fallback",
+            )
+            .await;
+            cleanup_agent(
+                &pool,
+                HIGH_URGENCY_AGENT,
+                "exam-dispatch-e4-urgency-no-fallback",
+            )
+            .await;
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency-no-fallback").await;
+            let saved_templates = save_and_deactivate_all_templates(&pool).await;
+
+            seed_agent_with_reputation(&pool, LOW_URGENCY_AGENT, 0, 10).await;
+            seed_agent_with_reputation(&pool, HIGH_URGENCY_AGENT, 0, 10).await;
+            seed_agent_exam_urgency(&pool, LOW_URGENCY_AGENT, 0.1).await;
+            seed_agent_exam_urgency(&pool, HIGH_URGENCY_AGENT, 0.99).await;
+
+            sqlx::query(
+                "INSERT INTO exam_templates (id, prompt, expected_answer_canonical, domain, status)
+                 VALUES (?, 'Return strictly: ANSWER: 42 usd', '42 usd', 'defi_analysis', 'active')
+                 ON DUPLICATE KEY UPDATE status = 'active'",
+            )
+            .bind(E4_TEMPLATE_ID)
+            .execute(&pool)
+            .await
+            .expect("seed template");
+
+            let prior_task_id = "exam-dispatch-e4-urgency-no-fallback-prior";
+            sqlx::query(
+                "INSERT INTO tasks (
+                    id, creator_public_key, assigned_agent_public_key, budget_motes, status,
+                    transaction_hash, domain, prompt, deadline
+                 ) VALUES (?, 'e4-creator', ?, 5000000000, 'InProgress', 'tx-cap', 'defi_analysis', 'prompt', 0)",
+            )
+            .bind(prior_task_id)
+            .bind(HIGH_URGENCY_AGENT)
+            .execute(&pool)
+            .await
+            .expect("prior task");
+
+            sqlx::query(
+                "INSERT INTO exam_assignments (task_id, template_id, agent_public_key, bucket, status, created_at)
+                 VALUES (?, ?, ?, 'audit', 'assigned', ?)",
+            )
+            .bind(prior_task_id)
+            .bind(E4_TEMPLATE_ID)
+            .bind(HIGH_URGENCY_AGENT)
+            .bind(Utc::now())
+            .execute(&pool)
+            .await
+            .expect("prior assignment");
+
+            let saved_agents =
+                save_and_deactivate_agents_except(&pool, &[LOW_URGENCY_AGENT, HIGH_URGENCY_AGENT])
+                    .await;
+
+            let config = urgency_dispatch_config();
+            let outcome = dispatch_once(&pool, &config).await.expect("dispatch");
+
+            assert!(!outcome.created);
+            assert_eq!(outcome.skip_reason.as_deref(), Some("frequency_cap"));
+
+            let low_agent_assignments: (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM exam_assignments WHERE agent_public_key = ?")
+                    .bind(LOW_URGENCY_AGENT)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("count low urgency assignments");
+            assert_eq!(
+                low_agent_assignments.0, 0,
+                "low-urgency agent must not receive fallback dispatch"
+            );
+
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency-no-fallback").await;
+            cleanup_agent(
+                &pool,
+                LOW_URGENCY_AGENT,
+                "exam-dispatch-e4-urgency-no-fallback",
+            )
+            .await;
+            cleanup_agent(
+                &pool,
+                HIGH_URGENCY_AGENT,
+                "exam-dispatch-e4-urgency-no-fallback",
+            )
+            .await;
+            restore_templates(&pool, &saved_templates).await;
+            restore_agents(&pool, &saved_agents).await;
+        }
+
+        #[tokio::test]
+        #[ignore = "requires MySQL: DATABASE_URL; cargo test --lib db_exam_dispatch_urgency -- --ignored --test-threads=1"]
+        async fn db_exam_dispatch_urgency_respects_frequency_cap() {
+            const HIGH_URGENCY_AGENT: &str = "e4-dispatch-urgency-cap";
+            let pool = connect_test_pool().await;
+            cleanup_agent(&pool, HIGH_URGENCY_AGENT, "exam-dispatch-e4-urgency-cap").await;
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency-cap").await;
+            let saved_templates = save_and_deactivate_all_templates(&pool).await;
+            let saved_agents = save_and_deactivate_other_agents(&pool, HIGH_URGENCY_AGENT).await;
+
+            seed_agent_with_reputation(&pool, HIGH_URGENCY_AGENT, 0, 10).await;
+            seed_agent_exam_urgency(&pool, HIGH_URGENCY_AGENT, 0.99).await;
+            sqlx::query(
+                "INSERT INTO exam_templates (id, prompt, expected_answer_canonical, domain, status)
+                 VALUES (?, 'Return strictly: ANSWER: 42 usd', '42 usd', 'defi_analysis', 'active')
+                 ON DUPLICATE KEY UPDATE status = 'active'",
+            )
+            .bind(E4_TEMPLATE_ID)
+            .execute(&pool)
+            .await
+            .expect("seed template");
+
+            let prior_task_id = "exam-dispatch-e4-urgency-cap-prior";
+            sqlx::query(
+                "INSERT INTO tasks (
+                    id, creator_public_key, assigned_agent_public_key, budget_motes, status,
+                    transaction_hash, domain, prompt, deadline
+                 ) VALUES (?, 'e4-creator', ?, 5000000000, 'InProgress', 'tx-cap', 'defi_analysis', 'prompt', 0)",
+            )
+            .bind(prior_task_id)
+            .bind(HIGH_URGENCY_AGENT)
+            .execute(&pool)
+            .await
+            .expect("prior task");
+
+            sqlx::query(
+                "INSERT INTO exam_assignments (task_id, template_id, agent_public_key, bucket, status, created_at)
+                 VALUES (?, ?, ?, 'audit', 'assigned', ?)",
+            )
+            .bind(prior_task_id)
+            .bind(E4_TEMPLATE_ID)
+            .bind(HIGH_URGENCY_AGENT)
+            .bind(Utc::now())
+            .execute(&pool)
+            .await
+            .expect("prior assignment");
+
+            let config = urgency_dispatch_config();
+            let outcome = dispatch_once(&pool, &config).await.expect("dispatch");
+
+            assert!(!outcome.created);
+            assert_eq!(outcome.skip_reason.as_deref(), Some("frequency_cap"));
+
+            cleanup_e4_fixtures(&pool, "exam-dispatch-e4-urgency-cap").await;
+            cleanup_agent(&pool, HIGH_URGENCY_AGENT, "exam-dispatch-e4-urgency-cap").await;
             restore_templates(&pool, &saved_templates).await;
             restore_agents(&pool, &saved_agents).await;
         }

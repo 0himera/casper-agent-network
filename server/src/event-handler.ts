@@ -310,11 +310,18 @@ async function main() {
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
-        await pool.execute(
-          'UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?',
-          [payload.recommended_price, agentKey]
-        );
-        console.log(`On-chain recommended price updated for agent ${agentKey}: ${payload.recommended_price} motes`);
+        // Phase 5.2: If smoothed leaderboard is active, the backend owns recommended price updates
+        // based on smoothed_score. We ignore on-chain price updates to prevent clobbering the
+        // off-chain price with legacy on-chain score-based prices after ordinary tasks.
+        if (config.useSmoothedLeaderboard) {
+          console.log(`Skipping on-chain recommended price update for agent ${agentKey} due to active smoothed leaderboard.`);
+        } else {
+          await pool.execute(
+            'UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?',
+            [payload.recommended_price, agentKey]
+          );
+          console.log(`On-chain recommended price updated for agent ${agentKey}: ${payload.recommended_price} motes`);
+        }
 
       } else if (eventName === 'TaskCancelled') {
         const payload = event.data.data as TaskCancelledPayload;
