@@ -68,6 +68,15 @@ fn build_test_router(pool: DbPool) -> Router {
         exam_dispatch_budget_motes: 5_000_000_000,
         exam_dispatch_creator_public_key: String::new(),
         exam_llm_equality: false,
+        exam_dispatch_loop_enabled: false,
+        exam_dispatch_loop_interval_secs: 300,
+        exam_selection_mode: backend::config::ExamSelectionMode::Bucket,
+        exam_urgency_base_prob: 0.1,
+        exam_urgency_task_weight: 0.05,
+        exam_urgency_variance_weight: 0.2,
+        exam_urgency_recent_verdicts: 5,
+        exam_smoothed_ema_alpha: 0.3,
+        exam_leaderboard_use_smoothed: false,
     };
     let casper_client = CasperClient::new(
         "http://localhost".to_string(),
@@ -106,6 +115,15 @@ fn build_dispatch_test_router(pool: DbPool) -> Router {
         exam_dispatch_budget_motes: 5_000_000_000,
         exam_dispatch_creator_public_key: CREATOR_PK.to_string(),
         exam_llm_equality: false,
+        exam_dispatch_loop_enabled: false,
+        exam_dispatch_loop_interval_secs: 300,
+        exam_selection_mode: backend::config::ExamSelectionMode::Bucket,
+        exam_urgency_base_prob: 0.1,
+        exam_urgency_task_weight: 0.05,
+        exam_urgency_variance_weight: 0.2,
+        exam_urgency_recent_verdicts: 5,
+        exam_smoothed_ema_alpha: 0.3,
+        exam_leaderboard_use_smoothed: false,
     };
     let casper_client = CasperClient::new(
         "http://localhost".to_string(),

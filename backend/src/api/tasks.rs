@@ -13,10 +13,12 @@ use crate::api::AppState;
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::db::exam::{
-    get_exam_assignment_by_task_id, get_exam_template_by_id, update_exam_assignment_validation,
+    get_agent_exam_state, get_exam_assignment_by_task_id, get_exam_template_by_id,
+    on_exam_validated, on_ordinary_task_completed, update_exam_assignment_validation,
+    upsert_agent_exam_state,
 };
 use crate::db::models::{
-    Agent, ExamAssignment, ExamTemplate, TASK_PUBLIC_COLUMNS, Task, TaskPublic,
+    Agent, AgentExamState, ExamAssignment, ExamTemplate, TASK_PUBLIC_COLUMNS, Task, TaskPublic,
 };
 use crate::orchestrator::executor::execute_agent;
 use crate::validator::llm_judge::EvaluationResult;
@@ -659,6 +661,8 @@ async fn validate_and_complete(
                         task_id,
                         err
                     );
+                } else if let Some(agent_pk) = task_row.assigned_agent_public_key.clone() {
+                    spawn_exam_urgency_recalc(pool.clone(), config.clone(), agent_pk);
                 }
             } else {
                 tracing::warn!(
@@ -695,7 +699,14 @@ async fn validate_and_complete(
     };
 
     let mut cmd = Command::new(bin_path);
-    let cli_args = submit_complete_cli_args(&task_row.creator_public_key, task_id, &result_hash, domain, score, weight);
+    let cli_args = submit_complete_cli_args(
+        &task_row.creator_public_key,
+        task_id,
+        &result_hash,
+        domain,
+        score,
+        weight,
+    );
     if bin_path == "cargo" {
         cmd.args([
             "run",
@@ -737,6 +748,9 @@ async fn validate_and_complete(
                     .bind(task_id)
                     .execute(pool)
                     .await;
+                if !is_exam && let Some(agent_pk) = task_row.assigned_agent_public_key.clone() {
+                    spawn_ordinary_task_urgency_recalc(pool.clone(), config.clone(), agent_pk);
+                }
             } else {
                 tracing::error!(
                     "❌ On-chain transaction failed for task {}: {:?}",
@@ -755,6 +769,30 @@ fn should_skip_onchain_submit() -> bool {
     std_env::var("EXAM_SKIP_ONCHAIN")
         .ok()
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+}
+
+fn spawn_exam_urgency_recalc(pool: DbPool, config: Config, agent_public_key: String) {
+    tokio::spawn(async move {
+        if let Err(err) = on_exam_validated(&pool, &agent_public_key, &config).await {
+            tracing::error!(
+                "Failed to recalculate exam urgency after exam validation for {}: {}",
+                agent_public_key,
+                err
+            );
+        }
+    });
+}
+
+fn spawn_ordinary_task_urgency_recalc(pool: DbPool, config: Config, agent_public_key: String) {
+    tokio::spawn(async move {
+        if let Err(err) = on_ordinary_task_completed(&pool, &agent_public_key, &config).await {
+            tracing::error!(
+                "Failed to recalculate exam urgency after ordinary task for {}: {}",
+                agent_public_key,
+                err
+            );
+        }
+    });
 }
 
 #[cfg(test)]
@@ -799,6 +837,15 @@ mod validation_tests {
             exam_dispatch_budget_motes: 5_000_000_000,
             exam_dispatch_creator_public_key: String::new(),
             exam_llm_equality: false,
+            exam_dispatch_loop_enabled: false,
+            exam_dispatch_loop_interval_secs: 300,
+            exam_selection_mode: crate::config::ExamSelectionMode::Bucket,
+            exam_urgency_base_prob: 0.1,
+            exam_urgency_task_weight: 0.05,
+            exam_urgency_variance_weight: 0.2,
+            exam_urgency_recent_verdicts: 5,
+            exam_smoothed_ema_alpha: 0.3,
+            exam_leaderboard_use_smoothed: false,
         }
     }
 
@@ -850,6 +897,10 @@ mod validation_tests {
             .await;
         let _ = sqlx::query("DELETE FROM exam_templates WHERE id = ?")
             .bind(EXAM_TEMPLATE_ID)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agent_exam_state WHERE agent_public_key = ?")
+            .bind(E2_AGENT_PK)
             .execute(pool)
             .await;
         let _ = sqlx::query("DELETE FROM agents WHERE public_key = ?")
@@ -946,6 +997,41 @@ mod validation_tests {
             .expect("exam assignment row")
     }
 
+    async fn seed_agent_exam_state(pool: &DbPool, tasks_since_last_exam: i32, exam_urgency: f64) {
+        upsert_agent_exam_state(
+            pool,
+            &AgentExamState {
+                agent_public_key: E2_AGENT_PK.into(),
+                exam_urgency,
+                smoothed_score: None,
+                last_exam_at: None,
+                tasks_since_last_exam,
+                updated_at: Utc::now(),
+            },
+        )
+        .await
+        .expect("seed agent exam state");
+    }
+
+    async fn poll_agent_exam_state_until<F>(
+        pool: &DbPool,
+        predicate: F,
+        max_attempts: u32,
+    ) -> AgentExamState
+    where
+        F: Fn(&AgentExamState) -> bool,
+    {
+        for _ in 0..max_attempts {
+            if let Ok(Some(state)) = get_agent_exam_state(pool, E2_AGENT_PK).await {
+                if predicate(&state) {
+                    return state;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("agent_exam_state did not reach expected condition within poll window");
+    }
+
     fn assert_exam_audit_shape(audit: &serde_json::Value) {
         for key in [
             "exam_id",
@@ -1038,7 +1124,14 @@ mod validation_tests {
 
     #[test]
     fn submit_complete_cli_args_uses_domain_score_and_weight() {
-        let args = submit_complete_cli_args("0203abc...", "task-exam-1", "abc123", "defi_analysis", 100, 300);
+        let args = submit_complete_cli_args(
+            "0203abc...",
+            "task-exam-1",
+            "abc123",
+            "defi_analysis",
+            100,
+            300,
+        );
         assert_eq!(args[0], "0203abc...");
         assert_eq!(args[1], "task-exam-1");
         assert_eq!(args[2], "abc123");
@@ -1073,8 +1166,14 @@ mod validation_tests {
         let weight = resolve_completion_weight(true, &config, "defi_analysis", 5_000_000_000);
 
         for score in [0u32, 0u32] {
-            let args =
-                submit_complete_cli_args("0203abc...", "task-fail", "deadbeef", "defi_analysis", score, weight);
+            let args = submit_complete_cli_args(
+                "0203abc...",
+                "task-fail",
+                "deadbeef",
+                "defi_analysis",
+                score,
+                weight,
+            );
             assert_eq!(args[3], "defi_analysis");
             assert_eq!(args[4], "0");
             assert_eq!(args[5], "300");
@@ -1313,6 +1412,114 @@ mod validation_tests {
                 assert_eq!(assignment.status, "validated");
                 assert_eq!(assignment.verdict.as_deref(), Some("passed"));
                 assert!(assignment.validated_at.is_some());
+            },
+        )
+        .await;
+
+        cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MySQL: DATABASE_URL from backend/.env; cargo test --lib db_completion_state -- --ignored --test-threads=1"]
+    async fn db_validate_and_complete_updates_agent_exam_state_on_exam_path() {
+        let task_id = "e2-db-exam-urgency-state";
+        let output = "ANSWER: 2845678901.25 cspr";
+        let pool = connect_test_pool().await;
+        cleanup_e2_fixtures(&pool, task_id).await;
+        seed_exam_task_fixture(&pool, task_id, true).await;
+        seed_agent_exam_state(&pool, 5, 0.4).await;
+
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("EXAM_SKIP_ONCHAIN", Some("1")),
+            ],
+            async {
+                let config = sample_config();
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Compute stake",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+
+                let state = poll_agent_exam_state_until(
+                    &pool,
+                    |state| state.tasks_since_last_exam == 0 && state.last_exam_at.is_some(),
+                    40,
+                )
+                .await;
+
+                assert_eq!(state.tasks_since_last_exam, 0);
+                assert!(state.last_exam_at.is_some());
+                assert!(
+                    state.exam_urgency < 0.4,
+                    "exam validation hook should recalculate urgency downward after recent exam"
+                );
+                assert_eq!(
+                    state.smoothed_score,
+                    Some(100.0),
+                    "exam validation should persist smoothed_score for pass verdict"
+                );
+
+                let assignment = fetch_exam_assignment_row(&pool, task_id).await;
+                assert_eq!(assignment.status, "validated");
+            },
+        )
+        .await;
+
+        cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MySQL: DATABASE_URL from backend/.env; cargo test --lib db_completion_state -- --ignored --test-threads=1"]
+    async fn db_validate_and_complete_skip_onchain_does_not_update_ordinary_state() {
+        let task_id = "e2-db-ordinary-urgency-skip";
+        let output =
+            "Recommended allocation across cspr-usdt and cspr-eth pools with fee-adjusted APY.";
+        let pool = connect_test_pool().await;
+        cleanup_e2_fixtures(&pool, task_id).await;
+        seed_exam_task_fixture(&pool, task_id, false).await;
+        seed_agent_exam_state(&pool, 2, 0.15).await;
+
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("VALIDATOR_PIPELINE", Some("stage")),
+                ("EXAM_SKIP_ONCHAIN", Some("1")),
+            ],
+            async {
+                let config = sample_config();
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Analyze yield",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+
+                let state = get_agent_exam_state(&pool, E2_AGENT_PK)
+                    .await
+                    .expect("get agent exam state")
+                    .expect("baseline row");
+
+                assert_eq!(state.tasks_since_last_exam, 2);
+                assert!((state.exam_urgency - 0.15).abs() < f64::EPSILON);
+                assert!(
+                    state.smoothed_score.is_none(),
+                    "ordinary task path must not update smoothed_score"
+                );
             },
         )
         .await;

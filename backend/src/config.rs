@@ -23,6 +23,29 @@ impl ValidatorPipeline {
     }
 }
 
+/// Agent selection policy for exam dispatch (middle scenario Phase 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExamSelectionMode {
+    /// As-built bucket + probability gate (rollback path).
+    Bucket,
+    /// Per-agent `exam_urgency` ranking with frequency cap (default path).
+    Urgency,
+}
+
+impl ExamSelectionMode {
+    /// Reads `EXAM_SELECTION_MODE`; defaults to `urgency`.
+    pub fn from_env() -> Self {
+        match env::var("EXAM_SELECTION_MODE")
+            .ok()
+            .as_deref()
+            .map(str::trim)
+        {
+            Some("bucket") => Self::Bucket,
+            _ => Self::Urgency,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub database_url: String,
@@ -62,6 +85,34 @@ pub struct Config {
     pub exam_dispatch_creator_public_key: String,
     /// Post-MVP (E6): enable LLM semantic equality fallback after exact mismatch.
     pub exam_llm_equality: bool,
+    /// E7: enable in-process background exam dispatch loop (default off).
+    pub exam_dispatch_loop_enabled: bool,
+    /// E7: interval between background dispatch attempts (seconds).
+    pub exam_dispatch_loop_interval_secs: u64,
+    /// Phase 3: `bucket` (default) or `urgency` selection mode.
+    pub exam_selection_mode: ExamSelectionMode,
+    /// Phase 3: base per-agent dispatch probability in urgency mode.
+    pub exam_urgency_base_prob: f32,
+    /// Phase 3: weight for `tasks_since_last_exam` in urgency formula.
+    pub exam_urgency_task_weight: f64,
+    /// Phase 3: weight for verdict instability in urgency formula.
+    pub exam_urgency_variance_weight: f64,
+    /// Phase 3: number of recent validated exam verdicts for instability window.
+    pub exam_urgency_recent_verdicts: u32,
+    /// Phase 4: EMA decay factor for off-chain `smoothed_score` (does not affect on-chain submit).
+    pub exam_smoothed_ema_alpha: f64,
+    /// Phase 5: use off-chain `smoothed_score` in global leaderboard (default off).
+    pub exam_leaderboard_use_smoothed: bool,
+}
+
+/// Clamp EMA alpha to `(0.0, 1.0]`; invalid values fall back to `0.3`.
+pub fn clamp_ema_alpha(alpha: f64) -> f64 {
+    const DEFAULT: f64 = 0.3;
+    if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
+        DEFAULT
+    } else {
+        alpha
+    }
 }
 
 /// Clamp dispatch probability to anti-gaming range `(0.0, 1.0)`; `>= 1.0` becomes `0.99`.
@@ -158,6 +209,52 @@ impl Config {
             .ok()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
+        let exam_dispatch_loop_enabled = env::var("EXAM_DISPATCH_LOOP_ENABLED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
+
+        let exam_dispatch_loop_interval_secs = env::var("EXAM_DISPATCH_LOOP_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300)
+            .max(1);
+
+        let exam_selection_mode = ExamSelectionMode::from_env();
+
+        let exam_urgency_base_prob = clamp_dispatch_probability(
+            env::var("EXAM_URGENCY_BASE_PROB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.1),
+        );
+
+        let exam_urgency_task_weight = env::var("EXAM_URGENCY_TASK_WEIGHT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.05);
+
+        let exam_urgency_variance_weight = env::var("EXAM_URGENCY_VARIANCE_WEIGHT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.2);
+
+        let exam_urgency_recent_verdicts = env::var("EXAM_URGENCY_RECENT_VERDICTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5)
+            .max(1);
+
+        let exam_smoothed_ema_alpha = clamp_ema_alpha(
+            env::var("EXAM_SMOOTHED_EMA_ALPHA")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.3),
+        );
+
+        let exam_leaderboard_use_smoothed = env::var("EXAM_LEADERBOARD_USE_SMOOTHED")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+
         Config {
             database_url,
             port,
@@ -186,6 +283,15 @@ impl Config {
             exam_dispatch_budget_motes,
             exam_dispatch_creator_public_key,
             exam_llm_equality,
+            exam_dispatch_loop_enabled,
+            exam_dispatch_loop_interval_secs,
+            exam_selection_mode,
+            exam_urgency_base_prob,
+            exam_urgency_task_weight,
+            exam_urgency_variance_weight,
+            exam_urgency_recent_verdicts,
+            exam_smoothed_ema_alpha,
+            exam_leaderboard_use_smoothed,
         }
     }
 }
@@ -235,6 +341,15 @@ mod tests {
                 exam_dispatch_budget_motes: 5_000_000_000,
                 exam_dispatch_creator_public_key: String::new(),
                 exam_llm_equality: false,
+                exam_dispatch_loop_enabled: false,
+                exam_dispatch_loop_interval_secs: 300,
+                exam_selection_mode: crate::config::ExamSelectionMode::Bucket,
+                exam_urgency_base_prob: 0.1,
+                exam_urgency_task_weight: 0.05,
+                exam_urgency_variance_weight: 0.2,
+                exam_urgency_recent_verdicts: 5,
+                exam_smoothed_ema_alpha: 0.3,
+                exam_leaderboard_use_smoothed: false,
             };
             assert_eq!(config.exam_weight, 300);
         });
@@ -280,6 +395,36 @@ mod tests {
     }
 
     #[test]
+    fn exam_dispatch_loop_defaults_to_enabled() {
+        temp_env::with_vars(
+            [
+                ("EXAM_DISPATCH_LOOP_ENABLED", None::<&str>),
+                ("EXAM_DISPATCH_LOOP_INTERVAL_SECS", None::<&str>),
+            ],
+            || {
+                let config = Config::from_env();
+                assert!(config.exam_dispatch_loop_enabled);
+                assert_eq!(config.exam_dispatch_loop_interval_secs, 300);
+            },
+        );
+    }
+
+    #[test]
+    fn exam_dispatch_loop_reads_from_env() {
+        temp_env::with_vars(
+            [
+                ("EXAM_DISPATCH_LOOP_ENABLED", Some("0")),
+                ("EXAM_DISPATCH_LOOP_INTERVAL_SECS", Some("60")),
+            ],
+            || {
+                let config = Config::from_env();
+                assert!(!config.exam_dispatch_loop_enabled);
+                assert_eq!(config.exam_dispatch_loop_interval_secs, 60);
+            },
+        );
+    }
+
+    #[test]
     fn exam_dispatch_prob_clamped_from_env() {
         temp_env::with_vars(
             [
@@ -292,5 +437,61 @@ mod tests {
                 assert_eq!(config.exam_dispatch_prob_rehab, 0.5);
             },
         );
+    }
+
+    #[test]
+    fn exam_selection_mode_defaults_to_urgency() {
+        temp_env::with_var("EXAM_SELECTION_MODE", None::<&str>, || {
+            let config = Config::from_env();
+            assert_eq!(config.exam_selection_mode, ExamSelectionMode::Urgency);
+        });
+    }
+
+    #[test]
+    fn exam_selection_mode_reads_bucket_from_env() {
+        temp_env::with_var("EXAM_SELECTION_MODE", Some("bucket"), || {
+            let config = Config::from_env();
+            assert_eq!(config.exam_selection_mode, ExamSelectionMode::Bucket);
+        });
+    }
+
+    #[test]
+    fn exam_smoothed_ema_alpha_defaults_to_03() {
+        temp_env::with_var("EXAM_SMOOTHED_EMA_ALPHA", None::<&str>, || {
+            let config = Config::from_env();
+            assert!((config.exam_smoothed_ema_alpha - 0.3).abs() < f64::EPSILON);
+        });
+    }
+
+    #[test]
+    fn exam_smoothed_ema_alpha_reads_from_env() {
+        temp_env::with_var("EXAM_SMOOTHED_EMA_ALPHA", Some("0.5"), || {
+            let config = Config::from_env();
+            assert!((config.exam_smoothed_ema_alpha - 0.5).abs() < f64::EPSILON);
+        });
+    }
+
+    #[test]
+    fn clamp_ema_alpha_rejects_invalid_values() {
+        assert!((clamp_ema_alpha(-0.1) - 0.3).abs() < f64::EPSILON);
+        assert!((clamp_ema_alpha(0.0) - 0.3).abs() < f64::EPSILON);
+        assert!((clamp_ema_alpha(1.5) - 0.3).abs() < f64::EPSILON);
+        assert!((clamp_ema_alpha(f64::NAN) - 0.3).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn exam_leaderboard_use_smoothed_defaults_to_false() {
+        temp_env::with_var("EXAM_LEADERBOARD_USE_SMOOTHED", None::<&str>, || {
+            let config = Config::from_env();
+            assert!(!config.exam_leaderboard_use_smoothed);
+        });
+    }
+
+    #[test]
+    fn exam_leaderboard_use_smoothed_reads_from_env() {
+        temp_env::with_var("EXAM_LEADERBOARD_USE_SMOOTHED", Some("1"), || {
+            let config = Config::from_env();
+            assert!(config.exam_leaderboard_use_smoothed);
+        });
     }
 }
