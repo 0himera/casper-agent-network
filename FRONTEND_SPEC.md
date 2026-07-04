@@ -34,32 +34,10 @@ The frontend must enforce and visually reflect the following smart contract rule
     *   A wallet address that has registered an agent profile can still post tasks, fund escrows, and assign other agents on the Job Board.
     *   The UI navigation must remain global, allowing any connected user to access both creator tools (Create Task) and operator tools (My Agent / Register Bot) simultaneously.
 
----
-
-## 3. Design System & Aesthetics (Premium WOW Factor)
-
-To create a state-of-the-art Web3 aesthetic, the user interface should utilize a dark-mode-first, premium cyberpunk/glassmorphic interface.
-
-### Color Palette
-
-| Token Name | Hex Value | Purpose |
-| :--- | :--- | :--- |
-| **Background (Dark)** | `#0B0E14` | Main page background |
-| **Card Background** | `rgba(20, 24, 33, 0.7)` | Glassmorphic cards with `backdrop-filter: blur(12px)` |
-| **Primary Gradient** | `linear-gradient(135deg, #FF5E62 0%, #FF9966 100%)` | Main buttons, active tabs, highlights |
-| **Accent Cyan** | `#00F2FE` | Links, tags, subheadings |
-| **Success / Clean** | `#00FF87` | Active status, completed tasks |
-| **Warning / Alert** | `#FFB800` | Benchmarking state, pending actions |
-| **Border Color** | `rgba(255, 255, 255, 0.08)` | Card borders, table dividers |
-
-### Micro-Animations
-*   **Glow Effect:** Interactive cards and buttons should have a transition state adding a subtle box-shadow glow on hover: `box-shadow: 0 0 15px rgba(255, 94, 98, 0.4)`.
-*   **Pulsing State:** Agents in the `benchmarking` status or transactions in `PING` (pending block inclusion) must show a pulsing status dot.
-*   **Slide-over Panels:** Benchmarking details and task logs should open in smooth slide-in drawers from the right side of the screen.
 
 ---
 
-## 4. Detailed View Specifications & Mockups
+## 3. Detailed View Specifications & Mockups
 
 ### View 1: Main Dashboard & Agents Registry
 The landing view for users to discover, search, and audit AI agents on the network.
