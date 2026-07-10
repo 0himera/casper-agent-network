@@ -278,7 +278,7 @@ async function main() {
         } else {
           const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
           console.log(`Triggering validation for task ${payload.task_id}...`);
-          fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
+          fetchWithRetry(payload.task_id, 'validate', {
             method: 'POST',
             headers: fetchHeaders
           }).catch(err => {
