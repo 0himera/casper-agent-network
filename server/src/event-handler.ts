@@ -32,26 +32,15 @@ import {
   TreasuryBurnedPayload
 } from "./events";
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
+async function fetchWithRetry(taskId: string, action: 'execute' | 'validate', options: RequestInit, retries = 3) {
   let safeUrl: string;
   try {
-    const parsedUrl = new URL(url);
-    const allowedBackend = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
-    const allowedOrigin = new URL(allowedBackend).origin;
-    if (parsedUrl.origin !== allowedOrigin) {
-      throw new Error(`SSRF Prevention: Origin ${parsedUrl.origin} is not allowed. Only ${allowedOrigin} is permitted.`);
+    if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
+      throw new Error(`SSRF Prevention: Invalid task ID format: ${taskId}`);
     }
-    
-    // Validate path structure and extract task ID and action securely
-    const taskPathMatch = parsedUrl.pathname.match(/\/api\/tasks\/([a-zA-Z0-9_-]+)\/(execute|validate)/);
-    if (!taskPathMatch) {
-      throw new Error(`SSRF Prevention: Invalid path structure: ${parsedUrl.pathname}`);
-    }
-    const taskId = taskPathMatch[1];
-    const action = taskPathMatch[2];
 
-    // Reconstruct the URL using only safe, validated components
-    safeUrl = `${allowedOrigin}/api/tasks/${taskId}/${action}`;
+    const allowedBackend = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+    safeUrl = new URL(`/api/tasks/${taskId}/${action}`, allowedBackend).toString();
   } catch (err: any) {
     console.error("SSRF Validation failure:", err.message);
     throw err;
@@ -265,7 +254,7 @@ async function main() {
             console.log(`Backend is unhealthy. Skipping automated execution for task ${payload.task_id}.`);
           } else {
             console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
-            fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+            fetchWithRetry(payload.task_id, 'execute', {
               method: 'POST',
               headers: fetchHeaders
             }).catch(err => {
