@@ -33,6 +33,27 @@ import {
 } from "./events";
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
+  // Validate URL to prevent SSRF
+  try {
+    const parsedUrl = new URL(url);
+    const allowedBackend = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+    const allowedOrigin = new URL(allowedBackend).origin;
+    if (parsedUrl.origin !== allowedOrigin) {
+      throw new Error(`SSRF Prevention: Origin ${parsedUrl.origin} is not allowed. Only ${allowedOrigin} is permitted.`);
+    }
+    // Task ID validation in path: expect /api/tasks/[a-fA-F0-9-]{36}/...
+    const taskPathMatch = parsedUrl.pathname.match(/\/api\/tasks\/([^/]+)\/(execute|validate)/);
+    if (taskPathMatch) {
+      const taskId = taskPathMatch[1];
+      if (!/^[a-fA-F0-9-]+$/.test(taskId)) {
+        throw new Error(`SSRF Prevention: Invalid characters in task ID path component: ${taskId}`);
+      }
+    }
+  } catch (err: any) {
+    console.error("SSRF Validation failure:", err.message);
+    throw err;
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       const res = await fetch(url, options);
@@ -120,6 +141,37 @@ async function main() {
       const eventName = event.data.name;
       const deployHash = event.extra.deploy_hash;
       const timestamp = formatDate(event.timestamp);
+
+      // Security Check: Validate event payloads to prevent SSRF, Path Traversal, and Injection
+      const payload = event.data.data;
+      if (payload && typeof payload === 'object') {
+        // Validate task IDs
+        if ('task_id' in payload && payload.task_id !== undefined && payload.task_id !== null) {
+          const taskId = String(payload.task_id);
+          if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
+            console.error(`Security Warning: Rejected event due to invalid task_id format: "${taskId}"`);
+            return;
+          }
+        }
+        if ('parent_task_id' in payload && payload.parent_task_id !== undefined && payload.parent_task_id !== null) {
+          const parentTaskId = String(payload.parent_task_id);
+          if (!/^[a-zA-Z0-9_-]+$/.test(parentTaskId)) {
+            console.error(`Security Warning: Rejected event due to invalid parent_task_id format: "${parentTaskId}"`);
+            return;
+          }
+        }
+        // Validate public key/account identifier fields
+        const actorFields = ['agent', 'creator', 'validator', 'disputer'];
+        for (const field of actorFields) {
+          if (field in payload && payload[field] !== undefined && payload[field] !== null) {
+            const actorVal = String(payload[field]);
+            if (!/^(account-hash-)?[a-fA-F0-9]{64,66}$/.test(actorVal)) {
+              console.error(`Security Warning: Rejected event due to invalid ${field} format: "${actorVal}"`);
+              return;
+            }
+          }
+        }
+      }
 
       if (eventName === 'AgentRegistered') {
         const payload = event.data.data as AgentRegisteredPayload;

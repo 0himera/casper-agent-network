@@ -23,6 +23,9 @@ export class CSPRCloudAPIClient {
 
   async getAccount(accountIdentifier: string): Promise<Response<Account>> {
     const accHash = accountIdentifier.replace('account-hash-', '');
+    if (!/^[a-fA-F0-9]{64,66}$/.test(accHash)) {
+      throw new Error(`Invalid account identifier format: ${accountIdentifier}`);
+    }
 
     const response = await this.client.get<Response<Account>>(`/accounts/${accHash}`);
 
