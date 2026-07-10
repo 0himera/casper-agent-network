@@ -33,7 +33,7 @@ import {
 } from "./events";
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
-  // Validate URL to prevent SSRF
+  let safeUrl: string;
   try {
     const parsedUrl = new URL(url);
     const allowedBackend = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
@@ -41,14 +41,17 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
     if (parsedUrl.origin !== allowedOrigin) {
       throw new Error(`SSRF Prevention: Origin ${parsedUrl.origin} is not allowed. Only ${allowedOrigin} is permitted.`);
     }
-    // Task ID validation in path: expect /api/tasks/[a-fA-F0-9-]{36}/...
-    const taskPathMatch = parsedUrl.pathname.match(/\/api\/tasks\/([^/]+)\/(execute|validate)/);
-    if (taskPathMatch) {
-      const taskId = taskPathMatch[1];
-      if (!/^[a-fA-F0-9-]+$/.test(taskId)) {
-        throw new Error(`SSRF Prevention: Invalid characters in task ID path component: ${taskId}`);
-      }
+    
+    // Validate path structure and extract task ID and action securely
+    const taskPathMatch = parsedUrl.pathname.match(/\/api\/tasks\/([a-zA-Z0-9_-]+)\/(execute|validate)/);
+    if (!taskPathMatch) {
+      throw new Error(`SSRF Prevention: Invalid path structure: ${parsedUrl.pathname}`);
     }
+    const taskId = taskPathMatch[1];
+    const action = taskPathMatch[2];
+
+    // Reconstruct the URL using only safe, validated components
+    safeUrl = `${allowedOrigin}/api/tasks/${taskId}/${action}`;
   } catch (err: any) {
     console.error("SSRF Validation failure:", err.message);
     throw err;
@@ -56,7 +59,7 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
 
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await fetch(url, options);
+      const res = await fetch(safeUrl, options);
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
