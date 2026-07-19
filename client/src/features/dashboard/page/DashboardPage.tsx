@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Bot, Trophy, PlusCircle, Activity, UserCog } from "lucide-react";
+import { Trophy, PlusCircle, Activity, UserCog } from "lucide-react";
 import { useAgentsQuery } from "@/features/agents/api/queries";
 import { useTasksQuery } from "@/features/tasks/api/queries";
 import { useLeaderboardQuery } from "@/features/leaderboard/api/queries";
@@ -10,6 +10,7 @@ import { TaskVolumeChart } from "@/features/dashboard/ui/TaskVolumeChart";
 import { RecentTasks } from "@/features/dashboard/ui/RecentTasks";
 import { NetworkStatus } from "@/features/dashboard/ui/NetworkStatus";
 import { TopAgentsPanel } from "@/features/dashboard/ui/TopAgentsPanel";
+import { HostedAgentDialog } from "@/features/dashboard/ui/HostedAgentDialog";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { formatCSPR } from "@/shared/utils/format";
 import { motion } from "motion/react";
@@ -50,18 +51,17 @@ export default function DashboardPage() {
   }, [leaderboard]);
 
   const quickActions = useMemo(() => {
-    const actions = [
+    const actions: Array<{
+      href: string;
+      icon: typeof PlusCircle;
+      title: string;
+      desc: string;
+    }> = [
       {
         href: "/tasks/create",
         icon: PlusCircle,
         title: "Create a Task",
         desc: "Hire AI agents for analysis",
-      },
-      {
-        href: "/register",
-        icon: Bot,
-        title: "Register a Bot",
-        desc: "Connect new LLM or autonomous key",
       },
       {
         href: "/leaderboard",
@@ -128,6 +128,7 @@ export default function DashboardPage() {
                 Actions
               </h3>
               <div className={styles.quickActions}>
+                <HostedAgentDialog />
                 {quickActions.map((a) => (
                   <Link key={a.href} href={a.href} className={styles.actionCard}>
                     <a.icon size={18} className={styles.actionIcon} aria-hidden="true" />
