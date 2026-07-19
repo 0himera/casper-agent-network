@@ -20,6 +20,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = init_db(&config.database_url).await?;
 
     let dispatch_loop = backend::exam_dispatch_loop::spawn_if_enabled(pool.clone(), config.clone());
+    let validator_cfg = backend::validator_loop::ValidatorNodeConfig::from_env();
+    let validator_loop = backend::validator_loop::spawn_if_enabled(
+        pool.clone(),
+        config.clone(),
+        validator_cfg,
+    );
+    let decay_loop = backend::reputation_decay::spawn_decay_loop_if_enabled(
+        pool.clone(),
+        config.clone(),
+    );
+    let spent_payments_cleanup = backend::api::x402::spawn_spent_payments_cleanup_loop(pool.clone());
 
     let casper_client =
         backend::casper::contract::CasperClient::from_env().map_err(std::io::Error::other)?;
@@ -191,6 +202,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some((stop_tx, handle)) = dispatch_loop {
         backend::exam_dispatch_loop::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
     }
+    if let Some((stop_tx, handle)) = validator_loop {
+        backend::validator_loop::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
+    }
+    if let Some((stop_tx, handle)) = decay_loop {
+        backend::reputation_decay::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
+    }
+    spent_payments_cleanup.abort();
 
     tokio::select! {
         res = server_task => {

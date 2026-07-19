@@ -8,3 +8,4 @@ pub mod orchestrator;
 pub mod reputation_decay;
 pub mod validator;
 pub mod validator_loop;
+pub mod metrics;

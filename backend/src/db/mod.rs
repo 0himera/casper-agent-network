@@ -40,6 +40,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             recommended_price_motes BIGINT UNSIGNED NOT NULL DEFAULT 0,
             custom_price_motes BIGINT UNSIGNED NOT NULL DEFAULT 0,
             system_prompt TEXT NULL,
+            delegated_signer VARCHAR(128) NULL,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
     )
@@ -91,6 +92,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
         .await;
 
     let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN delegated_signer VARCHAR(128) NULL")
         .execute(&pool)
         .await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN parent_task_id VARCHAR(128) NULL")

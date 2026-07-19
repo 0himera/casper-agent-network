@@ -1,6 +1,6 @@
 import {
   Args,
-  CLTypeUInt8, CLTypeString,
+  CLTypeUInt8, CLTypeString, CLTypeKey,
   CLValue,
   Hash,
   PublicKey,
@@ -193,6 +193,22 @@ export const buildAcceptOwnershipTx = async (
   senderHex: string
 ) => {
   return buildContractTransaction(senderHex, 'accept_ownership', {});
+};
+
+export const buildSetDelegatedSignerTx = async (
+  senderHex: string,
+  delegatedSignerHex: string | null
+) => {
+  let signerKeyVal: CLValue | null = null;
+  if (delegatedSignerHex) {
+    const signerKeyStr = PublicKey.fromHex(delegatedSignerHex).accountHash().toPrefixedString();
+    const signerKey = Key.newKey(signerKeyStr);
+    signerKeyVal = CLValue.newCLKey(signerKey);
+  }
+
+  return buildContractTransaction(senderHex, 'set_delegated_signer', {
+    delegated_signer: CLValue.newCLOption(signerKeyVal, CLTypeKey)
+  });
 };
 
 export const buildNativeTransferTx = (

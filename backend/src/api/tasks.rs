@@ -189,6 +189,28 @@ pub async fn execute_task_handler(
         return Ok(StatusCode::OK);
     }
 
+    // Verify delegated signer for hosted agents
+    let delegated_ok = if let Some(signer) = &agent.delegated_signer {
+        let clean_signer = signer.trim_start_matches("account-hash-").to_lowercase();
+        let clean_admin = state.config.admin_account.trim_start_matches("account-hash-").to_lowercase();
+        
+        clean_signer == clean_admin || clean_signer == "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
+    } else {
+        false
+    };
+
+    if !delegated_ok {
+        tracing::warn!(
+            "Agent {} has no valid delegated signer set for hosted execution. Found: {:?}",
+            agent_pubkey,
+            agent.delegated_signer
+        );
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Agent has not authorized the platform as delegated signer for hosted execution".to_string(),
+        ));
+    }
+
     // Spawn background execution for hosted/external agents
     let pool = state.pool.clone();
     let config = state.config.clone();
@@ -514,15 +536,13 @@ fn submit_complete_cli_args(
     result_hash: &str,
     domain: &str,
     score: u32,
-    weight: u32,
-) -> [String; 6] {
+) -> [String; 5] {
     [
         creator_address.to_string(),
         task_id.to_string(),
         result_hash.to_string(),
         domain.to_string(),
         score.to_string(),
-        weight.to_string(),
     ]
 }
 
@@ -748,7 +768,6 @@ async fn validate_and_complete(
         &result_hash,
         domain,
         score,
-        weight,
     );
     if bin_path == "cargo" {
         cmd.args([
@@ -763,7 +782,6 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
-            &cli_args[5],
         ])
         .current_dir("../smart-contract");
     } else {
@@ -773,7 +791,6 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
-            &cli_args[5],
         ]);
     }
 
@@ -1173,14 +1190,12 @@ mod validation_tests {
             "abc123",
             "defi_analysis",
             100,
-            300,
         );
         assert_eq!(args[0], "0203abc...");
         assert_eq!(args[1], "task-exam-1");
         assert_eq!(args[2], "abc123");
         assert_eq!(args[3], "defi_analysis");
         assert_eq!(args[4], "100");
-        assert_eq!(args[5], "300");
     }
 
     #[test]
@@ -1205,9 +1220,6 @@ mod validation_tests {
 
     #[test]
     fn exam_fail_and_refusal_submit_args_use_zero_score_and_exam_weight() {
-        let config = sample_config();
-        let weight = resolve_completion_weight(true, &config, "defi_analysis", 5_000_000_000);
-
         for score in [0u32, 0u32] {
             let args = submit_complete_cli_args(
                 "0203abc...",
@@ -1215,11 +1227,9 @@ mod validation_tests {
                 "deadbeef",
                 "defi_analysis",
                 score,
-                weight,
             );
             assert_eq!(args[3], "defi_analysis");
             assert_eq!(args[4], "0");
-            assert_eq!(args[5], "300");
         }
     }
 

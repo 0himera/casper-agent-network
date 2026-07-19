@@ -40,11 +40,11 @@ RUN echo "Force cache bust 1" && touch backend/src/main.rs backend/validator/src
 WORKDIR /usr/src/app/backend
 RUN cargo build --release
 
-# Copy and build smart contract submit_complete CLI tool
+# Copy and build smart contract CLI tools
 WORKDIR /usr/src/app
 COPY smart-contract ./smart-contract
 WORKDIR /usr/src/app/smart-contract
-RUN cargo build --release --bin agent_network_submit_complete --features livenet
+RUN cargo build --release --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
 
 # Final runtime stage
 FROM debian:bookworm-slim
@@ -53,10 +53,22 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/local/bin
+# Create a non-root user
+RUN groupadd -g 10001 appuser && \
+    useradd -r -u 10001 -g appuser appuser
+
+WORKDIR /app
 
 COPY --from=builder /usr/src/app/backend/target/release/backend /usr/local/bin/backend
 COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_result /usr/local/bin/agent_network_submit_result
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_finalize_task /usr/local/bin/agent_network_finalize_task
+COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_decay_reputation /usr/local/bin/agent_network_decay_reputation
+
+RUN chmod +x /usr/local/bin/*
+
+USER appuser
 
 EXPOSE 3000
 

@@ -23,6 +23,7 @@ pub struct Agent {
     pub recommended_price_motes: u64,
     pub custom_price_motes: u64,
     pub system_prompt: Option<String>,
+    pub delegated_signer: Option<String>,
     pub timestamp: DateTime<Utc>,
     #[sqlx(default)]
     pub is_available: bool,
@@ -78,7 +79,6 @@ pub struct TaskPublic {
     pub result_signature: Option<String>,
     pub validator_audit: Option<serde_json::Value>,
     pub timestamp: DateTime<Utc>,
-    pub parent_task_id: Option<String>,
 }
 
 impl From<Task> for TaskPublic {
@@ -100,7 +100,6 @@ impl From<Task> for TaskPublic {
             result_signature: task.result_signature,
             validator_audit: task.validator_audit,
             timestamp: task.timestamp,
-            parent_task_id: task.parent_task_id,
         }
     }
 }
@@ -146,7 +145,7 @@ pub struct ExamAssignment {
 pub const TASK_PUBLIC_COLUMNS: &str = "\
     id, creator_public_key, assigned_agent_public_key, budget_motes, status, \
     result_hash, result, metadata_uri, transaction_hash, domain, skill_id, \
-    prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id";
+    prompt, deadline, result_signature, validator_audit, timestamp";
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Reputation {
@@ -191,7 +190,6 @@ mod tests {
             result_signature: None,
             validator_audit: None,
             timestamp: Utc::now(),
-            parent_task_id: None,
         })
         .expect("serialize TaskPublic");
 

@@ -7,7 +7,7 @@ import type { AgentSkill, AgentExecutionMode } from "@/entities/agent/types/type
 import { SkillsPicker } from "@/features/agents/ui/SkillsPicker";
 import { AgentTypePicker } from "@/features/agents/ui/AgentTypePicker";
 import { motion } from "motion/react";
-import { buildRegisterAgentTx, buildNativeTransferTx } from "@/shared/utils/contract-transactions";
+import { buildRegisterAgentTx, buildNativeTransferTx, buildSetDelegatedSignerTx } from "@/shared/utils/contract-transactions";
 import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
@@ -72,6 +72,13 @@ export default function RegisterPage() {
       );
       const registerTxHash = await signAndSendTransaction(registerTx, walletAddress);
 
+      let delegatedSignerTxHash = "";
+      if (agentType === "hosted") {
+        setStatus("Signing set_delegated_signer contract transaction...");
+        const setDelegatedTx = await buildSetDelegatedSignerTx(walletAddress, adminPubkey);
+        delegatedSignerTxHash = await signAndSendTransaction(setDelegatedTx, walletAddress);
+      }
+
       setStatus("Saving bot configuration off-chain...");
       await apiPost("/api/agents/register", {
         public_key: walletAddress,
@@ -88,7 +95,11 @@ export default function RegisterPage() {
       });
 
       setStatus("Agent successfully registered!");
-      alert(`Bot registered on-chain and off-chain!\nRegister Tx: ${registerTxHash}`);
+      let alertMsg = `Bot registered on-chain and off-chain!\nRegister Tx: ${registerTxHash}`;
+      if (delegatedSignerTxHash) {
+        alertMsg += `\nDelegation Tx: ${delegatedSignerTxHash}`;
+      }
+      alert(alertMsg);
       router.push("/my-agent");
     } catch (err: any) {
       console.error(err);

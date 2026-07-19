@@ -34,7 +34,6 @@ pub async fn get_audit_logs(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_audit_log_row_structure() {
