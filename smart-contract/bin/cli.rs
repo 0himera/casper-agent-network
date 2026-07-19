@@ -1,11 +1,10 @@
 //! CLI tool for deploying and interacting with the AgentNetwork contract.
 use agent_network::agent_network::AgentNetwork;
-use odra::host::{HostEnv, HostRef, NoArgs};
+use odra::host::HostEnv;
 use odra_cli::{
     deploy::DeployScript,
     scenario::{Args, Error, Scenario, ScenarioMetadata},
-    CommandArg, DeployedContractsContainer, DeployerExt,
-    OdraCli, 
+    CommandArg, DeployedContractsContainer, DeployerExt, OdraCli,
 };
 
 /// Deploys the `AgentNetwork` contract.
@@ -15,14 +14,14 @@ impl DeployScript for AgentNetworkDeployScript {
     fn deploy(
         &self,
         env: &HostEnv,
-        container: &mut DeployedContractsContainer
+        container: &mut DeployedContractsContainer,
     ) -> Result<(), odra_cli::deploy::Error> {
         let admin = env.get_account(0);
         AgentNetwork::load_or_deploy(
-            &env,
+            env,
             agent_network::agent_network::AgentNetworkInitArgs { admin },
             container,
-            350_000_000_000 // Gas limit
+            350_000_000_000, // Gas limit
         )?;
 
         Ok(())
@@ -41,7 +40,7 @@ impl Scenario for PingScenario {
         &self,
         _env: &HostEnv,
         _container: &DeployedContractsContainer,
-        _args: Args
+        _args: Args,
     ) -> Result<(), Error> {
         println!("AgentNetwork contract CLI is configured and ready.");
         Ok(())

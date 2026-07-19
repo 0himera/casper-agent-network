@@ -127,22 +127,14 @@ pub async fn execute_agent(
                 res_json["model"]
             );
 
-            let output_text = if let Some(thinking) = res_json["thinking"].as_str() {
-                if !thinking.is_empty() {
-                    thinking.to_string()
-                } else {
-                    res_json["response"]
-                        .as_str()
-                        .unwrap_or("Error generating response")
-                        .to_string()
-                }
+            if let Some(thinking) = res_json["thinking"].as_str().filter(|t| !t.is_empty()) {
+                thinking.to_string()
             } else {
                 res_json["response"]
                     .as_str()
                     .unwrap_or("Error generating response")
                     .to_string()
-            };
-            output_text
+            }
         } else {
             // Simulated Response if no keys are available
             format!(
@@ -161,10 +153,8 @@ pub async fn execute_agent(
             .build()?;
         let mut request = client.post(endpoint_url.unwrap());
 
-        if let Some(key) = api_key {
-            if !key.is_empty() {
-                request = request.bearer_auth(key);
-            }
+        if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+            request = request.bearer_auth(key);
         }
 
         let has_model = model.is_some() && !model.unwrap().is_empty();

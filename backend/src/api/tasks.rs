@@ -9,15 +9,17 @@ use sha2::{Digest, Sha256};
 use std::env as std_env;
 use tokio::process::Command;
 
-use crate::api::x402::verify_payment;
 use crate::api::AppState;
+use crate::api::x402::verify_payment;
 use crate::config::Config;
 use crate::db::DbPool;
+#[allow(unused_imports)]
 use crate::db::exam::{
     get_agent_exam_state, get_exam_assignment_by_task_id, get_exam_template_by_id,
     on_exam_validated, on_ordinary_task_completed, update_exam_assignment_validation,
     upsert_agent_exam_state,
 };
+#[allow(unused_imports)]
 use crate::db::models::{
     Agent, AgentExamState, ExamAssignment, ExamTemplate, TASK_PUBLIC_COLUMNS, Task, TaskPublic,
 };
@@ -44,23 +46,25 @@ pub async fn get_tasks(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.005 CSPR = 5,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         5_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks ORDER BY timestamp DESC");
     let tasks = sqlx::query_as::<_, Task>(&query)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
     let public: Vec<TaskPublic> = tasks.into_iter().map(TaskPublic::from).collect();
     Ok(Json(serde_json::json!(public)))
@@ -72,28 +76,33 @@ pub async fn get_task(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.002 CSPR = 2,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         2_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks WHERE id = ?");
     let task = sqlx::query_as::<_, Task>(&query)
         .bind(id)
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
     match task {
         Some(task) => Ok(Json(serde_json::json!(TaskPublic::from(task)))),
-        None => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Task not found" })))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Task not found" })),
+        )),
     }
 }
 
@@ -589,6 +598,7 @@ async fn fetch_task_row(pool: &DbPool, task_id: &str) -> Option<Task> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn validate_and_complete(
     pool: &DbPool,
     config: &Config,

@@ -5,7 +5,6 @@ pub mod db;
 pub mod exam_dispatch;
 pub mod exam_dispatch_loop;
 pub mod orchestrator;
+pub mod reputation_decay;
 pub mod validator;
 pub mod validator_loop;
-pub mod reputation_decay;
-

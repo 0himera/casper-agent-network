@@ -32,7 +32,12 @@ fn main() {
     // Deploy the contract (or load if already deployed)
     println!("Step 1: Deploying AgentNetwork contract...");
     let admin_address = env.get_account(0);
-    let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: admin_address });
+    let mut contract = AgentNetwork::deploy(
+        &env,
+        AgentNetworkInitArgs {
+            admin: admin_address,
+        },
+    );
     println!("✅ Contract deployed successfully!");
     println!("   Contract address: {:?}", contract.address());
 

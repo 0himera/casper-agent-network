@@ -1,3 +1,12 @@
+#![allow(
+    clippy::assign_op_pattern,
+    clippy::manual_checked_ops,
+    clippy::manual_abs_diff,
+    clippy::manual_is_multiple_of,
+    clippy::unnecessary_to_owned,
+    unused_mut
+)]
+
 use odra::casper_types::U512;
 use odra::prelude::*;
 
@@ -155,7 +164,6 @@ pub struct ReputationDecayed {
     pub new_weighted_sum: u64,
     pub new_total_weight: u64,
 }
-
 
 #[odra::event]
 pub struct TreasuryDistributed {
@@ -429,8 +437,10 @@ impl AgentNetwork {
         self.contract_description.set(
             "A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string()
         );
-        self.contract_icon_uri.set("https://agent-network.casper.dev/icon.png".to_string());
-        self.contract_project_uri.set("https://agent-network.casper.dev".to_string());
+        self.contract_icon_uri
+            .set("https://agent-network.casper.dev/icon.png".to_string());
+        self.contract_project_uri
+            .set("https://agent-network.casper.dev".to_string());
         self.fee_bps.set(DEFAULT_FEE_BPS);
     }
 
@@ -627,7 +637,10 @@ impl AgentNetwork {
         };
 
         self.agents.set(&caller, profile);
-        self.env().emit_event(AgentRegistered { agent: caller, name });
+        self.env().emit_event(AgentRegistered {
+            agent: caller,
+            name,
+        });
     }
 
     pub fn set_delegated_signer(&mut self, delegated_signer: Option<Address>) {
@@ -656,11 +669,20 @@ impl AgentNetwork {
         profile.metadata_uri = metadata_uri;
         self.agents.set(&caller, profile);
 
-        self.env().emit_event(AgentUpdated { agent: caller, name });
+        self.env().emit_event(AgentUpdated {
+            agent: caller,
+            name,
+        });
     }
 
     #[odra(payable)]
-    pub fn create_task(&mut self, task_id: String, metadata_uri: String, deadline: u64, parent_task_id: Option<String>) {
+    pub fn create_task(
+        &mut self,
+        task_id: String,
+        metadata_uri: String,
+        deadline: u64,
+        parent_task_id: Option<String>,
+    ) {
         let caller = self.env().caller();
         let attached_value = self.env().attached_value();
         let current_time = self.env().get_block_time();
@@ -771,9 +793,8 @@ impl AgentNetwork {
             .assigned_agent
             .unwrap_or_revert_with(&self.env(), ContractErrors::TaskNotAssigned);
         let agent_profile = self.agents.get(&assigned_agent);
-        let is_delegated_signer = agent_profile
-            .as_ref()
-            .and_then(|p| p.delegated_signer) == Some(caller);
+        let is_delegated_signer =
+            agent_profile.as_ref().and_then(|p| p.delegated_signer) == Some(caller);
 
         if assigned_agent != caller && !is_delegated_signer {
             self.env().revert(ContractErrors::NotAssignedAgent);
@@ -815,7 +836,8 @@ impl AgentNetwork {
         }
 
         if attached < U512::from(MINIMUM_VALIDATOR_STAKE) {
-            self.env().revert(ContractErrors::InsufficientValidatorStake);
+            self.env()
+                .revert(ContractErrors::InsufficientValidatorStake);
         }
 
         let profile = ValidatorProfile {
@@ -825,7 +847,8 @@ impl AgentNetwork {
         };
         self.validators.set(&caller, profile);
 
-        self.env().emit_event(ValidatorRegistered { validator: caller });
+        self.env()
+            .emit_event(ValidatorRegistered { validator: caller });
         self.env().emit_event(ValidatorStaked {
             validator: caller,
             amount: attached,
@@ -884,7 +907,7 @@ impl AgentNetwork {
             validator: caller,
             amount,
             remaining_stake: profile.stake,
-            });
+        });
     }
 
     pub fn submit_validation(&mut self, creator: Address, task_id: String, score: u32) {
@@ -922,7 +945,10 @@ impl AgentNetwork {
             self.env().revert(ContractErrors::TaskAlreadyValidated);
         }
 
-        validations.push(Validation { validator: caller, score });
+        validations.push(Validation {
+            validator: caller,
+            score,
+        });
         self.task_validations.set(&key, validations);
 
         profile.total_validations = profile
@@ -959,11 +985,13 @@ impl AgentNetwork {
         }
 
         let current_time = self.env().get_block_time();
-        let window_expired = current_time.saturating_sub(task.result_submitted_at) >= VALIDATION_WINDOW_MS;
+        let window_expired =
+            current_time.saturating_sub(task.result_submitted_at) >= VALIDATION_WINDOW_MS;
         let has_quorum = validations.len() >= MIN_VALIDATIONS as usize;
 
         if !has_quorum && !window_expired {
-            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+            self.env()
+                .revert(ContractErrors::ValidationWindowNotExpired);
         }
 
         // Calculate median score
@@ -998,7 +1026,7 @@ impl AgentNetwork {
 
         let mut reward_pool = total_fee * U512::from(5000u32) / U512::from(10_000u32);
         let treasury_share = total_fee - reward_pool;
-        
+
         let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
         treasury += treasury_share;
 
@@ -1022,16 +1050,21 @@ impl AgentNetwork {
                 } else {
                     let diff = deviation - DEVIATION_TOLERANCE;
                     let penalty_factor = (diff / 10) * SLASH_DEVIATION_BPS_PER_10;
-                    let penalty_bps = if penalty_factor > 10_000 { 10_000 } else { penalty_factor };
-                    
+                    let penalty_bps = if penalty_factor > 10_000 {
+                        10_000
+                    } else {
+                        penalty_factor
+                    };
+
                     if penalty_bps > 0 {
-                        let slash_amount = profile.stake * U512::from(penalty_bps) / U512::from(10_000u32);
+                        let slash_amount =
+                            profile.stake * U512::from(penalty_bps) / U512::from(10_000u32);
                         profile.stake = profile.stake - slash_amount;
                         if profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
                             profile.is_active = false;
                         }
                         self.validators.set(&val.validator, profile.clone());
-                        
+
                         treasury += slash_amount;
                         let mut total_slashed = self.total_slashed.get().unwrap_or(U512::zero());
                         total_slashed += slash_amount;
@@ -1068,7 +1101,7 @@ impl AgentNetwork {
         self.treasury_balance.set(treasury);
 
         self.env().transfer_tokens(&agent, &payout);
-        
+
         self.env().emit_event(FeeDeducted {
             task_id: task_id.clone(),
             agent,
@@ -1102,7 +1135,10 @@ impl AgentNetwork {
         };
         self.reputations.set(&(agent, skill.clone()), rep_state);
 
-        self.env().emit_event(TaskCompleted { task_id: task_id.clone(), score: median_score });
+        self.env().emit_event(TaskCompleted {
+            task_id: task_id.clone(),
+            score: median_score,
+        });
         self.env().emit_event(ScoreUpdated {
             agent,
             skill,
@@ -1113,7 +1149,6 @@ impl AgentNetwork {
             self.apply_slash(agent, SLASH_LOW_SCORE_BPS);
         }
     }
-
 
     pub fn distribute_treasury(&mut self, agent: Address, amount: U512) {
         self.assert_admin();
@@ -1149,7 +1184,10 @@ impl AgentNetwork {
         treasury -= amount;
         self.treasury_balance.set(treasury);
         self.env().transfer_tokens(&validator, &amount);
-        self.env().emit_event(TreasuryDistributed { agent: validator, amount });
+        self.env().emit_event(TreasuryDistributed {
+            agent: validator,
+            amount,
+        });
     }
 
     pub fn commit_weights(&mut self, commit_hash: String) {
@@ -1168,10 +1206,12 @@ impl AgentNetwork {
         let time_in_epoch = current_time % 900_000;
 
         if time_in_epoch >= 600_000 {
-            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+            self.env()
+                .revert(ContractErrors::ValidationWindowNotExpired);
         }
 
-        self.epoch_commits.set(&(caller, epoch), commit_hash.clone());
+        self.epoch_commits
+            .set(&(caller, epoch), commit_hash.clone());
         self.env().emit_event(WeightsCommitted {
             validator: caller,
             epoch,
@@ -1195,7 +1235,8 @@ impl AgentNetwork {
         let time_in_epoch = current_time % 900_000;
 
         if time_in_epoch < 600_000 {
-            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+            self.env()
+                .revert(ContractErrors::ValidationWindowNotExpired);
         }
 
         let _commit_hash = self
@@ -1219,7 +1260,7 @@ impl AgentNetwork {
         }
         treasury -= amount;
         self.treasury_balance.set(treasury);
-        // By decrementing the internal balance without transferring, 
+        // By decrementing the internal balance without transferring,
         // the tokens are permanently locked in the contract (burned).
         self.env().emit_event(TreasuryBurned { amount });
     }
@@ -1244,16 +1285,19 @@ impl AgentNetwork {
         }
 
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
-        
+
         // Guard: Decay can only decrease or keep equal existing values once initialized
-        if rep_state.total_weight > 0 && (decayed_weighted_sum > rep_state.weighted_sum || decayed_total_weight > rep_state.total_weight) {
+        if rep_state.total_weight > 0
+            && (decayed_weighted_sum > rep_state.weighted_sum
+                || decayed_total_weight > rep_state.total_weight)
+        {
             self.env().revert(ContractErrors::InvalidScore);
         }
 
         rep_state.weighted_sum = decayed_weighted_sum;
         rep_state.total_weight = decayed_total_weight;
         rep_state.last_update = self.env().get_block_time();
-        
+
         self.reputations.set(&(agent, skill.clone()), rep_state);
 
         self.env().emit_event(ReputationDecayed {
@@ -1410,7 +1454,6 @@ impl AgentNetwork {
         self.agents.set(&agent, agent_profile);
 
         self.env().transfer_tokens(&agent, &payout);
-
 
         self.env().emit_event(PaymentClaimed {
             task_id: task_id.clone(),
@@ -1699,9 +1742,7 @@ mod tests {
             "Generic Agent".to_string(),
             "https://meta".to_string(),
         );
-        contract
-            .with_tokens(U512::from(STAKE_AMOUNT))
-            .stake();
+        contract.with_tokens(U512::from(STAKE_AMOUNT)).stake();
     }
 
     fn complete_task_as_validator(
@@ -1716,7 +1757,9 @@ mod tests {
         let validator = env.get_account(9);
         env.set_caller(validator);
         if contract.get_validator(validator).is_none() {
-            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator(); // MINIMUM_VALIDATOR_STAKE
+            contract
+                .with_tokens(U512::from(100_000_000_000u64))
+                .register_validator(); // MINIMUM_VALIDATOR_STAKE
         }
         contract.submit_validation(creator, task_id.clone(), score);
         env.advance_block_time(VALIDATION_WINDOW_MS + 1000);
@@ -1772,7 +1815,11 @@ mod tests {
         env.set_caller(admin);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.with_tokens(budget).create_task(
-                "past_task".to_string(), "https://meta".to_string(), 0, None);
+                "past_task".to_string(),
+                "https://meta".to_string(),
+                0,
+                None,
+            );
         }));
         assert!(result.is_err(), "Should reject deadline=0");
     }
@@ -1787,7 +1834,11 @@ mod tests {
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task(
-            "task_01".to_string(), "https://task_meta".to_string(), deadline, None);
+            "task_01".to_string(),
+            "https://task_meta".to_string(),
+            deadline,
+            None,
+        );
 
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Open);
@@ -1807,7 +1858,15 @@ mod tests {
 
         let agent_balance_before = env.balance_of(&agent);
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "task_01".to_string(), "DeFi".to_string(), 90, 10);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "task_01".to_string(),
+            "DeFi".to_string(),
+            90,
+            10,
+        );
 
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Completed);
@@ -1820,7 +1879,10 @@ mod tests {
 
         let agent_balance_after = env.balance_of(&agent);
         let expected_fee = budget * U512::from(500u32) / U512::from(10_000u32);
-        assert_eq!(agent_balance_after, agent_balance_before + budget - expected_fee);
+        assert_eq!(
+            agent_balance_after,
+            agent_balance_before + budget - expected_fee
+        );
     }
 
     #[test]
@@ -1831,7 +1893,11 @@ mod tests {
 
         env.set_caller(admin);
         contract.with_tokens(budget).create_task(
-            "task_01".to_string(), "https://meta".to_string(), deadline, None);
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         let balance_before = env.balance_of(&admin);
         contract.cancel_task("task_01".to_string());
@@ -1852,7 +1918,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_01".to_string(), agent);
 
         let contract_address = contract.address();
@@ -1860,7 +1931,10 @@ mod tests {
             let mut c = AgentNetwork::load(&env, contract_address);
             c.cancel_task("task_01".to_string());
         }));
-        assert!(result.is_err(), "Should not cancel in-progress before deadline");
+        assert!(
+            result.is_err(),
+            "Should not cancel in-progress before deadline"
+        );
 
         env.advance_block_time(3_600_001);
 
@@ -1871,7 +1945,8 @@ mod tests {
         assert!(matches!(task.status, TaskStatus::Cancelled));
 
         let balance_after = env.balance_of(&admin);
-        let slash = U512::from(STAKE_AMOUNT) * U512::from(SLASH_DEADLINE_BPS) / U512::from(10_000u32);
+        let slash =
+            U512::from(STAKE_AMOUNT) * U512::from(SLASH_DEADLINE_BPS) / U512::from(10_000u32);
         assert_eq!(balance_after, balance_before + budget); // admin only gets budget back
         assert_eq!(contract.get_total_slashed(), slash); // slash goes to treasury
 
@@ -1889,7 +1964,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -1913,22 +1993,48 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 90, 2);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t1".to_string(),
+            "DeFi".to_string(),
+            90,
+            2,
+        );
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.weighted_sum / rep.total_weight, 90);
 
-        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t2".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t2".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t2".to_string(), "hash".to_string());
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "t2".to_string(), "DeFi".to_string(), 85, 5);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t2".to_string(),
+            "DeFi".to_string(),
+            85,
+            5,
+        );
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.weighted_sum, 175);
@@ -1941,13 +2047,22 @@ mod tests {
     fn it_exposes_cep96_metadata() {
         let (_env, contract, _admin, _agent) = setup();
 
-        assert_eq!(contract.contract_name(), Some("Casper Agent Network".to_string()));
+        assert_eq!(
+            contract.contract_name(),
+            Some("Casper Agent Network".to_string())
+        );
         assert_eq!(
             contract.contract_description(),
             Some("A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string())
         );
-        assert_eq!(contract.contract_icon_uri(), Some("https://agent-network.casper.dev/icon.png".to_string()));
-        assert_eq!(contract.contract_project_uri(), Some("https://agent-network.casper.dev".to_string()));
+        assert_eq!(
+            contract.contract_icon_uri(),
+            Some("https://agent-network.casper.dev/icon.png".to_string())
+        );
+        assert_eq!(
+            contract.contract_project_uri(),
+            Some("https://agent-network.casper.dev".to_string())
+        );
     }
 
     #[test]
@@ -1963,7 +2078,10 @@ mod tests {
         );
 
         assert_eq!(contract.contract_name(), Some("New Name".to_string()));
-        assert_eq!(contract.contract_icon_uri(), Some("https://new-icon.png".to_string()));
+        assert_eq!(
+            contract.contract_icon_uri(),
+            Some("https://new-icon.png".to_string())
+        );
         assert_eq!(
             contract.contract_description(),
             Some("A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string())
@@ -1993,13 +2111,27 @@ mod tests {
         let deadline = env.block_time() + 3_600_000;
 
         env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic".to_string(),
+            "https://meta".to_string(),
+        );
 
         env.set_caller(_admin);
-        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "shared_id".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         env.set_caller(agent);
-        contract.with_tokens(budget).create_task("shared_id".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "shared_id".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         let task_a = contract.get_task(_admin, "shared_id".to_string()).unwrap();
         let task_b = contract.get_task(agent, "shared_id".to_string()).unwrap();
@@ -2016,7 +2148,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -2027,7 +2164,15 @@ mod tests {
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert!(matches!(task.status, TaskStatus::Disputed));
 
-        complete_task_as_validator(&env, &mut contract, admin, "task_01".to_string(), "DeFi".to_string(), 75, 5);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "task_01".to_string(),
+            "DeFi".to_string(),
+            75,
+            5,
+        );
         let task = contract.get_task(admin, "task_01".to_string()).unwrap();
         assert!(matches!(task.status, TaskStatus::Completed));
     }
@@ -2041,7 +2186,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -2076,7 +2226,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_01".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_01".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_01".to_string(), agent);
 
         env.set_caller(agent);
@@ -2094,7 +2249,11 @@ mod tests {
         let non_admin = env.get_account(2);
 
         env.set_caller(agent);
-        contract.register_agent("PricedAgent".to_string(), "Agent with pricing".to_string(), "https://meta".to_string());
+        contract.register_agent(
+            "PricedAgent".to_string(),
+            "Agent with pricing".to_string(),
+            "https://meta".to_string(),
+        );
 
         let custom_price = U512::from(3_000_000_000u64);
         contract.set_price(custom_price);
@@ -2112,7 +2271,10 @@ mod tests {
             let mut c = AgentNetwork::load(&env, contract.address());
             c.update_recommended_price(agent, U512::from(1u64));
         }));
-        assert!(result.is_err(), "Non-admin should not set recommended price");
+        assert!(
+            result.is_err(),
+            "Non-admin should not set recommended price"
+        );
     }
 
     #[test]
@@ -2123,33 +2285,65 @@ mod tests {
 
         register_and_stake(&env, &mut contract, agent);
 
-        assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 500);
+        assert_eq!(
+            contract.get_effective_fee_rate(agent, "DeFi".to_string()),
+            500
+        );
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
 
         let agent_before = env.balance_of(&agent);
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 95, 10);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t1".to_string(),
+            "DeFi".to_string(),
+            95,
+            10,
+        );
 
         let fee = budget * U512::from(500u32) / U512::from(10_000u32);
         let payout = budget - fee;
         assert_eq!(env.balance_of(&agent), agent_before + payout);
 
-        assert_eq!(contract.get_effective_fee_rate(agent, "DeFi".to_string()), 100);
+        assert_eq!(
+            contract.get_effective_fee_rate(agent, "DeFi".to_string()),
+            100
+        );
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t2".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t2".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t2".to_string(), agent);
         env.set_caller(agent);
         contract.submit_result(admin, "t2".to_string(), "hash".to_string());
 
         let agent_before = env.balance_of(&agent);
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "t2".to_string(), "DeFi".to_string(), 95, 10);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t2".to_string(),
+            "DeFi".to_string(),
+            95,
+            10,
+        );
 
         let fee = budget * U512::from(100u32) / U512::from(10_000u32);
         let payout = budget - fee;
@@ -2170,7 +2364,12 @@ mod tests {
         assert!(!contract.get_agent(agent).unwrap().is_available);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
         }));
@@ -2193,12 +2392,19 @@ mod tests {
         let deadline = env.block_time() + 3_600_000;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         let task = contract.get_task(admin, "t1".to_string()).unwrap();
         assert_eq!(task.budget, budget);
 
-        contract.with_tokens(extra).increase_budget("t1".to_string());
+        contract
+            .with_tokens(extra)
+            .increase_budget("t1".to_string());
 
         let task = contract.get_task(admin, "t1".to_string()).unwrap();
         assert_eq!(task.budget, budget + extra);
@@ -2212,7 +2418,11 @@ mod tests {
         let stake = U512::from(STAKE_AMOUNT);
 
         env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic".to_string(),
+            "https://meta".to_string(),
+        );
 
         let info = contract.get_stake(agent);
         assert_eq!(info.amount, U512::zero());
@@ -2238,11 +2448,20 @@ mod tests {
         let deadline = env.block_time() + 3_600_000;
 
         env.set_caller(agent);
-        contract.register_agent("Agent_1".to_string(), "Generic".to_string(), "https://meta".to_string());
+        contract.register_agent(
+            "Agent_1".to_string(),
+            "Generic".to_string(),
+            "https://meta".to_string(),
+        );
         // No stake — should fail
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
@@ -2280,14 +2499,27 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
 
         env.set_caller(agent);
         contract.submit_result(admin, "t1".to_string(), "hash".to_string());
 
         env.set_caller(admin);
-        complete_task_as_validator(&env, &mut contract, admin, "t1".to_string(), "DeFi".to_string(), 20, 10); // score < 30
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t1".to_string(),
+            "DeFi".to_string(),
+            20,
+            10,
+        ); // score < 30
 
         let stake_after = contract.get_stake(agent).amount;
         let expected_slash = stake_before * U512::from(SLASH_LOW_SCORE_BPS) / U512::from(10_000u32);
@@ -2306,7 +2538,12 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
 
         // Agent doesn't submit, deadline passes
@@ -2331,7 +2568,12 @@ mod tests {
         let stake_before = contract.get_stake(agent).amount;
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
 
         env.set_caller(agent);
@@ -2373,7 +2615,10 @@ mod tests {
             let mut c = AgentNetwork::load(&env, contract_address);
             c.withdraw_stake();
         }));
-        assert!(result.is_err(), "Should not withdraw before unbonding period");
+        assert!(
+            result.is_err(),
+            "Should not withdraw before unbonding period"
+        );
 
         // Advance past unbonding period (30 min)
         env.advance_block_time(UNBONDING_PERIOD + 1);
@@ -2400,7 +2645,12 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t1".to_string(), agent);
 
         // Agent has active job — cannot unstake
@@ -2432,7 +2682,12 @@ mod tests {
         }
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t1".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t1".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.assign_task("t1".to_string(), agent);
@@ -2497,7 +2752,12 @@ mod tests {
 
         // Create task
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t_yuma".to_string(), "meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t_yuma".to_string(),
+            "meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t_yuma".to_string(), agent);
 
         // Submit result
@@ -2536,7 +2796,10 @@ mod tests {
         // V3 deviation is 30 points (90 - 60). Tolerance is 10. Diff is 20.
         // Penalty factor = (20 / 10) * 500 bps = 1000 bps (10%)
         let v3_profile = contract.get_validator(v3).unwrap();
-        assert_eq!(v3_profile.stake, val_stake * U512::from(90u32) / U512::from(100u32)); // 90% left
+        assert_eq!(
+            v3_profile.stake,
+            val_stake * U512::from(90u32) / U512::from(100u32)
+        ); // 90% left
 
         // V1 should have received rewards in their account balance
         let v1_balance_after = env.balance_of(&v1);
@@ -2547,19 +2810,21 @@ mod tests {
     fn it_syncs_decayed_reputation() {
         let (env, mut contract, admin, agent) = setup();
         let validator = env.get_account(3);
-        
+
         // Register and stake validator
         env.set_caller(validator);
-        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
-        
+        contract
+            .with_tokens(U512::from(100_000_000_000u64))
+            .register_validator();
+
         // Set initial score via validator
         env.set_caller(validator);
         contract.sync_decayed_reputation(agent, "General".to_string(), 450, 5);
-        
+
         let rep = contract.get_reputation(agent, "General".to_string());
         assert_eq!(rep.weighted_sum, 450);
         assert_eq!(rep.total_weight, 5);
-        
+
         // Admin decay down is allowed
         env.set_caller(admin);
         contract.sync_decayed_reputation(agent, "General".to_string(), 400, 4);
@@ -2600,7 +2865,12 @@ mod tests {
 
         // Create and assign task
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("task_trustless".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "task_trustless".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("task_trustless".to_string(), agent);
 
         // 1. Random caller fails
@@ -2608,7 +2878,11 @@ mod tests {
         let contract_address = contract.address();
         let res_random = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
-            c.submit_result(admin, "task_trustless".to_string(), "hash_random".to_string());
+            c.submit_result(
+                admin,
+                "task_trustless".to_string(),
+                "hash_random".to_string(),
+            );
         }));
         assert!(res_random.is_err(), "Random caller must be rejected");
 
@@ -2616,14 +2890,27 @@ mod tests {
         env.set_caller(admin);
         let res_admin = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
-            c.submit_result(admin, "task_trustless".to_string(), "hash_admin".to_string());
+            c.submit_result(
+                admin,
+                "task_trustless".to_string(),
+                "hash_admin".to_string(),
+            );
         }));
-        assert!(res_admin.is_err(), "Admin without delegation must be rejected");
+        assert!(
+            res_admin.is_err(),
+            "Admin without delegation must be rejected"
+        );
 
         // 3. Delegated signer succeeds
         env.set_caller(delegated_signer);
-        contract.submit_result(admin, "task_trustless".to_string(), "hash_delegated".to_string());
-        let task = contract.get_task(admin, "task_trustless".to_string()).unwrap();
+        contract.submit_result(
+            admin,
+            "task_trustless".to_string(),
+            "hash_delegated".to_string(),
+        );
+        let task = contract
+            .get_task(admin, "task_trustless".to_string())
+            .unwrap();
         assert_eq!(task.result_hash, "hash_delegated");
     }
 
@@ -2640,11 +2927,18 @@ mod tests {
 
         for val in [val1, val2, val3] {
             env.set_caller(val);
-            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+            contract
+                .with_tokens(U512::from(100_000_000_000u64))
+                .register_validator();
         }
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("mval_task".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "mval_task".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("mval_task".to_string(), agent);
 
         env.set_caller(agent);
@@ -2659,7 +2953,10 @@ mod tests {
             let mut c = AgentNetwork::load(&env, contract_address);
             c.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string(), 10);
         }));
-        assert!(early_finalize_res.is_err(), "Finalizing with <3 validations before window expiry must fail");
+        assert!(
+            early_finalize_res.is_err(),
+            "Finalizing with <3 validations before window expiry must fail"
+        );
 
         // 2. 2nd & 3rd validators submit -> quorum (3/3) reached -> finalize succeeds before window
         env.set_caller(val2);
@@ -2682,16 +2979,31 @@ mod tests {
         register_and_stake(&env, &mut contract, agent);
 
         env.set_caller(val);
-        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+        contract
+            .with_tokens(U512::from(100_000_000_000u64))
+            .register_validator();
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t_treasury".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t_treasury".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t_treasury".to_string(), agent);
 
         env.set_caller(agent);
         contract.submit_result(admin, "t_treasury".to_string(), "hash_tr".to_string());
 
-        complete_task_as_validator(&env, &mut contract, admin, "t_treasury".to_string(), "DeFi".to_string(), 95, 10);
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t_treasury".to_string(),
+            "DeFi".to_string(),
+            95,
+            10,
+        );
 
         let treasury_before = contract.get_treasury_balance();
         assert!(treasury_before >= U512::from(100_000_000_000u64));
@@ -2701,7 +3013,10 @@ mod tests {
         contract.distribute_treasury_to_validator(val, U512::from(10_000_000_000u64));
 
         let val_bal_after = env.balance_of(&val);
-        assert_eq!(val_bal_after, val_bal_before + U512::from(10_000_000_000u64));
+        assert_eq!(
+            val_bal_after,
+            val_bal_before + U512::from(10_000_000_000u64)
+        );
     }
 
     #[test]
@@ -2718,11 +3033,18 @@ mod tests {
 
         for val in [val1, val2, val3] {
             env.set_caller(val);
-            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+            contract
+                .with_tokens(U512::from(100_000_000_000u64))
+                .register_validator();
         }
 
         env.set_caller(admin);
-        contract.with_tokens(budget).create_task("t_weight".to_string(), "https://meta".to_string(), deadline, None);
+        contract.with_tokens(budget).create_task(
+            "t_weight".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
         contract.assign_task("t_weight".to_string(), agent);
 
         env.set_caller(agent);
@@ -2749,7 +3071,9 @@ mod tests {
         let val = env.get_account(6);
 
         env.set_caller(val);
-        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+        contract
+            .with_tokens(U512::from(100_000_000_000u64))
+            .register_validator();
 
         // 1. Commit in commit window (t=100s, epoch 0)
         contract.commit_weights("commit_hash_123".to_string());

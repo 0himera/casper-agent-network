@@ -46,8 +46,8 @@ pub struct ValidatorTickOutcome {
 
 /// Runs a single iteration of the validator node loop.
 pub async fn run_validator_iteration(
-    pool: &DbPool,
-    config: &Config,
+    _pool: &DbPool,
+    _config: &Config,
     node_cfg: &ValidatorNodeConfig,
 ) -> Result<ValidatorTickOutcome, String> {
     tracing::debug!(
@@ -60,7 +60,7 @@ pub async fn run_validator_iteration(
     // 2. Evaluate with judge LLM
     // 3. Submit validation score on-chain
     // 4. Check for quorum / window expiry -> finalize
-    
+
     Ok(ValidatorTickOutcome {
         tasks_evaluated: 0,
         validations_submitted: 0,

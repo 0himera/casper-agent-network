@@ -27,14 +27,13 @@ pub struct XPaymentPayload {
 }
 
 /// Decodes X-Payment header using autodetect (direct JSON, Base64, or Hex).
+#[allow(clippy::collapsible_if)]
 pub fn parse_x_payment_header(input: &str) -> Result<XPaymentHeader, String> {
     let trimmed = input.trim();
 
     // 1. Try direct JSON parsing
-    if (trimmed.starts_with('{') && trimmed.ends_with('}')) || serde_json::from_str::<XPaymentHeader>(trimmed).is_ok() {
-        if let Ok(xp) = serde_json::from_str::<XPaymentHeader>(trimmed) {
-            return Ok(xp);
-        }
+    if let Ok(xp) = serde_json::from_str::<XPaymentHeader>(trimmed) {
+        return Ok(xp);
     }
 
     // 2. Try base64 decoding
@@ -136,10 +135,7 @@ pub async fn verify_payment(
     let x_payment = match parse_x_payment_header(x_payment_str) {
         Ok(xp) => xp,
         Err(err) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": err })),
-            ));
+            return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": err }))));
         }
     };
 
@@ -188,7 +184,10 @@ pub async fn verify_payment(
 }
 
 /// Cleans up spent payment records older than `max_age_hours` (default 24h).
-pub async fn cleanup_old_spent_payments(pool: &DbPool, max_age_hours: u32) -> Result<u64, sqlx::Error> {
+pub async fn cleanup_old_spent_payments(
+    pool: &DbPool,
+    max_age_hours: u32,
+) -> Result<u64, sqlx::Error> {
     let res = sqlx::query("DELETE FROM spent_payments WHERE timestamp < NOW() - INTERVAL ? HOUR")
         .bind(max_age_hours)
         .execute(pool)
@@ -234,7 +233,12 @@ mod tests {
 
     #[test]
     fn test_make_402_challenge_response() {
-        let resp = make_402_challenge_response(10_000_000, "01abc...", "https://api.can.dev/agents", "List agents");
+        let resp = make_402_challenge_response(
+            10_000_000,
+            "01abc...",
+            "https://api.can.dev/agents",
+            "List agents",
+        );
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(resp.headers().get("WWW-Authenticate").unwrap(), "x402");
     }

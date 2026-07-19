@@ -95,17 +95,14 @@ pub async fn get_global_leaderboard(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.01 CSPR = 10,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         10_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let sql = if state.config.exam_leaderboard_use_smoothed {
         GLOBAL_LEADERBOARD_SMOOTHED_SQL
@@ -116,7 +113,12 @@ pub async fn get_global_leaderboard(
     let entries = sqlx::query_as::<_, LeaderboardEntry>(sql)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
     Ok(Json(serde_json::json!(entries)))
 }
@@ -127,17 +129,14 @@ pub async fn get_domain_leaderboard(
     Path(domain): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.01 CSPR = 10,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         10_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let entries = sqlx::query_as::<_, LeaderboardEntry>(
         "SELECT 
@@ -178,10 +177,7 @@ mod tests {
 
     #[test]
     fn resolve_global_leaderboard_score_uses_smoothed_when_flag_on() {
-        assert_eq!(
-            resolve_global_leaderboard_score(10.0, Some(85.0), true),
-            85
-        );
+        assert_eq!(resolve_global_leaderboard_score(10.0, Some(85.0), true), 85);
     }
 
     #[test]
@@ -305,9 +301,7 @@ mod db_tests {
             .expect("fetch global leaderboard");
         entries
             .into_iter()
-            .filter(|e| {
-                e.public_key == AGENT_CHAIN_ONLY || e.public_key == AGENT_SMOOTHED
-            })
+            .filter(|e| e.public_key == AGENT_CHAIN_ONLY || e.public_key == AGENT_SMOOTHED)
             .map(|e| (e.public_key, e.score))
             .collect()
     }

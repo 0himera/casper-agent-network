@@ -1,6 +1,5 @@
 use validator_engine::{
-    ExamPipelineOutput, ExamVerificationPolicy, evaluate_exam_pipeline,
-    resolve_exam_verification_policy,
+    ExamPipelineOutput, evaluate_exam_pipeline, resolve_exam_verification_policy,
 };
 
 use crate::config::Config;
@@ -56,6 +55,7 @@ pub fn map_exam_output_to_evaluation(
 }
 
 /// Exam pipeline path for live validation when `exam_assignments` exists.
+#[allow(clippy::too_many_arguments)]
 pub async fn evaluate_exam_task(
     exam_id: &str,
     domain: &str,

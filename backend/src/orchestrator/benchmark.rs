@@ -30,6 +30,7 @@ fn benchmark_prompt(domain: &str) -> Option<&'static str> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn start_benchmark_background(
     pool: DbPool,
     agent_public_key: String,
@@ -142,16 +143,10 @@ pub fn start_benchmark_background(
             .await;
         }
 
-        let avg_score = if skill_count > 0 {
-            total_score / skill_count
-        } else {
-            0
-        };
-        let avg_price = if skill_count > 0 {
-            total_recommended_price_motes / skill_count as u64
-        } else {
-            0
-        };
+        let avg_score = total_score.checked_div(skill_count).unwrap_or(0);
+        let avg_price = total_recommended_price_motes
+            .checked_div(skill_count as u64)
+            .unwrap_or(0);
 
         tracing::info!(
             "Benchmark completed for agent {}. Avg score: {}, Rec Price: {} motes",

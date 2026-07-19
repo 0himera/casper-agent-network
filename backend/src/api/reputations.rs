@@ -62,17 +62,14 @@ pub async fn get_reputations(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.01 CSPR = 10,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         10_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let reputations =
         sqlx::query_as::<_, Reputation>("SELECT * FROM reputations ORDER BY timestamp DESC")

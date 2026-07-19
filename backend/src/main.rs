@@ -21,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dispatch_loop = backend::exam_dispatch_loop::spawn_if_enabled(pool.clone(), config.clone());
 
-    let casper_client = backend::casper::contract::CasperClient::from_env()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let casper_client =
+        backend::casper::contract::CasperClient::from_env().map_err(std::io::Error::other)?;
 
     // 1. Prometheus Metrics configuration
     let (prometheus_layer, metric_handle) = PrometheusMetricLayerBuilder::new()
@@ -113,8 +113,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         CorsLayer::new().allow_origin([
-            "http://localhost:3000".parse::<axum::http::HeaderValue>().unwrap(),
-            "http://127.0.0.1:3000".parse::<axum::http::HeaderValue>().unwrap(),
+            "http://localhost:3000"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
+            "http://127.0.0.1:3000"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
         ])
     }
     .allow_methods(vec![

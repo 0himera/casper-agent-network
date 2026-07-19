@@ -307,7 +307,8 @@ pub async fn on_exam_validated(
 
     let price_score = resolve_price_score(state.smoothed_score, chain_sum);
     // Use 10000ms for a 1.0 multiplier
-    let new_price = crate::validator::llm_judge::recommended_price_motes("defi_analysis", price_score, 10000);
+    let new_price =
+        crate::validator::llm_judge::recommended_price_motes("defi_analysis", price_score, 10000);
 
     sqlx::query("UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?")
         .bind(new_price)
@@ -1055,14 +1056,17 @@ mod tests {
                 .await
                 .expect("on_exam_validated");
 
-            let price: Option<u64> = sqlx::query_scalar("SELECT recommended_price_motes FROM agents WHERE public_key = ?")
-                .bind(PHASE2_AGENT_PK)
-                .fetch_one(&pool)
-                .await
-                .ok()
-                .flatten();
+            let price: Option<u64> = sqlx::query_scalar(
+                "SELECT recommended_price_motes FROM agents WHERE public_key = ?",
+            )
+            .bind(PHASE2_AGENT_PK)
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
 
-            let expected_price = crate::validator::llm_judge::recommended_price_motes("defi_analysis", 100, 10000);
+            let expected_price =
+                crate::validator::llm_judge::recommended_price_motes("defi_analysis", 100, 10000);
             assert_eq!(price, Some(expected_price));
 
             cleanup_completion_fixtures(&pool).await;
@@ -1074,7 +1078,7 @@ mod tests {
             let pool = connect_test_pool().await;
             cleanup_completion_fixtures(&pool).await;
             seed_phase2_agent(&pool).await;
-            
+
             // Set initial price
             let initial_price = 1_000_000_000u64;
             sqlx::query("UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?")
@@ -1089,14 +1093,20 @@ mod tests {
                 .await
                 .expect("on_ordinary_task_completed");
 
-            let price: Option<u64> = sqlx::query_scalar("SELECT recommended_price_motes FROM agents WHERE public_key = ?")
-                .bind(PHASE2_AGENT_PK)
-                .fetch_one(&pool)
-                .await
-                .ok()
-                .flatten();
+            let price: Option<u64> = sqlx::query_scalar(
+                "SELECT recommended_price_motes FROM agents WHERE public_key = ?",
+            )
+            .bind(PHASE2_AGENT_PK)
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
 
-            assert_eq!(price, Some(initial_price), "Ordinary task should not change price via smoothed path");
+            assert_eq!(
+                price,
+                Some(initial_price),
+                "Ordinary task should not change price via smoothed path"
+            );
 
             cleanup_completion_fixtures(&pool).await;
         }
@@ -1107,7 +1117,7 @@ mod tests {
             let pool = connect_test_pool().await;
             cleanup_completion_fixtures(&pool).await;
             seed_phase2_agent(&pool).await;
-            
+
             // Add some reputation
             sqlx::query("INSERT INTO reputations (id, agent_public_key, skill, score) VALUES ('fallback-rep', ?, 'test', 42)")
                 .bind(PHASE2_AGENT_PK)
@@ -1120,17 +1130,23 @@ mod tests {
                 .await
                 .expect("on_exam_validated");
 
-            let price: Option<u64> = sqlx::query_scalar("SELECT recommended_price_motes FROM agents WHERE public_key = ?")
-                .bind(PHASE2_AGENT_PK)
-                .fetch_one(&pool)
-                .await
-                .ok()
-                .flatten();
+            let price: Option<u64> = sqlx::query_scalar(
+                "SELECT recommended_price_motes FROM agents WHERE public_key = ?",
+            )
+            .bind(PHASE2_AGENT_PK)
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
 
-            let expected_price = crate::validator::llm_judge::recommended_price_motes("defi_analysis", 42, 10000);
+            let expected_price =
+                crate::validator::llm_judge::recommended_price_motes("defi_analysis", 42, 10000);
             assert_eq!(price, Some(expected_price));
 
-            sqlx::query("DELETE FROM reputations WHERE id = 'fallback-rep'").execute(&pool).await.unwrap();
+            sqlx::query("DELETE FROM reputations WHERE id = 'fallback-rep'")
+                .execute(&pool)
+                .await
+                .unwrap();
             cleanup_completion_fixtures(&pool).await;
         }
     }

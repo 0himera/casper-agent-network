@@ -9,8 +9,8 @@
 use agent_network::agent_network::AgentNetwork;
 use odra::host::HostRefLoader;
 use odra::prelude::Address;
-use std::str::FromStr;
 use std::env as std_env;
+use std::str::FromStr;
 
 fn main() {
     env_logger::init();

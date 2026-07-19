@@ -9,10 +9,14 @@
 use agent_network::agent_network::{AgentNetwork, AgentNetworkHostRef, Task, TaskStatus};
 use odra::host::HostRefLoader;
 use odra::prelude::Address;
-use std::str::FromStr;
 use std::env as std_env;
+use std::str::FromStr;
 
-fn get_task_safe(contract: &AgentNetworkHostRef, creator: &Address, task_id: &str) -> Option<Option<Task>> {
+fn get_task_safe(
+    contract: &AgentNetworkHostRef,
+    creator: &Address,
+    task_id: &str,
+) -> Option<Option<Task>> {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         contract.get_task(*creator, task_id.to_string())
     }));
@@ -129,7 +133,7 @@ fn main() {
             let mut contract_mut = AgentNetwork::load(&env, address);
             contract_mut.submit_validation(creator, task_id.clone(), score);
         }));
-        
+
         if result.is_err() {
             println!("⚠️ Transaction call panicked. Waiting 10s...");
             std::thread::sleep(std::time::Duration::from_secs(10));
@@ -138,7 +142,7 @@ fn main() {
             println!("✅ Transaction call succeeded. Waiting 3s...");
             std::thread::sleep(std::time::Duration::from_secs(3));
         }
-        
+
         println!("Finalizing task...");
         let finalize_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut contract_mut = AgentNetwork::load(&env, address);

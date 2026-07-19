@@ -33,17 +33,14 @@ pub async fn get_agents(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.005 CSPR = 5,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         5_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     let agents = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
@@ -78,17 +75,14 @@ pub async fn get_agent(
     Path(public_key): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.002 CSPR = 2,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         2_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
     let agent = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -116,7 +110,10 @@ pub async fn get_agent(
 
     match agent {
         Some(agent) => Ok(Json(serde_json::json!(agent))),
-        None => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Agent not found" })))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Agent not found" })),
+        )),
     }
 }
 
@@ -126,17 +123,14 @@ pub async fn register_agent(
     Json(payload): Json<RegisterAgentPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.1 CSPR = 100,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         100_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     // 1. Check if agent already exists
     let agent_opt: Option<(String,)> =
