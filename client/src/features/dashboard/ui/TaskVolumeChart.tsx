@@ -57,7 +57,7 @@ export function TaskVolumeChart({ tasks, isLoading }: TaskVolumeChartProps) {
   return (
     <div className={styles.dashboardSection}>
       <h3 className={styles.sectionTitle}>
-        <Activity size={14} className={styles.actionIcon} /> Network Task Volume
+        <Activity size={14} className={styles.actionIcon} aria-hidden="true" /> Network Task Volume
       </h3>
       {isLoading ? (
         <div style={{ width: "100%", height: 200, marginTop: 10 }}>

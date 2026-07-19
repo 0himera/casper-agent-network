@@ -96,7 +96,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {isError && (
-        <div className={styles.errorBanner}>
+        <div className={styles.errorBanner} role="alert" aria-live="polite">
           Some dashboard data failed to load. The numbers shown may be incomplete.
         </div>
       )}
@@ -124,12 +124,13 @@ export default function DashboardPage() {
           <motion.div variants={itemVariants} initial="hidden" animate="show">
             <div className={styles.dashboardSection}>
               <h3 className={styles.sectionTitle}>
-                <Activity size={14} className={styles.actionIcon} /> Quick Actions
+                <Activity size={14} className={styles.actionIcon} aria-hidden="true" /> Quick
+                Actions
               </h3>
               <div className={styles.quickActions}>
                 {quickActions.map((a) => (
                   <Link key={a.href} href={a.href} className={styles.actionCard}>
-                    <a.icon size={18} className={styles.actionIcon} />
+                    <a.icon size={18} className={styles.actionIcon} aria-hidden="true" />
                     <div className={styles.actionContent}>
                       <span className={styles.actionTitle}>{a.title}</span>
                       <span className={styles.actionDesc}>{a.desc}</span>

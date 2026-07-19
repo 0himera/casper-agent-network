@@ -46,7 +46,7 @@ export function StatCard({ label, value, icon: Icon, isLoading }: StatCardProps)
           <div className={styles.statLabel}>{label}</div>
           <div className={styles.statValue}>{value}</div>
           <div className={styles.statIcon}>
-            <Icon size={20} />
+            <Icon size={20} aria-hidden="true" />
           </div>
         </>
       )}

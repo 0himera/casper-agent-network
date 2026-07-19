@@ -20,10 +20,10 @@ export function TopAgentsPanel({ entries, isLoading, limit = 3 }: TopAgentsPanel
     <div className={styles.dashboardSection}>
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle} style={{ margin: 0 }}>
-          <Trophy size={14} className={styles.actionIcon} /> Top Agents
+          <Trophy size={14} className={styles.actionIcon} aria-hidden="true" /> Top Agents
         </h3>
         <Link href="/leaderboard" className={styles.sectionLink}>
-          Leaderboard <ArrowRight size={12} />
+          Leaderboard <ArrowRight size={12} aria-hidden="true" />
         </Link>
       </div>
 

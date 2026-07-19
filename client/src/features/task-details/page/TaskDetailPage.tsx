@@ -6,9 +6,11 @@ import { ArrowLeft, ClipboardList, Coins, Hash } from "lucide-react";
 import { useTaskByIdQuery } from "@/features/tasks/api/queries";
 import { useAgentsQuery } from "@/features/agents/api/queries";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
+import { toast } from "@/shared/ui/Toast";
 import { buildAssignTaskTx } from "@/shared/utils/contract-transactions";
 import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { SKILL_LABELS } from "@/entities/agent/types/types";
+import type { AgentEntity } from "@/entities/agent/types/types";
 import { formatTimeAgo } from "@/shared/utils/format";
 import { StatusTimeline } from "@/features/task-details/ui/StatusTimeline";
 import { EvaluationPanel } from "@/features/task-details/ui/EvaluationPanel";
@@ -59,11 +61,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
 
   const handleAssign = async () => {
     if (!walletAddress) {
-      alert("Please connect your wallet first.");
+      toast.error("Please connect your wallet first.");
       return;
     }
     if (!selectedAgent) {
-      alert("Please select an agent.");
+      toast.error("Please select an agent.");
       return;
     }
     if (!task) return;
@@ -72,10 +74,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
     try {
       const transaction = await buildAssignTaskTx(walletAddress, task.id, selectedAgent);
       const txHash = await signAndSendTransaction(transaction, walletAddress);
-      alert(`Agent assigned on-chain!\nTransaction Hash: ${txHash}\nThe network is indexing the assignment, please refresh in a moment.`);
-    } catch (err: any) {
+      toast.success(
+        `Agent assigned on-chain!\nTransaction Hash: ${txHash}\nThe network is indexing the assignment, please refresh in a moment.`,
+      );
+    } catch (err: unknown) {
       console.error(err);
-      alert(`Failed to assign agent: ${err.message || err}`);
+      toast.error(`Failed to assign agent: ${String(err)}`);
     } finally {
       setAssigning(false);
     }
@@ -91,15 +95,24 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   if (!task) return <div className={styles.loading}>Task not found</div>;
 
   const assignedAgentName = task.assignedAgent
-    ? (agents?.find((a: any) => a.publicKey === task.assignedAgent)?.name || `${task.assignedAgent.slice(0, 6)}...${task.assignedAgent.slice(-6)}`)
+    ? agents?.find((a: AgentEntity) => a.publicKey === task.assignedAgent)?.name ||
+      `${task.assignedAgent.slice(0, 6)}...${task.assignedAgent.slice(-6)}`
     : null;
 
   const steps = [
     { label: "Created", time: formatTimeAgo(task.createdAt) },
-    { label: "Assigned", time: task.assignedAgent ? formatTimeAgo(task.createdAt) : null, detail: assignedAgentName ?? undefined },
+    {
+      label: "Assigned",
+      time: task.assignedAgent ? formatTimeAgo(task.createdAt) : null,
+      detail: assignedAgentName ?? undefined,
+    },
     { label: "In Progress", time: task.status !== "open" ? formatTimeAgo(task.updatedAt) : null },
     { label: "Submitted", time: task.result ? formatTimeAgo(task.updatedAt) : null },
-    { label: "Completed", time: task.status === "completed" ? formatTimeAgo(task.updatedAt) : null, detail: task.status === "completed" ? "Escrow released" : undefined },
+    {
+      label: "Completed",
+      time: task.status === "completed" ? formatTimeAgo(task.updatedAt) : null,
+      detail: task.status === "completed" ? "Escrow released" : undefined,
+    },
   ];
 
   return (
@@ -110,14 +123,24 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       animate="show"
     >
       <motion.div variants={itemVariants}>
-        <Link href="/tasks" className={styles.backLink}><ArrowLeft size={16} /> Back to Job Board</Link>
+        <Link href="/tasks" className={styles.backLink}>
+          <ArrowLeft size={16} /> Back to Job Board
+        </Link>
       </motion.div>
       <motion.div variants={itemVariants} className={styles.header}>
-        <div className={styles.titleRow}><h1 className={styles.title}>{task.prompt.slice(0, 60)}...</h1></div>
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>{task.prompt.slice(0, 60)}...</h1>
+        </div>
         <div className={styles.meta}>
-          <span className={styles.metaItem}><ClipboardList size={13} /> {SKILL_LABELS[task.domain]}</span>
-          <span className={styles.metaItem}><Coins size={13} /> {task.budget} CSPR</span>
-          <span className={styles.metaItem}><Hash size={13} /> {task.id}</span>
+          <span className={styles.metaItem}>
+            <ClipboardList size={13} /> {SKILL_LABELS[task.domain]}
+          </span>
+          <span className={styles.metaItem}>
+            <Coins size={13} /> {task.budget} CSPR
+          </span>
+          <span className={styles.metaItem}>
+            <Hash size={13} /> {task.id}
+          </span>
         </div>
       </motion.div>
       <motion.div variants={itemVariants}>
@@ -128,16 +151,31 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
           <h3 className={styles.sectionTitle}>Result</h3>
           {isAuthorizedToSeeResult ? (
             <div className={styles.resultContent}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {task.result}
-              </ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
             </div>
           ) : (
-            <div style={{ color: "var(--text-muted)", opacity: 0.6, fontSize: "0.9rem", padding: "12px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "6px" }}>
-              🔒 Task results are private and only visible to the task creator or the assigned agent.
+            <div
+              style={{
+                color: "var(--text-muted)",
+                opacity: 0.6,
+                fontSize: "0.9rem",
+                padding: "12px",
+                border: "1px dashed rgba(255,255,255,0.1)",
+                borderRadius: "6px",
+              }}
+            >
+              🔒 Task results are private and only visible to the task creator or the assigned
+              agent.
             </div>
           )}
-          {task.resultHash && <div className={styles.hashRow}>Result Hash: <a className={styles.hashLink} href="#">{task.resultHash}</a></div>}
+          {task.resultHash && (
+            <div className={styles.hashRow}>
+              Result Hash:{" "}
+              <a className={styles.hashLink} href="#">
+                {task.resultHash}
+              </a>
+            </div>
+          )}
         </motion.div>
       )}
       {task.evaluation && isAuthorizedToSeeResult && (
@@ -152,20 +190,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
             <select
               value={selectedAgent}
               onChange={(e) => setSelectedAgent(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "6px",
-                color: "#fff",
-                fontSize: "0.9rem",
-                outline: "none"
-              }}
+              className={styles.assignSelect}
               disabled={assigning}
             >
-              <option value="" style={{ background: "#1e1e24" }}>Select an agent...</option>
-              {agents.map((a: any) => (
-                <option key={a.publicKey} value={a.publicKey} style={{ background: "#1e1e24" }}>
+              <option value="" style={{ background: "#1e1e24" }}>
+                Select an agent...
+              </option>
+              {agents.map((a: AgentEntity) => (
+                <option key={a.publicKey} value={a.publicKey} className={styles.assignOption}>
                   {a.name} ({a.customPrice || a.recommendedPrice} CSPR)
                 </option>
               ))}
@@ -173,17 +205,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
             <button
               onClick={handleAssign}
               disabled={assigning || !selectedAgent}
-              style={{
-                padding: "8px 16px",
-                background: "var(--accent-primary, #6366f1)",
-                border: "none",
-                borderRadius: "6px",
-                color: "#fff",
-                fontWeight: 500,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                opacity: (assigning || !selectedAgent) ? 0.6 : 1
-              }}
+              className={styles.assignButton}
             >
               {assigning ? "Assigning..." : "Assign Agent"}
             </button>

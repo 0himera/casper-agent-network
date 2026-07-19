@@ -56,9 +56,14 @@
 }
 
 .input:focus,
+.input:focus-visible,
 .select:focus,
-.textarea:focus {
+.select:focus-visible,
+.textarea:focus,
+.textarea:focus-visible {
   border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .textarea {
@@ -115,12 +120,20 @@
   font-weight: 500;
   cursor: pointer;
   font-family: var(--font-sans);
-  transition: all var(--transition-base);
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
 }
 
-.cancelButton:hover {
+.cancelButton:hover,
+.cancelButton:focus-visible {
   border-color: var(--border-hover);
   color: var(--text-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .submitButton {
@@ -133,12 +146,20 @@
   font-weight: 600;
   cursor: pointer;
   font-family: var(--font-sans);
-  transition: all var(--transition-base);
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
 }
 
-.submitButton:hover {
+.submitButton:hover,
+.submitButton:focus-visible {
   opacity: 0.88;
   box-shadow: var(--shadow-md);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .submitButton:disabled {

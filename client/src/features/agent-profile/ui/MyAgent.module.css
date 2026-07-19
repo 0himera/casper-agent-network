@@ -36,7 +36,6 @@
   color: var(--text-muted);
 }
 
-
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -68,7 +67,6 @@
 .statHighlight {
   color: var(--accent-primary);
 }
-
 
 .section {
   padding: var(--space-xl);
@@ -114,10 +112,16 @@
   font-family: var(--font-sans);
   outline: none;
   width: 110px;
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base);
 }
 
-.priceInput:focus {
+.priceInput:focus,
+.priceInput:focus-visible {
   border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .updateButton {
@@ -130,11 +134,19 @@
   font-weight: 600;
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
 }
 
-.updateButton:hover {
+.updateButton:hover,
+.updateButton:focus-visible {
   background: rgba(143, 174, 139, 0.18);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .benchGrid {
@@ -192,12 +204,20 @@
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
-  transition: all var(--transition-base);
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
 }
 
-.registerLink:hover {
+.registerLink:hover,
+.registerLink:focus-visible {
   opacity: 0.88;
   box-shadow: var(--shadow-md);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 @media (max-width: 640px) {
