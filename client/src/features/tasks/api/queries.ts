@@ -17,17 +17,13 @@ export function useTasksQuery(filters?: { status?: TaskStatus }) {
   return useQuery<TaskEntity[]>({
     queryKey: taskKeys.list(filters ?? {}),
     queryFn: async () => {
-      try {
-        const raw = await apiGet<TaskApiResponse[]>("/api/tasks");
-        let tasks = raw.map(mapTaskResponse);
+      const raw = await apiGet<TaskApiResponse[]>("/api/tasks");
+      let tasks = raw.map(mapTaskResponse);
 
-        if (filters?.status) {
-          tasks = tasks.filter((t) => t.status === filters.status);
-        }
-        return tasks;
-      } catch {
-        return [];
+      if (filters?.status) {
+        tasks = tasks.filter((t) => t.status === filters.status);
       }
+      return tasks;
     },
     retry: 1,
     staleTime: 30_000,
@@ -38,12 +34,8 @@ export function useTaskByIdQuery(id: string) {
   return useQuery<TaskEntity | undefined>({
     queryKey: taskKeys.detail(id),
     queryFn: async () => {
-      try {
-        const raw = await apiGet<TaskApiResponse>(`/api/tasks/${id}`);
-        return mapTaskResponse(raw);
-      } catch {
-        return undefined;
-      }
+      const raw = await apiGet<TaskApiResponse>(`/api/tasks/${id}`);
+      return mapTaskResponse(raw);
     },
     enabled: !!id,
     retry: 1,

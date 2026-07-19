@@ -2,7 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/shared/api/api-client";
-import type { LeaderboardEntry, LeaderboardDomain, LeaderboardApiResponse } from "@/entities/reputation/types/types";
+import type {
+  LeaderboardEntry,
+  LeaderboardDomain,
+  LeaderboardApiResponse,
+} from "@/entities/reputation/types/types";
 import { mapLeaderboardResponse } from "@/entities/reputation/types/types";
 
 export const leaderboardKeys = {
@@ -14,13 +18,9 @@ export function useLeaderboardQuery(domain: LeaderboardDomain = "global") {
   return useQuery<LeaderboardEntry[]>({
     queryKey: leaderboardKeys.list(domain),
     queryFn: async () => {
-      try {
-        const path = domain === "global" ? "/api/leaderboard" : `/api/leaderboard/${domain}`;
-        const raw = await apiGet<LeaderboardApiResponse[]>(path);
-        return raw.map(mapLeaderboardResponse);
-      } catch {
-        return [];
-      }
+      const path = domain === "global" ? "/api/leaderboard" : `/api/leaderboard/${domain}`;
+      const raw = await apiGet<LeaderboardApiResponse[]>(path);
+      return raw.map(mapLeaderboardResponse);
     },
     retry: 1,
     staleTime: 30_000,
