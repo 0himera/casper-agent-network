@@ -2054,11 +2054,11 @@ mod tests {
         );
         assert_eq!(
             contract.contract_icon_uri(),
-            Some("https://agent-network.casper.dev/icon.png".to_string())
+            Some("https://casper-agent-network.vercel.app/can-logo.png".to_string())
         );
         assert_eq!(
             contract.contract_project_uri(),
-            Some("https://agent-network.casper.dev".to_string())
+            Some("https://casper-agent-network.vercel.app/".to_string())
         );
     }
 
