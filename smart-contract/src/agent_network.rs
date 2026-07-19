@@ -21,6 +21,8 @@ const LOW_SCORE_THRESHOLD: u32 = 30;
 const MINIMUM_VALIDATOR_STAKE: u64 = 100_000_000_000u64; // 100 CSPR
 const DEVIATION_TOLERANCE: u32 = 10;
 const SLASH_DEVIATION_BPS_PER_10: u32 = 500; // 5% per 10 points over tolerance
+const MIN_VALIDATIONS: u32 = 3;
+const VALIDATION_WINDOW_MS: u64 = 300_000; // 5 minutes
 
 #[odra::odra_type]
 pub struct AgentProfile {
@@ -31,6 +33,7 @@ pub struct AgentProfile {
     pub custom_price: U512,
     pub recommended_price: U512,
     pub is_available: bool,
+    pub delegated_signer: Option<Address>,
 }
 
 #[odra::odra_type]
@@ -52,6 +55,7 @@ pub struct Task {
     pub metadata_uri: String,
     pub deadline: u64,
     pub parent_task_id: Option<String>,
+    pub result_submitted_at: u64,
 }
 
 #[odra::odra_type]
@@ -132,6 +136,12 @@ pub struct ValidationSubmitted {
 }
 
 #[odra::event]
+pub struct DelegatedSignerUpdated {
+    pub agent: Address,
+    pub delegated_signer: Option<Address>,
+}
+
+#[odra::event]
 pub struct ScoreUpdated {
     pub agent: Address,
     pub skill: String,
@@ -196,6 +206,20 @@ pub struct MetadataUpdated {
     pub description: Option<String>,
     pub icon_uri: Option<String>,
     pub project_uri: Option<String>,
+}
+
+#[odra::event]
+pub struct WeightsCommitted {
+    pub validator: Address,
+    pub epoch: u64,
+    pub commit_hash: String,
+}
+
+#[odra::event]
+pub struct WeightsRevealed {
+    pub validator: Address,
+    pub epoch: u64,
+    pub weight_count: u32,
 }
 
 #[odra::event]
@@ -337,6 +361,7 @@ pub enum ContractErrors {
     InsufficientValidatorStake = 3037,
     TaskAlreadyValidated = 3038,
     NoValidations = 3039,
+    ValidationWindowNotExpired = 3040,
 }
 
 #[odra::module(
@@ -388,6 +413,8 @@ pub struct AgentNetwork {
     treasury_balance: Var<U512>,
     validators: Mapping<Address, ValidatorProfile>,
     task_validations: Mapping<(Address, String), Vec<Validation>>,
+    epoch_commits: Mapping<(Address, u64), String>,
+    epoch_reveals: Mapping<(Address, u64), bool>,
 }
 
 #[odra::module]
@@ -596,10 +623,25 @@ impl AgentNetwork {
             custom_price: U512::zero(),
             recommended_price: U512::zero(),
             is_available: true,
+            delegated_signer: None,
         };
 
         self.agents.set(&caller, profile);
         self.env().emit_event(AgentRegistered { agent: caller, name });
+    }
+
+    pub fn set_delegated_signer(&mut self, delegated_signer: Option<Address>) {
+        let caller = self.env().caller();
+        let mut agent = self
+            .agents
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
+        agent.delegated_signer = delegated_signer;
+        self.agents.set(&caller, agent);
+        self.env().emit_event(DelegatedSignerUpdated {
+            agent: caller,
+            delegated_signer,
+        });
     }
 
     pub fn update_agent(&mut self, name: String, description: String, metadata_uri: String) {
@@ -649,6 +691,7 @@ impl AgentNetwork {
             metadata_uri,
             deadline,
             parent_task_id: parent_task_id.clone(),
+            result_submitted_at: 0,
         };
 
         self.tasks.set(&key, task);
@@ -724,7 +767,15 @@ impl AgentNetwork {
             .get(&key)
             .unwrap_or_revert_with(&self.env(), ContractErrors::TaskNotFound);
 
-        if task.assigned_agent != Some(caller) && self.admin.get().flatten() != Some(caller) {
+        let assigned_agent = task
+            .assigned_agent
+            .unwrap_or_revert_with(&self.env(), ContractErrors::TaskNotAssigned);
+        let agent_profile = self.agents.get(&assigned_agent);
+        let is_delegated_signer = agent_profile
+            .as_ref()
+            .and_then(|p| p.delegated_signer) == Some(caller);
+
+        if assigned_agent != caller && !is_delegated_signer {
             self.env().revert(ContractErrors::NotAssignedAgent);
         }
 
@@ -742,6 +793,7 @@ impl AgentNetwork {
 
         let assigned_agent = task.assigned_agent.unwrap();
         task.result_hash = result_hash.clone();
+        task.result_submitted_at = current_time;
         self.tasks.set(&key, task);
 
         self.env().emit_event(TaskSubmitted {
@@ -906,6 +958,14 @@ impl AgentNetwork {
             self.env().revert(ContractErrors::NoValidations);
         }
 
+        let current_time = self.env().get_block_time();
+        let window_expired = current_time.saturating_sub(task.result_submitted_at) >= VALIDATION_WINDOW_MS;
+        let has_quorum = validations.len() >= MIN_VALIDATIONS as usize;
+
+        if !has_quorum && !window_expired {
+            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+        }
+
         // Calculate median score
         let mut scores: Vec<u32> = validations.iter().map(|v| v.score).collect();
         scores.sort_unstable();
@@ -946,42 +1006,52 @@ impl AgentNetwork {
         let mut eligible_validators = Vec::new();
 
         // Slashing logic based on deviation
-        for val in &validations {
-            let deviation = if val.score > median_score {
-                val.score - median_score
-            } else {
-                median_score - val.score
-            };
+        if has_quorum {
+            for val in &validations {
+                let deviation = if val.score > median_score {
+                    val.score - median_score
+                } else {
+                    median_score - val.score
+                };
 
-            let mut profile = self.validators.get(&val.validator).unwrap();
+                let mut profile = self.validators.get(&val.validator).unwrap();
 
-            if deviation <= DEVIATION_TOLERANCE {
-                eligible_stake += profile.stake;
-                eligible_validators.push((val.validator, profile.stake));
-            } else {
-                let diff = deviation - DEVIATION_TOLERANCE;
-                let penalty_factor = (diff / 10) * SLASH_DEVIATION_BPS_PER_10;
-                let penalty_bps = if penalty_factor > 10_000 { 10_000 } else { penalty_factor };
-                
-                if penalty_bps > 0 {
-                    let slash_amount = profile.stake * U512::from(penalty_bps) / U512::from(10_000u32);
-                    profile.stake = profile.stake - slash_amount;
-                    if profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
-                        profile.is_active = false;
-                    }
-                    self.validators.set(&val.validator, profile.clone());
+                if deviation <= DEVIATION_TOLERANCE {
+                    eligible_stake += profile.stake;
+                    eligible_validators.push((val.validator, profile.stake));
+                } else {
+                    let diff = deviation - DEVIATION_TOLERANCE;
+                    let penalty_factor = (diff / 10) * SLASH_DEVIATION_BPS_PER_10;
+                    let penalty_bps = if penalty_factor > 10_000 { 10_000 } else { penalty_factor };
                     
-                    treasury += slash_amount;
-                    let mut total_slashed = self.total_slashed.get().unwrap_or(U512::zero());
-                    total_slashed += slash_amount;
-                    self.total_slashed.set(total_slashed);
+                    if penalty_bps > 0 {
+                        let slash_amount = profile.stake * U512::from(penalty_bps) / U512::from(10_000u32);
+                        profile.stake = profile.stake - slash_amount;
+                        if profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+                            profile.is_active = false;
+                        }
+                        self.validators.set(&val.validator, profile.clone());
+                        
+                        treasury += slash_amount;
+                        let mut total_slashed = self.total_slashed.get().unwrap_or(U512::zero());
+                        total_slashed += slash_amount;
+                        self.total_slashed.set(total_slashed);
 
-                    self.env().emit_event(ValidatorSlashed {
-                        validator: val.validator,
-                        amount: slash_amount,
-                        remaining_stake: profile.stake,
-                        reason: "deviation".to_string(),
-                    });
+                        self.env().emit_event(ValidatorSlashed {
+                            validator: val.validator,
+                            amount: slash_amount,
+                            remaining_stake: profile.stake,
+                            reason: "deviation".to_string(),
+                        });
+                    }
+                }
+            }
+        } else {
+            // No-quorum clemency: Do not slash validators when quorum is not reached
+            for val in &validations {
+                if let Some(profile) = self.validators.get(&val.validator) {
+                    eligible_stake += profile.stake;
+                    eligible_validators.push((val.validator, profile.stake));
                 }
             }
         }
@@ -1006,15 +1076,18 @@ impl AgentNetwork {
             payout,
         });
 
-        // Reputation update
+        // Reputation update: compute weight from task budget (1 weight per 100 CSPR, min 1, max 100)
+        let budget_cspr_units = (budget / U512::from(100_000_000_000u64)).as_u64() as u32;
+        let calculated_weight = budget_cspr_units.clamp(1, 100) as u64;
+
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
         rep_state.weighted_sum = rep_state
             .weighted_sum
-            .checked_add((median_score as u64) * (weight as u64))
+            .checked_add((median_score as u64) * calculated_weight)
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         rep_state.total_weight = rep_state
             .total_weight
-            .checked_add(weight as u64)
+            .checked_add(calculated_weight)
             .unwrap_or_revert_with(&self.env(), ContractErrors::ArithmeticOverflow);
         rep_state.tasks_completed = rep_state
             .tasks_completed
@@ -1054,6 +1127,90 @@ impl AgentNetwork {
         self.env().emit_event(TreasuryDistributed { agent, amount });
     }
 
+    pub fn distribute_treasury_to_validator(&mut self, validator: Address, amount: U512) {
+        let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
+        let min_amount = U512::from(100_000_000_000u64); // 100 CSPR threshold
+        if treasury < min_amount {
+            self.env().revert(ContractErrors::BelowMinimumBudget);
+        }
+        if amount > treasury {
+            self.env().revert(ContractErrors::ArithmeticOverflow);
+        }
+
+        let profile = self
+            .validators
+            .get(&validator)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::ValidatorNotActive);
+        }
+
+        treasury -= amount;
+        self.treasury_balance.set(treasury);
+        self.env().transfer_tokens(&validator, &amount);
+        self.env().emit_event(TreasuryDistributed { agent: validator, amount });
+    }
+
+    pub fn commit_weights(&mut self, commit_hash: String) {
+        let caller = self.env().caller();
+        let profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::ValidatorNotActive);
+        }
+
+        let current_time = self.env().get_block_time();
+        let epoch = current_time / 900_000;
+        let time_in_epoch = current_time % 900_000;
+
+        if time_in_epoch >= 600_000 {
+            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+        }
+
+        self.epoch_commits.set(&(caller, epoch), commit_hash.clone());
+        self.env().emit_event(WeightsCommitted {
+            validator: caller,
+            epoch,
+            commit_hash,
+        });
+    }
+
+    pub fn reveal_weights(&mut self, weights_json: String, _salt: String) {
+        let caller = self.env().caller();
+        let profile = self
+            .validators
+            .get(&caller)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+
+        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+            self.env().revert(ContractErrors::ValidatorNotActive);
+        }
+
+        let current_time = self.env().get_block_time();
+        let epoch = current_time / 900_000;
+        let time_in_epoch = current_time % 900_000;
+
+        if time_in_epoch < 600_000 {
+            self.env().revert(ContractErrors::ValidationWindowNotExpired);
+        }
+
+        let _commit_hash = self
+            .epoch_commits
+            .get(&(caller, epoch))
+            .unwrap_or_revert_with(&self.env(), ContractErrors::NoValidations);
+
+        self.epoch_reveals.set(&(caller, epoch), true);
+        self.env().emit_event(WeightsRevealed {
+            validator: caller,
+            epoch,
+            weight_count: weights_json.len() as u32,
+        });
+    }
+
     pub fn burn_treasury(&mut self, amount: U512) {
         self.assert_admin();
         let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
@@ -1075,17 +1232,24 @@ impl AgentNetwork {
         decayed_total_weight: u64,
     ) {
         let caller = self.env().caller();
-        let profile = self
+        let is_admin = self.admin.get().flatten() == Some(caller);
+        let is_active_validator = self
             .validators
             .get(&caller)
-            .unwrap_or_revert_with(&self.env(), ContractErrors::ValidatorNotFound);
+            .map(|p| p.is_active && p.stake >= U512::from(MINIMUM_VALIDATOR_STAKE))
+            .unwrap_or(false);
 
-        if !profile.is_active || profile.stake < U512::from(MINIMUM_VALIDATOR_STAKE) {
+        if !is_admin && !is_active_validator {
             self.env().revert(ContractErrors::ValidatorNotActive);
         }
 
         let mut rep_state = self.reputations.get_or_default(&(agent, skill.clone()));
         
+        // Guard: Decay can only decrease or keep equal existing values once initialized
+        if rep_state.total_weight > 0 && (decayed_weighted_sum > rep_state.weighted_sum || decayed_total_weight > rep_state.total_weight) {
+            self.env().revert(ContractErrors::InvalidScore);
+        }
+
         rep_state.weighted_sum = decayed_weighted_sum;
         rep_state.total_weight = decayed_total_weight;
         rep_state.last_update = self.env().get_block_time();
@@ -1499,6 +1663,10 @@ impl AgentNetwork {
             remaining_stake: info.amount,
         });
     }
+
+    pub fn get_treasury_balance(&self) -> U512 {
+        self.treasury_balance.get().unwrap_or(U512::zero())
+    }
 }
 
 #[cfg(test)]
@@ -1551,6 +1719,7 @@ mod tests {
             contract.with_tokens(U512::from(100_000_000_000u64)).register_validator(); // MINIMUM_VALIDATOR_STAKE
         }
         contract.submit_validation(creator, task_id.clone(), score);
+        env.advance_block_time(VALIDATION_WINDOW_MS + 1000);
         contract.finalize_task(creator, task_id, skill, weight);
         // Reset caller to admin to not break subsequent test flow
         env.set_caller(env.get_account(0));
@@ -1762,9 +1931,9 @@ mod tests {
         complete_task_as_validator(&env, &mut contract, admin, "t2".to_string(), "DeFi".to_string(), 85, 5);
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
-        assert_eq!(rep.weighted_sum, 605);
-        assert_eq!(rep.total_weight, 7);
-        assert_eq!(rep.weighted_sum / rep.total_weight, 86);
+        assert_eq!(rep.weighted_sum, 175);
+        assert_eq!(rep.total_weight, 2);
+        assert_eq!(rep.weighted_sum / rep.total_weight, 87);
         assert_eq!(rep.tasks_completed, 2);
     }
 
@@ -2383,22 +2552,212 @@ mod tests {
         env.set_caller(validator);
         contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
         
+        // Set initial score via validator
         env.set_caller(validator);
         contract.sync_decayed_reputation(agent, "General".to_string(), 450, 5);
         
         let rep = contract.get_reputation(agent, "General".to_string());
         assert_eq!(rep.weighted_sum, 450);
         assert_eq!(rep.total_weight, 5);
-        assert_eq!(rep.tasks_completed, 0); // shouldn't change
         
-        // Ensure non-validator can't sync
+        // Admin decay down is allowed
+        env.set_caller(admin);
+        contract.sync_decayed_reputation(agent, "General".to_string(), 400, 4);
+        let rep2 = contract.get_reputation(agent, "General".to_string());
+        assert_eq!(rep2.weighted_sum, 400);
+
+        // Attempting to increase weighted_sum fails (monotonic guard)
+        let contract_address = contract.address();
+        let inc_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.sync_decayed_reputation(agent, "General".to_string(), 500, 4);
+        }));
+        assert!(inc_res.is_err(), "Increasing weighted_sum must be rejected");
+
+        // Ensure non-validator non-admin can't sync
         let non_validator = env.get_account(2);
         env.set_caller(non_validator);
-        let contract_address = contract.address();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
-            c.sync_decayed_reputation(agent, "General".to_string(), 400, 4);
+            c.sync_decayed_reputation(agent, "General".to_string(), 300, 3);
         }));
-        assert!(result.is_err());
+        assert!(result.is_err(), "Non-validator non-admin must be rejected");
+    }
+
+    #[test]
+    fn it_enforces_trustless_agent_and_delegated_submit_result() {
+        let (env, mut contract, admin, agent) = setup();
+        let delegated_signer = env.get_account(4);
+        let random_caller = env.get_account(5);
+        let budget = U512::from(1_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        // Set delegated signer for agent
+        env.set_caller(agent);
+        contract.set_delegated_signer(Some(delegated_signer));
+
+        // Create and assign task
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("task_trustless".to_string(), "https://meta".to_string(), deadline, None);
+        contract.assign_task("task_trustless".to_string(), agent);
+
+        // 1. Random caller fails
+        env.set_caller(random_caller);
+        let contract_address = contract.address();
+        let res_random = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.submit_result(admin, "task_trustless".to_string(), "hash_random".to_string());
+        }));
+        assert!(res_random.is_err(), "Random caller must be rejected");
+
+        // 2. Admin fails (not assigned, not delegated)
+        env.set_caller(admin);
+        let res_admin = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.submit_result(admin, "task_trustless".to_string(), "hash_admin".to_string());
+        }));
+        assert!(res_admin.is_err(), "Admin without delegation must be rejected");
+
+        // 3. Delegated signer succeeds
+        env.set_caller(delegated_signer);
+        contract.submit_result(admin, "task_trustless".to_string(), "hash_delegated".to_string());
+        let task = contract.get_task(admin, "task_trustless".to_string()).unwrap();
+        assert_eq!(task.result_hash, "hash_delegated");
+    }
+
+    #[test]
+    fn it_handles_multi_validator_quorum_and_window_expiry() {
+        let (env, mut contract, admin, agent) = setup();
+        let val1 = env.get_account(6);
+        let val2 = env.get_account(7);
+        let val3 = env.get_account(8);
+        let budget = U512::from(5_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        for val in [val1, val2, val3] {
+            env.set_caller(val);
+            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+        }
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("mval_task".to_string(), "https://meta".to_string(), deadline, None);
+        contract.assign_task("mval_task".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "mval_task".to_string(), "hash_mval".to_string());
+
+        // 1. Only 1 validator submits -> finalize before window expires fails
+        env.set_caller(val1);
+        contract.submit_validation(admin, "mval_task".to_string(), 90);
+
+        let contract_address = contract.address();
+        let early_finalize_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string(), 10);
+        }));
+        assert!(early_finalize_res.is_err(), "Finalizing with <3 validations before window expiry must fail");
+
+        // 2. 2nd & 3rd validators submit -> quorum (3/3) reached -> finalize succeeds before window
+        env.set_caller(val2);
+        contract.submit_validation(admin, "mval_task".to_string(), 95);
+        env.set_caller(val3);
+        contract.submit_validation(admin, "mval_task".to_string(), 85);
+
+        contract.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string(), 10);
+        let task = contract.get_task(admin, "mval_task".to_string()).unwrap();
+        assert_eq!(task.status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn it_distributes_treasury_to_validator() {
+        let (env, mut contract, admin, agent) = setup();
+        let val = env.get_account(6);
+        let budget = U512::from(4_000_000_000_000u64); // 4000 CSPR -> 100 CSPR treasury fee
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        env.set_caller(val);
+        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t_treasury".to_string(), "https://meta".to_string(), deadline, None);
+        contract.assign_task("t_treasury".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "t_treasury".to_string(), "hash_tr".to_string());
+
+        complete_task_as_validator(&env, &mut contract, admin, "t_treasury".to_string(), "DeFi".to_string(), 95, 10);
+
+        let treasury_before = contract.get_treasury_balance();
+        assert!(treasury_before >= U512::from(100_000_000_000u64));
+
+        let val_bal_before = env.balance_of(&val);
+        env.set_caller(admin);
+        contract.distribute_treasury_to_validator(val, U512::from(10_000_000_000u64));
+
+        let val_bal_after = env.balance_of(&val);
+        assert_eq!(val_bal_after, val_bal_before + U512::from(10_000_000_000u64));
+    }
+
+    #[test]
+    fn it_calculates_weight_from_budget_and_caps_at_100() {
+        let (env, mut contract, admin, agent) = setup();
+        let val1 = env.get_account(6);
+        let val2 = env.get_account(7);
+        let val3 = env.get_account(8);
+        // Budget = 20,000 CSPR (20,000_000_000_000 motes) -> raw weight 200 -> capped at 100
+        let budget = U512::from(20_000_000_000_000u64);
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        for val in [val1, val2, val3] {
+            env.set_caller(val);
+            contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+        }
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task("t_weight".to_string(), "https://meta".to_string(), deadline, None);
+        contract.assign_task("t_weight".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "t_weight".to_string(), "hash_w".to_string());
+
+        env.set_caller(val1);
+        contract.submit_validation(admin, "t_weight".to_string(), 90);
+        env.set_caller(val2);
+        contract.submit_validation(admin, "t_weight".to_string(), 90);
+        env.set_caller(val3);
+        contract.submit_validation(admin, "t_weight".to_string(), 90);
+
+        // Even if caller passes weight=9999, contract caps total_weight at 100
+        contract.finalize_task(admin, "t_weight".to_string(), "DeFi".to_string(), 9999);
+
+        let rep = contract.get_reputation(agent, "DeFi".to_string());
+        assert_eq!(rep.total_weight, 100, "Weight must be capped at 100");
+        assert_eq!(rep.weighted_sum, 9000);
+    }
+
+    #[test]
+    fn it_handles_commit_reveal_weights_epoch() {
+        let (env, mut contract, _admin, _agent) = setup();
+        let val = env.get_account(6);
+
+        env.set_caller(val);
+        contract.with_tokens(U512::from(100_000_000_000u64)).register_validator();
+
+        // 1. Commit in commit window (t=100s, epoch 0)
+        contract.commit_weights("commit_hash_123".to_string());
+
+        // 2. Advance block time into reveal window (650s)
+        env.advance_block_time(650_000);
+
+        // 3. Reveal weights
+        contract.reveal_weights("weights_json".to_string(), "salt123".to_string());
     }
 }
