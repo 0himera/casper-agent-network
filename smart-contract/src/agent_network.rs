@@ -964,10 +964,7 @@ impl AgentNetwork {
         });
     }
 
-    pub fn finalize_task(&mut self, creator: Address, task_id: String, skill: String, weight: u32) {
-        if weight == 0 {
-            self.env().revert(ContractErrors::InvalidWeight);
-        }
+    pub fn finalize_task(&mut self, creator: Address, task_id: String, skill: String) {
 
         let key = (creator, task_id.clone());
         let mut task = self
@@ -1163,6 +1160,7 @@ impl AgentNetwork {
     }
 
     pub fn distribute_treasury_to_validator(&mut self, validator: Address, amount: U512) {
+        self.assert_admin();
         let mut treasury = self.treasury_balance.get().unwrap_or(U512::zero());
         let min_amount = U512::from(100_000_000_000u64); // 100 CSPR threshold
         if treasury < min_amount {
@@ -1752,7 +1750,7 @@ mod tests {
         task_id: String,
         skill: String,
         score: u32,
-        weight: u32,
+        _weight: u32,
     ) {
         let validator = env.get_account(9);
         env.set_caller(validator);
@@ -1763,7 +1761,7 @@ mod tests {
         }
         contract.submit_validation(creator, task_id.clone(), score);
         env.advance_block_time(VALIDATION_WINDOW_MS + 1000);
-        contract.finalize_task(creator, task_id, skill, weight);
+        contract.finalize_task(creator, task_id, skill);
         // Reset caller to admin to not break subsequent test flow
         env.set_caller(env.get_account(0));
     }
@@ -2044,7 +2042,7 @@ mod tests {
     }
 
     #[test]
-    fn it_exposes_cep96_metadata() {
+    fn it_exposes_can_metadata_schema() {
         let (_env, contract, _admin, _agent) = setup();
 
         assert_eq!(
@@ -2787,7 +2785,7 @@ mod tests {
 
         // Finalize task (median of 60, 90, 95 is 90)
         env.set_caller(admin);
-        contract.finalize_task(admin, "t_yuma".to_string(), "General".to_string(), 10);
+        contract.finalize_task(admin, "t_yuma".to_string(), "General".to_string());
 
         // Check scores and slashes
         let rep = contract.get_reputation(agent, "General".to_string());
@@ -2951,7 +2949,7 @@ mod tests {
         let contract_address = contract.address();
         let early_finalize_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut c = AgentNetwork::load(&env, contract_address);
-            c.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string(), 10);
+            c.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string());
         }));
         assert!(
             early_finalize_res.is_err(),
@@ -2964,7 +2962,7 @@ mod tests {
         env.set_caller(val3);
         contract.submit_validation(admin, "mval_task".to_string(), 85);
 
-        contract.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string(), 10);
+        contract.finalize_task(admin, "mval_task".to_string(), "DeFi".to_string());
         let task = contract.get_task(admin, "mval_task".to_string()).unwrap();
         assert_eq!(task.status, TaskStatus::Completed);
     }
@@ -3020,6 +3018,52 @@ mod tests {
     }
 
     #[test]
+    fn it_prevents_non_admin_from_distributing_treasury_to_validator() {
+        let (env, mut contract, admin, agent) = setup();
+        let val = env.get_account(6);
+        let budget = U512::from(4_000_000_000_000u64); // 4000 CSPR -> 100 CSPR treasury fee
+        let deadline = env.block_time() + 3_600_000;
+
+        register_and_stake(&env, &mut contract, agent);
+
+        env.set_caller(val);
+        contract
+            .with_tokens(U512::from(100_000_000_000u64))
+            .register_validator();
+
+        env.set_caller(admin);
+        contract.with_tokens(budget).create_task(
+            "t_treasury_fail".to_string(),
+            "https://meta".to_string(),
+            deadline,
+            None,
+        );
+        contract.assign_task("t_treasury_fail".to_string(), agent);
+
+        env.set_caller(agent);
+        contract.submit_result(admin, "t_treasury_fail".to_string(), "hash_tr_f".to_string());
+
+        complete_task_as_validator(
+            &env,
+            &mut contract,
+            admin,
+            "t_treasury_fail".to_string(),
+            "DeFi".to_string(),
+            95,
+            10,
+        );
+
+        // Non-admin call must panic/revert
+        env.set_caller(val);
+        let contract_address = contract.address();
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = AgentNetwork::load(&env, contract_address);
+            c.distribute_treasury_to_validator(val, U512::from(10_000_000_000u64));
+        }));
+        assert!(res.is_err(), "Non-admin must not be able to distribute treasury");
+    }
+
+    #[test]
     fn it_calculates_weight_from_budget_and_caps_at_100() {
         let (env, mut contract, admin, agent) = setup();
         let val1 = env.get_account(6);
@@ -3057,8 +3101,8 @@ mod tests {
         env.set_caller(val3);
         contract.submit_validation(admin, "t_weight".to_string(), 90);
 
-        // Even if caller passes weight=9999, contract caps total_weight at 100
-        contract.finalize_task(admin, "t_weight".to_string(), "DeFi".to_string(), 9999);
+        // Contract computes weight from task budget
+        contract.finalize_task(admin, "t_weight".to_string(), "DeFi".to_string());
 
         let rep = contract.get_reputation(agent, "DeFi".to_string());
         assert_eq!(rep.total_weight, 100, "Weight must be capped at 100");

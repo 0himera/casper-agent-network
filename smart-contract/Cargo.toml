@@ -56,6 +56,30 @@ path = "bin/submit_complete.rs"
 required-features = ["livenet"]
 test = false
 
+[[bin]]
+name = "agent_network_submit_result"
+path = "bin/submit_result.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_submit_validation"
+path = "bin/submit_validation.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_finalize_task"
+path = "bin/finalize_task.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_decay_reputation"
+path = "bin/decay_reputation.rs"
+required-features = ["livenet"]
+test = false
+
 [profile.release]
 codegen-units = 16
 lto = "thin"

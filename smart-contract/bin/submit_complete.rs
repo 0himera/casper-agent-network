@@ -3,7 +3,7 @@
 //! ## Usage
 //! ```bash
 //! cargo run --bin agent_network_submit_complete --features livenet -- \
-//!   <creator_address> <task_id> <result_hash> <skill> <score> <weight>
+//!   <creator_address> <task_id> <result_hash> <skill> <score>
 //! ```
 
 use agent_network::agent_network::{AgentNetwork, AgentNetworkHostRef, Task, TaskStatus};
@@ -33,9 +33,9 @@ fn main() {
     env_logger::init();
 
     let args: Vec<String> = std_env::args().collect();
-    if args.len() < 7 {
+    if args.len() < 6 {
         eprintln!(
-            "Usage: {} <creator_address> <task_id> <result_hash> <skill> <score> <weight>",
+            "Usage: {} <creator_address> <task_id> <result_hash> <skill> <score>",
             args[0]
         );
         std::process::exit(1);
@@ -46,7 +46,6 @@ fn main() {
     let result_hash = args[3].clone();
     let skill = args[4].clone();
     let score: u32 = args[5].parse().expect("Invalid score: must be u32");
-    let weight: u32 = args[6].parse().expect("Invalid weight: must be u32");
 
     let env = odra_casper_livenet_env::env();
 
@@ -65,7 +64,6 @@ fn main() {
     println!("Result Hash:      {}", result_hash);
     println!("Skill:            {}", skill);
     println!("Score:            {}", score);
-    println!("Weight:           {}", weight);
 
     env.set_gas(15_000_000_000u64);
 
@@ -146,10 +144,10 @@ fn main() {
         println!("Finalizing task...");
         let finalize_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut contract_mut = AgentNetwork::load(&env, address);
-            contract_mut.finalize_task(creator, task_id.clone(), skill.clone(), weight);
+            contract_mut.finalize_task(creator, task_id.clone(), skill.clone());
         }));
 
-        if result.is_err() {
+        if finalize_res.is_err() {
             println!("⚠️ Transaction call panicked. Waiting 10s...");
             std::thread::sleep(std::time::Duration::from_secs(10));
         } else {
