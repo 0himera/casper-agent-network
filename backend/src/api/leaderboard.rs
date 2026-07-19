@@ -1,8 +1,9 @@
 use crate::api::AppState;
+use crate::api::x402::verify_payment;
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use serde::Serialize;
@@ -91,7 +92,21 @@ const GLOBAL_LEADERBOARD_SMOOTHED_SQL: &str = "SELECT
 
 pub async fn get_global_leaderboard(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.01 CSPR = 10,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        10_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
+
     let sql = if state.config.exam_leaderboard_use_smoothed {
         GLOBAL_LEADERBOARD_SMOOTHED_SQL
     } else {
@@ -101,15 +116,29 @@ pub async fn get_global_leaderboard(
     let entries = sqlx::query_as::<_, LeaderboardEntry>(sql)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(entries))
+    Ok(Json(serde_json::json!(entries)))
 }
 
 pub async fn get_domain_leaderboard(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(domain): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.01 CSPR = 10,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        10_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
+
     let entries = sqlx::query_as::<_, LeaderboardEntry>(
         "SELECT 
             a.public_key, 
@@ -138,9 +167,9 @@ pub async fn get_domain_leaderboard(
     .bind(domain)
     .fetch_all(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(entries))
+    Ok(Json(serde_json::json!(entries)))
 }
 
 #[cfg(test)]

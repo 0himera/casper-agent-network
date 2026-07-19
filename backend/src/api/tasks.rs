@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::env as std_env;
 use tokio::process::Command;
 
+use crate::api::x402::verify_payment;
 use crate::api::AppState;
 use crate::config::Config;
 use crate::db::DbPool;
@@ -35,35 +36,64 @@ pub struct CreateOrUpdateTaskPayload {
     pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: Option<u64>,
+    pub parent_task_id: Option<String>,
 }
 
 pub async fn get_tasks(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.005 CSPR = 5,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        5_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
+
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks ORDER BY timestamp DESC");
     let tasks = sqlx::query_as::<_, Task>(&query)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
     let public: Vec<TaskPublic> = tasks.into_iter().map(TaskPublic::from).collect();
-    Ok(Json(public))
+    Ok(Json(serde_json::json!(public)))
 }
 
 pub async fn get_task(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.002 CSPR = 2,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        2_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
+
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks WHERE id = ?");
     let task = sqlx::query_as::<_, Task>(&query)
         .bind(id)
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
     match task {
-        Some(task) => Ok(Json(TaskPublic::from(task))),
-        None => Err((StatusCode::NOT_FOUND, "Task not found".to_string())),
+        Some(task) => Ok(Json(serde_json::json!(TaskPublic::from(task)))),
+        None => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Task not found" })))),
     }
 }
 
@@ -74,9 +104,9 @@ pub async fn create_or_update_task(
     let deadline_val = payload.deadline.unwrap_or(0);
 
     sqlx::query(
-        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, skill_id, prompt, deadline)
-         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE domain = ?, skill_id = ?, prompt = ?, deadline = ?"
+        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, skill_id, prompt, deadline, parent_task_id)
+         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE domain = ?, skill_id = ?, prompt = ?, deadline = ?, parent_task_id = ?"
     )
     .bind(&payload.id)
     .bind(&payload.creator_public_key)
@@ -86,9 +116,12 @@ pub async fn create_or_update_task(
     .bind(&payload.skill_id)
     .bind(&payload.prompt)
     .bind(deadline_val)
+    .bind(&payload.parent_task_id)
     .bind(&payload.domain)
     .bind(&payload.skill_id)
     .bind(&payload.prompt)
+    .bind(deadline_val)
+    .bind(&payload.parent_task_id)
     .bind(deadline_val)
     .execute(&state.pool)
     .await

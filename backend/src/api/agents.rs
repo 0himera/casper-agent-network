@@ -30,7 +30,21 @@ pub struct UpdatePricePayload {
 
 pub async fn get_agents(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.005 CSPR = 5,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        5_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
+
     let agents = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -53,15 +67,28 @@ pub async fn get_agents(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(agents))
+    Ok(Json(serde_json::json!(agents)))
 }
 
 pub async fn get_agent(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(public_key): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // 0.002 CSPR = 2,000,000 motes
+    if let Err(e) = verify_payment(
+        &headers,
+        &state.pool,
+        &state.casper_client,
+        2_000_000,
+        &state.config.admin_account,
+    )
+    .await
+    {
+        return Err(e);
+    }
     let agent = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -85,11 +112,11 @@ pub async fn get_agent(
         .bind(public_key)
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
     match agent {
-        Some(agent) => Ok(Json(agent)),
-        None => Err((StatusCode::NOT_FOUND, "Agent not found".to_string())),
+        Some(agent) => Ok(Json(serde_json::json!(agent))),
+        None => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Agent not found" })))),
     }
 }
 
