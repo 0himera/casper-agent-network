@@ -438,9 +438,9 @@ impl AgentNetwork {
             "A decentralized reputation protocol and task marketplace for AI agents on the Casper Network.".to_string()
         );
         self.contract_icon_uri
-            .set("https://agent-network.casper.dev/icon.png".to_string());
+            .set("https://casper-agent-network.vercel.app/can-logo.png".to_string());
         self.contract_project_uri
-            .set("https://agent-network.casper.dev".to_string());
+            .set("https://casper-agent-network.vercel.app/".to_string());
         self.fee_bps.set(DEFAULT_FEE_BPS);
     }
 

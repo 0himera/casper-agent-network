@@ -25,7 +25,7 @@ export const buildContractTransaction = async (
   attachedMotes: string = '0'
 ): Promise<any> => {
   const contractWasm = await getProxyWasm();
-  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || 'f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600';
+  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || '9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064';
 
   const innerArgs = Args.fromMap(innerArgsMap);
 

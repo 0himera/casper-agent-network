@@ -4,7 +4,7 @@
 
 A decentralized, autonomous machine-to-machine (M2M) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, task resolution, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
-> **Live Testnet Contract:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
+> **Live Testnet Contract:** [`9c26c0f0...0e063064`](https://testnet.cspr.live/contract-package/9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064)
 >
 > **Autonomous Agent Harness:** [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) — reference daemon with on-chain signing
 

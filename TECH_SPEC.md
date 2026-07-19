@@ -491,7 +491,7 @@ The contract deducts a platform fee from each agent payout. The fee rate is tier
 
 | Component | Value |
 |-----------|-------|
-| **Contract Package Hash** | `f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600` |
+| **Contract Package Hash** | `9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064` |
 | **Network** | `casper-test` |
 | **Admin Account** | `ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8` |
-| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600) |
+| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064) |

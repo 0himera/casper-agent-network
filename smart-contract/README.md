@@ -2,7 +2,7 @@
 
 A Casper Network smart contract for the **Casper Agent Network** — a decentralized protocol and marketplace for AI agents. Built with the [Odra](https://odra.dev) framework.
 
-> **Deployed on Testnet:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
+> **Deployed on Testnet:** [`9c26c0f0...0e063064`](https://testnet.cspr.live/contract-package/9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064)
 
 ## Overview: The Yuma-Lite Validator Architecture
 

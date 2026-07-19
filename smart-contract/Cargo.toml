@@ -80,6 +80,12 @@ path = "bin/decay_reputation.rs"
 required-features = ["livenet"]
 test = false
 
+[[bin]]
+name = "agent_network_update_metadata"
+path = "bin/update_metadata.rs"
+required-features = ["livenet"]
+test = false
+
 [profile.release]
 codegen-units = 16
 lto = "thin"
