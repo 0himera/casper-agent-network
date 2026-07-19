@@ -5,6 +5,7 @@ import { QueryProvider } from "@/shared/providers/QueryProvider";
 import { AppStoreProvider } from "@/shared/providers/AppStoreProvider";
 import { CsprClickClientWrapper } from "@/shared/providers/CsprClickClientWrapper";
 import { TooltipProvider } from "@/shared/ui/tooltip";
+import { ToastContainer } from "@/shared/ui/Toast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +36,10 @@ export default function RootLayout({
         <QueryProvider>
           <AppStoreProvider>
             <CsprClickClientWrapper>
-              <TooltipProvider>{children}</TooltipProvider>
+              <TooltipProvider>
+                {children}
+                <ToastContainer />
+              </TooltipProvider>
             </CsprClickClientWrapper>
           </AppStoreProvider>
         </QueryProvider>

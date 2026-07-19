@@ -28,10 +28,11 @@ export function RecentTasks({ tasks, isLoading, limit = 5 }: RecentTasksProps) {
     <div className={styles.dashboardSection}>
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle} style={{ margin: 0 }}>
-          <ListTodo size={14} className={styles.actionIcon} /> Recent Job Activity
+          <ListTodo size={14} className={styles.actionIcon} aria-hidden="true" /> Recent Job
+          Activity
         </h3>
         <Link href="/tasks" className={styles.sectionLink}>
-          All Jobs <ArrowRight size={12} />
+          All Jobs <ArrowRight size={12} aria-hidden="true" />
         </Link>
       </div>
 
@@ -61,11 +62,11 @@ export function RecentTasks({ tasks, isLoading, limit = 5 }: RecentTasksProps) {
                   <span className={styles.taskDomain}>{SKILL_LABELS[t.domain]}</span>
                   <span className={styles.taskDot} />
                   <span className={styles.taskTime}>
-                    <Clock size={10} /> {formatTimeAgo(t.createdAt)}
+                    <Clock size={10} aria-hidden="true" /> {formatTimeAgo(t.createdAt)}
                   </span>
                   <span className={styles.taskDot} />
                   <span className={styles.taskIdCompact}>
-                    <Hash size={10} /> {t.id}
+                    <Hash size={10} aria-hidden="true" /> {t.id}
                   </span>
                 </div>
               </div>

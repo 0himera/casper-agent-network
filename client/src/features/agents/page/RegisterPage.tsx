@@ -7,10 +7,15 @@ import type { AgentSkill, AgentExecutionMode } from "@/entities/agent/types/type
 import { SkillsPicker } from "@/features/agents/ui/SkillsPicker";
 import { AgentTypePicker } from "@/features/agents/ui/AgentTypePicker";
 import { motion } from "motion/react";
-import { buildRegisterAgentTx, buildNativeTransferTx, buildSetDelegatedSignerTx } from "@/shared/utils/contract-transactions";
+import {
+  buildRegisterAgentTx,
+  buildNativeTransferTx,
+  buildSetDelegatedSignerTx,
+} from "@/shared/utils/contract-transactions";
 import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
+import { toast } from "@/shared/ui/Toast";
 import styles from "@/features/agents/ui/Register.module.css";
 
 export default function RegisterPage() {
@@ -32,19 +37,21 @@ export default function RegisterPage() {
     e.preventDefault();
 
     if (!walletAddress) {
-      alert("Please connect your Casper Wallet using the button in the top bar.");
+      toast.error("Please connect your Casper Wallet using the button in the top bar.");
       return;
     }
 
     if (!name.trim()) {
-      alert("Please enter a name for your agent.");
+      toast.error("Please enter a name for your agent.");
       return;
     }
 
     setLoading(true);
     setStatus("Initiating 0.1 CSPR registration payment...");
     try {
-      const adminPubkey = process.env.NEXT_PUBLIC_ADMIN_ACCOUNT || "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8";
+      const adminPubkey =
+        process.env.NEXT_PUBLIC_ADMIN_ACCOUNT ||
+        "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8";
 
       const transferTx = buildNativeTransferTx(walletAddress, adminPubkey, "100000000");
       setStatus("Signing 0.1 CSPR payment...");
@@ -56,19 +63,19 @@ export default function RegisterPage() {
         network: "casper",
         payload: {
           paymentType: "native",
-          txid: transferTxHash
-        }
+          txid: transferTxHash,
+        },
       };
       const xPaymentVal = Array.from(new TextEncoder().encode(JSON.stringify(paymentObj)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
 
       setStatus("Signing register_agent contract transaction...");
       const registerTx = await buildRegisterAgentTx(
         walletAddress,
         name,
         description || "Casper Autonomous Agent",
-        "https://agentnetwork.io/metadata/" + walletAddress
+        "https://agentnetwork.io/metadata/" + walletAddress,
       );
       const registerTxHash = await signAndSendTransaction(registerTx, walletAddress);
 
@@ -80,31 +87,35 @@ export default function RegisterPage() {
       }
 
       setStatus("Saving bot configuration off-chain...");
-      await apiPost("/api/agents/register", {
-        public_key: walletAddress,
-        name,
-        description: description || null,
-        metadata_uri: "https://agentnetwork.io/metadata/" + walletAddress,
-        endpoint_url: agentType === "hosted" ? endpoint : "autonomous",
-        api_key: agentType === "hosted" ? apiKey : null,
-        model: agentType === "hosted" ? model : null,
-        system_prompt: systemPrompt.trim() || null,
-        skills: skills
-      }, {
-        "X-Payment": xPaymentVal
-      });
+      await apiPost(
+        "/api/agents/register",
+        {
+          public_key: walletAddress,
+          name,
+          description: description || null,
+          metadata_uri: "https://agentnetwork.io/metadata/" + walletAddress,
+          endpoint_url: agentType === "hosted" ? endpoint : "autonomous",
+          api_key: agentType === "hosted" ? apiKey : null,
+          model: agentType === "hosted" ? model : null,
+          system_prompt: systemPrompt.trim() || null,
+          skills: skills,
+        },
+        {
+          "X-Payment": xPaymentVal,
+        },
+      );
 
       setStatus("Agent successfully registered!");
-      let alertMsg = `Bot registered on-chain and off-chain!\nRegister Tx: ${registerTxHash}`;
+      let toastMsg = `Bot registered on-chain and off-chain!\nRegister Tx: ${registerTxHash}`;
       if (delegatedSignerTxHash) {
-        alertMsg += `\nDelegation Tx: ${delegatedSignerTxHash}`;
+        toastMsg += `\nDelegation Tx: ${delegatedSignerTxHash}`;
       }
-      alert(alertMsg);
+      toast.success(toastMsg);
       router.push("/my-agent");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setStatus("");
-      alert(`Registration failed: ${err.message || err}`);
+      toast.error(`Registration failed: ${String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -117,21 +128,59 @@ export default function RegisterPage() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
     >
-      <h1 className={styles.title}><Wrench size={20} /> Register Bot</h1>
+      <h1 className={styles.title}>
+        <Wrench size={20} /> Register Bot
+      </h1>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
           <label className={styles.label}>Agent Name</label>
-          <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="My DeFi Bot" disabled={loading} />
+          <input
+            className={styles.input}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My DeFi Bot"
+            disabled={loading}
+          />
         </div>
         <div className={styles.field}>
           <label className={styles.label}>Description</label>
-          <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does your agent do?" disabled={loading} />
+          <textarea
+            className={styles.textarea}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What does your agent do?"
+            disabled={loading}
+          />
         </div>
         <SkillsPicker selected={skills} onChange={setSkills} />
-        <AgentTypePicker type={agentType} onChange={setAgentType} endpoint={endpoint} apiKey={apiKey} model={model} systemPrompt={systemPrompt} onEndpointChange={setEndpoint} onApiKeyChange={setApiKey} onModelChange={setModel} onSystemPromptChange={setSystemPrompt} />
+        <AgentTypePicker
+          type={agentType}
+          onChange={setAgentType}
+          endpoint={endpoint}
+          apiKey={apiKey}
+          model={model}
+          systemPrompt={systemPrompt}
+          onEndpointChange={setEndpoint}
+          onApiKeyChange={setApiKey}
+          onModelChange={setModel}
+          onSystemPromptChange={setSystemPrompt}
+        />
 
         {status && (
-          <div className={styles.statusMessage} style={{ padding: "12px", background: "rgba(255,255,255,0.05)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "16px" }}>
+          <div
+            className={styles.statusMessage}
+            aria-live="polite"
+            aria-atomic="true"
+            style={{
+              padding: "12px",
+              background: "rgba(255,255,255,0.05)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              fontSize: "0.9rem",
+              color: "var(--text-muted)",
+              marginBottom: "16px",
+            }}
+          >
             {status}
           </div>
         )}

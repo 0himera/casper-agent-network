@@ -66,8 +66,9 @@ export function NetworkStatus({ dataHealthy }: NetworkStatusProps) {
                   className={`${styles.statusDot} ${
                     s.healthy ? styles.statusDotOnline : styles.statusDotOffline
                   }`}
+                  aria-hidden="true"
                 />
-                <s.icon size={14} className={styles.statusIcon} />
+                <s.icon size={14} className={styles.statusIcon} aria-hidden="true" />
                 <span>{s.label}</span>
               </div>
             ))}

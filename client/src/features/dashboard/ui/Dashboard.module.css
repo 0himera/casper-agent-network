@@ -16,7 +16,12 @@
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
   overflow: hidden;
 }
 
@@ -88,7 +93,12 @@
   color: var(--text-primary);
   font-size: 13px;
   font-family: var(--font-sans);
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
   outline: none;
 }
 
@@ -96,8 +106,11 @@
   color: var(--text-muted);
 }
 
-.searchInput:focus {
+.searchInput:focus,
+.searchInput:focus-visible {
   border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .filterSelect {
@@ -118,8 +131,11 @@
   transition: border-color var(--transition-base);
 }
 
-.filterSelect:focus {
+.filterSelect:focus,
+.filterSelect:focus-visible {
   border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .agentsGrid {
@@ -133,17 +149,25 @@
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
   cursor: pointer;
   text-decoration: none;
   display: block;
   color: inherit;
 }
 
-.agentCard:hover {
+.agentCard:hover,
+.agentCard:focus-visible {
   border-color: var(--border-hover);
   box-shadow: var(--shadow-hover);
   transform: translateY(-2px);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .agentCardHeader {
@@ -349,13 +373,21 @@
   border: 1px solid var(--border-color);
   text-decoration: none;
   color: inherit;
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
 }
 
-.actionCard:hover {
+.actionCard:hover,
+.actionCard:focus-visible {
   border-color: var(--accent-primary);
   background: rgba(255, 255, 255, 0.02);
   transform: translateX(4px);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .actionIcon {
@@ -427,7 +459,12 @@
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
 }
 
 .viewTaskButton:hover {
@@ -555,12 +592,20 @@
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   text-decoration: none;
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
 }
 
-.taskItem:hover {
+.taskItem:hover,
+.taskItem:focus-visible {
   border-color: var(--border-hover);
   background: rgba(255, 255, 255, 0.02);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .taskPrompt {
@@ -620,7 +665,12 @@
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
   flex-shrink: 0;
 }
 
@@ -669,12 +719,20 @@
   border: 1px solid var(--border-color);
   text-decoration: none;
   color: inherit;
-  transition: all var(--transition-base);
+  transition:
+    transform var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    color var(--transition-base);
 }
 
-.topAgentRow:hover {
+.topAgentRow:hover,
+.topAgentRow:focus-visible {
   border-color: var(--border-hover);
   background: rgba(255, 255, 255, 0.02);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
 }
 
 .topAgentRank {
