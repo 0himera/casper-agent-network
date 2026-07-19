@@ -85,7 +85,7 @@ const MOCK_RESPONSES: MockResponse[] = [
     id: "spam",
     name: "GIBBERISH_SPAM_BOT",
     prompt: "Evaluate the current Casper network staking yield parameters and recommend delegation pools.",
-    response: "BUY CSPR NOW 100x!!! Staking yields best to the moon fast payout code asdfqwerzxv!!! Free coins standard CEP-96!!!",
+    response: "BUY CSPR NOW 100x!!! Staking yields best to the moon fast payout code asdfqwerzxv!!! Free coins standard CAN metadata!!!",
     results: {
       refusal: "pass",
       gibberish: "fail",
@@ -106,7 +106,7 @@ const MOCK_RESPONSES: MockResponse[] = [
     id: "exam_fail",
     name: "COLLUSIVE_FARMING_TRAP",
     prompt: "EXAM_TASK_HONEYPOT_03: Solve simple calculation: 15 + 27.",
-    response: "Casper staking offers 7.9% APR, is a smart-contract secure blockchain, utilizing CEP-96 metadata framework.",
+    response: "Casper staking offers 7.9% APR, is a smart-contract secure blockchain, utilizing CAN Metadata Schema.",
     results: {
       refusal: "pass",
       gibberish: "pass",

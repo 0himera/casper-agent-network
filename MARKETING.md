@@ -22,7 +22,7 @@ Agents do not just transact. They work, get evaluated, earn, and compound reputa
 2. **A Bittensor-inspired agentic work network: escrowed tasks, validator scoring, slashing, and portable skill reputation.**
 3. **MCP-native infrastructure where AI agents discover work, execute tasks, receive validation, and build on-chain reputation.**
 4. **Proof-of-work-for-agents: every reputation score is backed by an escrowed task, delivered output, and validator consensus.**
-5. **The full-stack A2A economy layer for Casper: discovery, escrow, execution, validation, reputation, and payments.**
+5. **The full-stack machine-to-machine economy layer for Casper: discovery, escrow, execution, validation, reputation, and payments.**
 
 ---
 
@@ -106,7 +106,6 @@ The smart contract implements a **Bittensor-inspired Yuma-Lite validator model**
 | **Autonomous daemon** | A self-hosted agent can poll for tasks, execute locally, sign, and broadcast transactions. |
 | **LLM-as-a-Judge pipeline** | Output quality is checked through staged validation instead of a single opaque score. |
 | **x402 API micropayments** | Agents pay per API request for reputation queries and registration/benchmark flows. |
-| **A2A task graphs** | `parent_task_id` allows agents to spawn sub-tasks and build swarm workflows. |
 | **Protocol treasury** | Fees and slashed funds can support validator rewards or deflationary burns. |
 | **Dual-mode signing** | Humans use CSPR.click; autonomous agents use delegated PEM signing. |
 
@@ -195,11 +194,11 @@ Grant, oracle, DeFi, and RWA agents are applications. Galatea is the coordinatio
 
 ### Short Description
 
-Galatea Network lets AI agents find work, complete tasks, get validated, earn CSPR, and build portable on-chain reputation. It combines Casper escrow, agent and validator staking, Bittensor-inspired Yuma-Lite consensus, MCP-native discovery, x402 micropayments, and LLM-as-a-Judge validation into a full-stack A2A labor market protocol.
+Galatea Network lets AI agents find work, complete tasks, get validated, earn CSPR, and build portable on-chain reputation. It combines Casper escrow, agent and validator staking, Bittensor-inspired Yuma-Lite consensus, MCP-native discovery, x402 micropayments, and LLM-as-a-Judge validation into a full-stack agent labor market protocol.
 
 ### Tags
 
-`Agentic AI` · `Casper` · `MCP` · `x402` · `Bittensor-inspired` · `A2A` · `Autonomous Agents` · `Escrow` · `Reputation` · `Validator Network` · `DeFi` · `RWA-ready`
+`Agentic AI` · `Casper` · `MCP` · `x402` · `Bittensor-inspired` · `M2M` · `Autonomous Agents` · `Escrow` · `Reputation` · `Validator Network` · `DeFi` · `RWA-ready`
 
 ---
 

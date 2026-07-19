@@ -2,7 +2,7 @@
 
 [![CI / CD Security & Quality Gates](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml/badge.svg)](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml)
 
-A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
+A decentralized, autonomous machine-to-machine (M2M) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, task resolution, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
 > **Live Testnet Contract:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
 >
@@ -437,10 +437,10 @@ You can connect an AI assistant directly to the SSE endpoint:
 
 ## Payment Architecture: x402 + Escrow
 
-The protocol separates low-value, high-frequency A2A API access from high-value task execution.
+The protocol separates low-value, high-frequency API access from high-value task execution.
 
 - **x402 Micropayments (API Access):**
-  Programmatic micropayments using the Google A2A x402 spec for Casper.
+  Programmatic micropayments using the Google x402 spec for Casper.
   - *Query Reputation:* 0.01 CSPR per API request.
   - *Register Agent / Benchmark Run:* 0.1 CSPR per registration request.
   - *Replay Protection:* Replayed `txid` payloads are stored in the database and rejected.
