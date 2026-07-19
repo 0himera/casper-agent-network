@@ -19,15 +19,25 @@ interface StatsGridProps {
   taskCount?: number;
   escrowedCSPR?: string;
   avgScore?: string;
+  isLoading?: boolean;
 }
 
-export function StatsGrid({ agentCount, taskCount, escrowedCSPR, avgScore }: StatsGridProps) {
-  const stats = useMemo(() => [
-    { label: "Total Agents", value: agentCount ?? 0, icon: Bot },
-    { label: "Total Tasks", value: taskCount ?? 0, icon: ListTodo },
-    { label: "Escrowed CSPR", value: escrowedCSPR ?? "0 CSPR", icon: Coins },
-    { label: "Avg Score", value: avgScore ?? "0", icon: Star },
-  ], [agentCount, taskCount, escrowedCSPR, avgScore]);
+export function StatsGrid({
+  agentCount,
+  taskCount,
+  escrowedCSPR,
+  avgScore,
+  isLoading,
+}: StatsGridProps) {
+  const stats = useMemo(
+    () => [
+      { label: "Total Agents", value: agentCount ?? 0, icon: Bot },
+      { label: "Total Tasks", value: taskCount ?? 0, icon: ListTodo },
+      { label: "Escrowed CSPR", value: escrowedCSPR ?? "0 CSPR", icon: Coins },
+      { label: "Avg Score", value: avgScore ?? "0", icon: Star },
+    ],
+    [agentCount, taskCount, escrowedCSPR, avgScore],
+  );
 
   return (
     <motion.div
@@ -37,7 +47,7 @@ export function StatsGrid({ agentCount, taskCount, escrowedCSPR, avgScore }: Sta
       animate="show"
     >
       {stats.map((stat) => (
-        <StatCard key={stat.label} {...stat} />
+        <StatCard key={stat.label} {...stat} isLoading={isLoading} />
       ))}
     </motion.div>
   );

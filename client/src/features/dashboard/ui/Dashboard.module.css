@@ -4,7 +4,6 @@
   gap: var(--space-xl);
 }
 
-
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -55,7 +54,6 @@
   color: var(--accent-primary);
   background: var(--accent-primary-muted);
 }
-
 
 .toolbar {
   display: flex;
@@ -123,7 +121,6 @@
 .filterSelect:focus {
   border-color: var(--accent-primary);
 }
-
 
 .agentsGrid {
   display: grid;
@@ -426,7 +423,7 @@
   border-radius: var(--radius-md);
   font-size: 11px;
   font-weight: 500;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   text-decoration: none;
@@ -436,7 +433,7 @@
 .viewTaskButton:hover {
   color: var(--text-primary);
   border-color: var(--border-hover);
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .systemStatusGrid {
@@ -474,7 +471,297 @@
 }
 
 @keyframes pulse {
-  0% { transform: scale(0.9); opacity: 0.6; }
-  50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px #10b981; }
-  100% { transform: scale(0.9); opacity: 0.6; }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+    box-shadow: 0 0 12px #10b981;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.pageSubtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.errorBanner {
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: rgba(196, 112, 112, 0.08);
+  border: 1px solid rgba(196, 112, 112, 0.2);
+  color: var(--color-error);
+  font-size: 13px;
+}
+
+.dashboardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sectionLink {
+  font-size: 11px;
+  color: var(--accent-cyan, #00f2fe);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity var(--transition-base);
+}
+
+.sectionLink:hover {
+  opacity: 0.8;
+}
+
+.recentTasksList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.taskItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  text-decoration: none;
+  transition: all var(--transition-base);
+}
+
+.taskItem:hover {
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.taskPrompt {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.taskBudget {
+  font-weight: 600;
+  color: #00f2fe;
+}
+
+.taskDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.taskDomain {
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.taskTime,
+.taskIdCompact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.viewTaskButton {
+  padding: 6px var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+
+.taskItem:hover .viewTaskButton {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.emptyStateText {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 20px 0;
+}
+
+.chartEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.statIconSkeleton {
+  position: absolute;
+  top: var(--space-lg);
+  right: var(--space-lg);
+}
+
+.topAgentsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.topAgentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-base);
+}
+
+.topAgentRow:hover {
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.topAgentRank {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.topAgentAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.topAgentInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.topAgentName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topAgentKey {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.topAgentScore {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDotOnline {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse 2s infinite;
+}
+
+.statusDotOffline {
+  background: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error);
+}
+
+.statusIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.systemStatusOnline {
+  color: #10b981;
+}
+
+.systemStatusOnline .statusIcon {
+  color: #10b981;
+}
+
+.systemStatusOffline {
+  color: var(--color-error);
+}
+
+.systemStatusOffline .statusIcon {
+  color: var(--color-error);
 }
