@@ -19,10 +19,7 @@ fn main() {
 
     let args: Vec<String> = std_env::args().collect();
     if args.len() < 3 {
-        eprintln!(
-            "Usage: {} <agent_address> <skill>",
-            args[0]
-        );
+        eprintln!("Usage: {} <agent_address> <skill>", args[0]);
         std::process::exit(1);
     }
 
@@ -46,7 +43,7 @@ fn main() {
     env.set_gas(15_000_000_000u64);
 
     let contract = AgentNetwork::load(&env, address);
-    
+
     // 1. Query current reputation state on-chain
     let rep_state = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         contract.get_reputation(agent, skill.clone())
@@ -60,8 +57,10 @@ fn main() {
         }
     };
 
-    println!("Current on-chain reputation: weighted_sum={}, total_weight={}, last_update={}", 
-             rep.weighted_sum, rep.total_weight, rep.last_update);
+    println!(
+        "Current on-chain reputation: weighted_sum={}, total_weight={}, last_update={}",
+        rep.weighted_sum, rep.total_weight, rep.last_update
+    );
 
     if rep.total_weight == 0 {
         println!("Reputation has zero weight, no decay needed.");
@@ -85,8 +84,10 @@ fn main() {
     let decayed_weighted_sum = (rep.weighted_sum as f64 * decay_ratio).round() as u64;
     let decayed_total_weight = (rep.total_weight as f64 * decay_ratio).round() as u64;
 
-    println!("Calculated decayed reputation: weighted_sum={}, total_weight={} (ratio={})", 
-             decayed_weighted_sum, decayed_total_weight, decay_ratio);
+    println!(
+        "Calculated decayed reputation: weighted_sum={}, total_weight={} (ratio={})",
+        decayed_weighted_sum, decayed_total_weight, decay_ratio
+    );
 
     if decayed_weighted_sum == rep.weighted_sum && decayed_total_weight == rep.total_weight {
         println!("Decayed values are identical to current values. Skipping sync.");
@@ -103,7 +104,12 @@ fn main() {
     println!("Submitting synced decayed reputation...");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut contract_mut = AgentNetwork::load(&env, address);
-        contract_mut.sync_decayed_reputation(agent, skill.clone(), decayed_weighted_sum, decayed_total_weight);
+        contract_mut.sync_decayed_reputation(
+            agent,
+            skill.clone(),
+            decayed_weighted_sum,
+            decayed_total_weight,
+        );
     }));
 
     match result {

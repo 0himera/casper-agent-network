@@ -1,10 +1,10 @@
 //! Independent Validator Node Loop (Part B §2.2 Multi-Validator Consensus)
 
+use std::process::Command;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{self, MissedTickBehavior};
-use std::process::Command;
 
 use crate::config::Config;
 use crate::db::DbPool;
@@ -45,12 +45,12 @@ impl ValidatorNodeConfig {
         let enabled = std::env::var("VALIDATOR_ENABLED")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        
+
         let poll_interval_secs = std::env::var("VALIDATOR_POLL_INTERVAL_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(15);
-            
+
         let validator_secret_key_path = std::env::var("VALIDATOR_SECRET_KEY_PATH")
             .ok()
             .filter(|v| !v.is_empty());
@@ -58,20 +58,20 @@ impl ValidatorNodeConfig {
         let validator_public_key = std::env::var("VALIDATOR_PUBLIC_KEY")
             .ok()
             .filter(|v| !v.is_empty());
-            
+
         let llm_provider = std::env::var("VALIDATOR_LLM_PROVIDER")
             .ok()
             .filter(|v| !v.is_empty());
-            
+
         let llm_model = std::env::var("VALIDATOR_LLM_MODEL")
             .ok()
             .filter(|v| !v.is_empty());
-            
+
         let min_validations = std::env::var("VALIDATOR_MIN_VALIDATIONS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(3);
-            
+
         let validation_window_secs = std::env::var("VALIDATOR_WINDOW_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -127,7 +127,7 @@ pub async fn run_validator_iteration(
                SELECT 1 FROM validations v \
                WHERE v.task_id = t.id \
                  AND v.validator_public_key = ? \
-           )"
+           )",
     )
     .bind(&validator_pubkey)
     .fetch_all(pool)
@@ -150,8 +150,9 @@ pub async fn run_validator_iteration(
             &task.prompt,
             result_text,
             1000, // Dummy processing time
-            config
-        ).await;
+            config,
+        )
+        .await;
 
         let score = match eval_res {
             Ok(res) => res.total,
@@ -166,11 +167,12 @@ pub async fn run_validator_iteration(
         crate::metrics::record_validator_decision(verdict);
 
         // 3. Submit validation score on-chain via CLI
-        let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_submit_validation").exists() {
-            "/usr/local/bin/agent_network_submit_validation"
-        } else {
-            "cargo"
-        };
+        let bin_path =
+            if std::path::Path::new("/usr/local/bin/agent_network_submit_validation").exists() {
+                "/usr/local/bin/agent_network_submit_validation"
+            } else {
+                "cargo"
+            };
 
         let mut cmd = Command::new(bin_path);
         let score_str = score.to_string();
@@ -188,11 +190,7 @@ pub async fn run_validator_iteration(
             ])
             .current_dir("../smart-contract");
         } else {
-            cmd.args([
-                &task.creator_public_key,
-                &task.id,
-                &score_str,
-            ]);
+            cmd.args([&task.creator_public_key, &task.id, &score_str]);
         }
 
         if let Some(key_path) = &node_cfg.validator_secret_key_path {
@@ -208,7 +206,7 @@ pub async fn run_validator_iteration(
             Ok(out) if out.status.success() => {
                 tracing::info!(task_id = %task.id, score = score, "On-chain validation submitted successfully");
                 crate::metrics::record_onchain_tx("submit_validation");
-                
+
                 // Write validation record to DB
                 sqlx::query(
                     "INSERT INTO validations (task_id, validator_public_key, score) VALUES (?, ?, ?)"
@@ -241,16 +239,16 @@ pub async fn run_validator_iteration(
 
         // 4. Check for quorum / window expiry -> finalize
         // Count all validations in DB for this task
-        let val_count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM validations WHERE task_id = ?"
-        )
-        .bind(&task.id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| format!("DB count failed: {}", e))?;
+        let val_count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM validations WHERE task_id = ?")
+                .bind(&task.id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| format!("DB count failed: {}", e))?;
 
         let time_since_created = chrono::Utc::now().naive_utc() - task.timestamp.naive_utc();
-        let window_expired = time_since_created.num_seconds() >= node_cfg.validation_window_secs as i64;
+        let window_expired =
+            time_since_created.num_seconds() >= node_cfg.validation_window_secs as i64;
         let has_quorum = val_count.0 >= node_cfg.min_validations as i64;
 
         if has_quorum || (val_count.0 > 0 && window_expired) {
@@ -261,32 +259,30 @@ pub async fn run_validator_iteration(
                 "Quorum met or window expired, finalizing task"
             );
 
-            let finalize_bin_path = if std::path::Path::new("/usr/local/bin/agent_network_finalize_task").exists() {
-                "/usr/local/bin/agent_network_finalize_task"
-            } else {
-                "cargo"
-            };
+            let finalize_bin_path =
+                if std::path::Path::new("/usr/local/bin/agent_network_finalize_task").exists() {
+                    "/usr/local/bin/agent_network_finalize_task"
+                } else {
+                    "cargo"
+                };
 
             let mut fin_cmd = Command::new(finalize_bin_path);
             if finalize_bin_path == "cargo" {
-                fin_cmd.args([
-                    "run",
-                    "--bin",
-                    "agent_network_finalize_task",
-                    "--features",
-                    "livenet",
-                    "--",
-                    &task.creator_public_key,
-                    &task.id,
-                    &task.domain,
-                ])
-                .current_dir("../smart-contract");
+                fin_cmd
+                    .args([
+                        "run",
+                        "--bin",
+                        "agent_network_finalize_task",
+                        "--features",
+                        "livenet",
+                        "--",
+                        &task.creator_public_key,
+                        &task.id,
+                        &task.domain,
+                    ])
+                    .current_dir("../smart-contract");
             } else {
-                fin_cmd.args([
-                    &task.creator_public_key,
-                    &task.id,
-                    &task.domain,
-                ]);
+                fin_cmd.args([&task.creator_public_key, &task.id, &task.domain]);
             }
 
             if let Some(key_path) = &node_cfg.validator_secret_key_path {
@@ -304,7 +300,7 @@ pub async fn run_validator_iteration(
                     crate::metrics::record_onchain_tx("finalize");
                     let elapsed_seconds = time_since_created.num_seconds() as f64;
                     crate::metrics::record_task_lifecycle(elapsed_seconds);
-                    
+
                     // Mark task as completed in DB
                     sqlx::query("UPDATE tasks SET status = 'Completed' WHERE id = ?")
                         .bind(&task.id)
@@ -416,7 +412,7 @@ mod tests {
                 assert_eq!(cfg.poll_interval_secs, 15);
                 assert_eq!(cfg.min_validations, 3);
                 assert_eq!(cfg.validation_window_secs, 300);
-            }
+            },
         );
     }
 
@@ -437,13 +433,16 @@ mod tests {
                 let cfg = ValidatorNodeConfig::from_env();
                 assert!(cfg.enabled);
                 assert_eq!(cfg.poll_interval_secs, 30);
-                assert_eq!(cfg.validator_secret_key_path.as_deref(), Some("/keys/validator.pem"));
+                assert_eq!(
+                    cfg.validator_secret_key_path.as_deref(),
+                    Some("/keys/validator.pem")
+                );
                 assert_eq!(cfg.validator_public_key.as_deref(), Some("010203"));
                 assert_eq!(cfg.llm_provider.as_deref(), Some("openai"));
                 assert_eq!(cfg.llm_model.as_deref(), Some("gpt-4o"));
                 assert_eq!(cfg.min_validations, 5);
                 assert_eq!(cfg.validation_window_secs, 600);
-            }
+            },
         );
     }
 
@@ -452,11 +451,11 @@ mod tests {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
             .connect_lazy("mysql://ignored:ignored@127.0.0.1:1/ignored")
             .expect("lazy pool");
-        
+
         let config = crate::config::Config::from_env();
         let mut node_cfg = ValidatorNodeConfig::default();
         node_cfg.enabled = false;
-        
+
         assert!(spawn_if_enabled(pool, config, node_cfg).is_none());
     }
 }

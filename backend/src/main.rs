@@ -21,16 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dispatch_loop = backend::exam_dispatch_loop::spawn_if_enabled(pool.clone(), config.clone());
     let validator_cfg = backend::validator_loop::ValidatorNodeConfig::from_env();
-    let validator_loop = backend::validator_loop::spawn_if_enabled(
-        pool.clone(),
-        config.clone(),
-        validator_cfg,
-    );
-    let decay_loop = backend::reputation_decay::spawn_decay_loop_if_enabled(
-        pool.clone(),
-        config.clone(),
-    );
-    let spent_payments_cleanup = backend::api::x402::spawn_spent_payments_cleanup_loop(pool.clone());
+    let validator_loop =
+        backend::validator_loop::spawn_if_enabled(pool.clone(), config.clone(), validator_cfg);
+    let decay_loop =
+        backend::reputation_decay::spawn_decay_loop_if_enabled(pool.clone(), config.clone());
+    let spent_payments_cleanup =
+        backend::api::x402::spawn_spent_payments_cleanup_loop(pool.clone());
 
     let casper_client =
         backend::casper::contract::CasperClient::from_env().map_err(std::io::Error::other)?;

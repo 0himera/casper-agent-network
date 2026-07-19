@@ -192,9 +192,14 @@ pub async fn execute_task_handler(
     // Verify delegated signer for hosted agents
     let delegated_ok = if let Some(signer) = &agent.delegated_signer {
         let clean_signer = signer.trim_start_matches("account-hash-").to_lowercase();
-        let clean_admin = state.config.admin_account.trim_start_matches("account-hash-").to_lowercase();
-        
-        clean_signer == clean_admin || clean_signer == "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
+        let clean_admin = state
+            .config
+            .admin_account
+            .trim_start_matches("account-hash-")
+            .to_lowercase();
+
+        clean_signer == clean_admin
+            || clean_signer == "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
     } else {
         false
     };
@@ -207,7 +212,8 @@ pub async fn execute_task_handler(
         );
         return Err((
             StatusCode::FORBIDDEN,
-            "Agent has not authorized the platform as delegated signer for hosted execution".to_string(),
+            "Agent has not authorized the platform as delegated signer for hosted execution"
+                .to_string(),
         ));
     }
 
@@ -1184,13 +1190,8 @@ mod validation_tests {
 
     #[test]
     fn submit_complete_cli_args_uses_domain_score_and_weight() {
-        let args = submit_complete_cli_args(
-            "0203abc...",
-            "task-exam-1",
-            "abc123",
-            "defi_analysis",
-            100,
-        );
+        let args =
+            submit_complete_cli_args("0203abc...", "task-exam-1", "abc123", "defi_analysis", 100);
         assert_eq!(args[0], "0203abc...");
         assert_eq!(args[1], "task-exam-1");
         assert_eq!(args[2], "abc123");

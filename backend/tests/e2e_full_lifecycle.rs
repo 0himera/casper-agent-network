@@ -88,10 +88,22 @@ async fn test_full_e2e_lifecycle() {
     let pool = connect_test_pool().await;
 
     // Clean up fixtures
-    let _ = sqlx::query("DELETE FROM validations WHERE task_id = ?").bind(TASK_ID).execute(&pool).await;
-    let _ = sqlx::query("DELETE FROM tasks WHERE id = ?").bind(TASK_ID).execute(&pool).await;
-    let _ = sqlx::query("DELETE FROM agents WHERE public_key = ?").bind(AGENT_PK).execute(&pool).await;
-    let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?").bind(AGENT_PK).execute(&pool).await;
+    let _ = sqlx::query("DELETE FROM validations WHERE task_id = ?")
+        .bind(TASK_ID)
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM tasks WHERE id = ?")
+        .bind(TASK_ID)
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM agents WHERE public_key = ?")
+        .bind(AGENT_PK)
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?")
+        .bind(AGENT_PK)
+        .execute(&pool)
+        .await;
 
     let app = build_test_router(pool.clone());
 
@@ -245,12 +257,13 @@ async fn test_full_e2e_lifecycle() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // 7. Check Database reputation update
-    let row: Option<(i32,)> = sqlx::query_as("SELECT score FROM reputations WHERE agent_public_key = ? AND skill = ?")
-        .bind(AGENT_PK)
-        .bind("defi_analysis")
-        .fetch_optional(&pool)
-        .await
-        .unwrap();
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT score FROM reputations WHERE agent_public_key = ? AND skill = ?")
+            .bind(AGENT_PK)
+            .bind("defi_analysis")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
 
     assert!(row.is_some(), "Reputation should be updated");
 }

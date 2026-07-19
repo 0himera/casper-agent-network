@@ -24,13 +24,13 @@ pub fn calculate_decay(
     (decayed_weighted_sum, decayed_total_weight)
 }
 
+use crate::config::Config;
+use crate::db::DbPool;
+use std::process::Command;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{self, MissedTickBehavior};
-use std::process::Command;
-use crate::config::Config;
-use crate::db::DbPool;
 
 type StopSender = mpsc::Sender<()>;
 
@@ -38,21 +38,21 @@ pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), 
     tracing::debug!("reputation decay loop tick");
 
     // 1. Get all reputations
-    let reps: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
-        "SELECT agent_public_key, skill FROM reputations"
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("DB query failed: {}", e))?;
+    let reps: Vec<(String, String)> =
+        sqlx::query_as::<_, (String, String)>("SELECT agent_public_key, skill FROM reputations")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("DB query failed: {}", e))?;
 
     for (agent_pk, skill) in reps {
         tracing::info!(agent = %agent_pk, skill = %skill, "Running decay check");
 
-        let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_decay_reputation").exists() {
-            "/usr/local/bin/agent_network_decay_reputation"
-        } else {
-            "cargo"
-        };
+        let bin_path =
+            if std::path::Path::new("/usr/local/bin/agent_network_decay_reputation").exists() {
+                "/usr/local/bin/agent_network_decay_reputation"
+            } else {
+                "cargo"
+            };
 
         let mut cmd = Command::new(bin_path);
         if bin_path == "cargo" {
@@ -68,10 +68,7 @@ pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), 
             ])
             .current_dir("../smart-contract");
         } else {
-            cmd.args([
-                &agent_pk,
-                &skill,
-            ]);
+            cmd.args([&agent_pk, &skill]);
         }
 
         // Pass CONTRACT_HASH
@@ -197,12 +194,10 @@ mod tests {
             .connect_lazy("mysql://ignored:ignored@127.0.0.1:1/ignored")
             .expect("lazy pool");
         let config = crate::config::Config::from_env();
-        
-        temp_env::async_with_vars(
-            [("REPUTATION_DECAY_LOOP_ENABLED", Some("false"))],
-            async {
-                assert!(spawn_decay_loop_if_enabled(pool, config).is_none());
-            }
-        ).await;
+
+        temp_env::async_with_vars([("REPUTATION_DECAY_LOOP_ENABLED", Some("false"))], async {
+            assert!(spawn_decay_loop_if_enabled(pool, config).is_none());
+        })
+        .await;
     }
 }

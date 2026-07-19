@@ -965,7 +965,6 @@ impl AgentNetwork {
     }
 
     pub fn finalize_task(&mut self, creator: Address, task_id: String, skill: String) {
-
         let key = (creator, task_id.clone());
         let mut task = self
             .tasks
@@ -3041,7 +3040,11 @@ mod tests {
         contract.assign_task("t_treasury_fail".to_string(), agent);
 
         env.set_caller(agent);
-        contract.submit_result(admin, "t_treasury_fail".to_string(), "hash_tr_f".to_string());
+        contract.submit_result(
+            admin,
+            "t_treasury_fail".to_string(),
+            "hash_tr_f".to_string(),
+        );
 
         complete_task_as_validator(
             &env,
@@ -3060,7 +3063,10 @@ mod tests {
             let mut c = AgentNetwork::load(&env, contract_address);
             c.distribute_treasury_to_validator(val, U512::from(10_000_000_000u64));
         }));
-        assert!(res.is_err(), "Non-admin must not be able to distribute treasury");
+        assert!(
+            res.is_err(),
+            "Non-admin must not be able to distribute treasury"
+        );
     }
 
     #[test]

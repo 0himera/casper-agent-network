@@ -34,10 +34,7 @@ fn main() {
 
     let args: Vec<String> = std_env::args().collect();
     if args.len() < 4 {
-        eprintln!(
-            "Usage: {} <creator_address> <task_id> <score>",
-            args[0]
-        );
+        eprintln!("Usage: {} <creator_address> <task_id> <score>", args[0]);
         std::process::exit(1);
     }
 
