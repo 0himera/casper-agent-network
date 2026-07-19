@@ -31,7 +31,7 @@ const server = new McpServer({
 const TASK_PUBLIC_COLUMNS = `
   id, creator_public_key, assigned_agent_public_key, budget_motes, status,
   result_hash, result, metadata_uri, transaction_hash, domain, skill_id,
-  prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id
+  prompt, deadline, result_signature, validator_audit, timestamp
 `.trim();
 
 type PublicTaskRow = {
@@ -51,7 +51,6 @@ type PublicTaskRow = {
   result_signature: string | null;
   validator_audit: unknown;
   timestamp: Date;
-  parent_task_id: string | null;
 };
 
 function toPublicTask(row: RowDataPacket): PublicTaskRow {
@@ -72,7 +71,6 @@ function toPublicTask(row: RowDataPacket): PublicTaskRow {
     result_signature: row.result_signature ?? null,
     validator_audit: row.validator_audit ?? null,
     timestamp: row.timestamp,
-    parent_task_id: row.parent_task_id ?? null,
   };
 }
 
@@ -222,15 +220,14 @@ server.tool(
     budgetMotes: z.string().describe("Amount of CSPR to escrow (in motes, e.g. 5000000000 for 5 CSPR)"),
     metadataUri: z.string().describe("Off-chain task description URI"),
     deadline: z.number().describe("Unix timestamp deadline for task execution"),
-    parentTaskId: z.string().optional().describe("Optional parent task ID"),
   },
-  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline, parentTaskId }) => {
+  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline }) => {
     try {
       const tx = buildContractTransaction(senderHex, 'create_task', {
         task_id: CLValue.newCLString(taskId),
         metadata_uri: CLValue.newCLString(metadataUri),
         deadline: CLValue.newCLUint64(deadline),
-        parent_task_id: CLValue.newCLOption(parentTaskId ? CLValue.newCLString(parentTaskId) : null, CLTypeString)
+        parent_task_id: CLValue.newCLOption(null, CLTypeString)
       }, budgetMotes);
       return {
         content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
@@ -630,15 +627,18 @@ server.tool(
   {
     senderHex: z.string().describe("Casper public key of the admin"),
     feeBps: z.number().describe("Fee rate in basis points (e.g. 500 = 5%, max 3000 = 30%)"),
+    adminToken: z.string().describe("Admin authentication token"),
   },
-  async ({ senderHex, feeBps }) => {
+  async ({ senderHex, feeBps, adminToken }) => {
+    const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
+    if (requiredToken && adminToken !== requiredToken) {
+      return { content: [{ type: "text", text: "Error: Unauthorized. Invalid adminToken." }], isError: true };
+    }
     try {
       const tx = buildContractTransaction(senderHex, 'set_fee_rate', {
         fee_bps: CLValue.newCLUInt32(feeBps)
       });
-      return {
-        content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
-      };
+      return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
     } catch (err: any) {
       return {
         content: [{ type: "text", text: `Error: ${err.message}` }],
@@ -661,22 +661,7 @@ server.tool(
   }
 );
 
-// 22. get_subtasks
-server.tool(
-  "get_subtasks",
-  {
-    parentTaskId: z.string().describe("Parent task ID"),
-  },
-  async ({ parentTaskId }) => {
-    const [tasks] = await pool.query<RowDataPacket[]>(
-      `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE parent_task_id = ? ORDER BY timestamp DESC`,
-      [parentTaskId]
-    );
-    return {
-      content: [{ type: "text", text: JSON.stringify(tasks.map(toPublicTask), null, 2) }]
-    };
-  }
-);
+
 
 // 23. register_validator
 server.tool(
@@ -726,16 +711,14 @@ server.tool(
     creatorHex: z.string().describe("Casper public key of the task creator"),
     taskId: z.string().describe("Task ID"),
     skill: z.string().describe("Skill domain name"),
-    weight: z.number().describe("Reputation weight"),
   },
-  async ({ senderHex, creatorHex, taskId, skill, weight }) => {
+  async ({ senderHex, creatorHex, taskId, skill }) => {
     try {
       const creatorKey = Key.newKey(PublicKey.fromHex(creatorHex).accountHash().toPrefixedString());
       const tx = buildContractTransaction(senderHex, 'finalize_task', {
         creator: CLValue.newCLKey(creatorKey),
         task_id: CLValue.newCLString(taskId),
-        skill: CLValue.newCLString(skill),
-        weight: CLValue.newCLUInt32(weight)
+        skill: CLValue.newCLString(skill)
       });
       return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
     } catch (err: any) {
@@ -749,8 +732,13 @@ server.tool(
   "distribute_treasury",
   {
     senderHex: z.string().describe("Casper public key of caller"),
+    adminToken: z.string().describe("Admin authentication token"),
   },
-  async ({ senderHex }) => {
+  async ({ senderHex, adminToken }) => {
+    const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
+    if (requiredToken && adminToken !== requiredToken) {
+      return { content: [{ type: "text", text: "Error: Unauthorized. Invalid adminToken." }], isError: true };
+    }
     try {
       const tx = buildContractTransaction(senderHex, 'distribute_treasury', {});
       return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
@@ -760,23 +748,41 @@ server.tool(
   }
 );
 
-const requestCounts = new Map<string, { count: number; resetAt: number }>();
+const readLimiters = new Map<string, { count: number; resetAt: number }>();
+const writeLimiters = new Map<string, { count: number; resetAt: number }>();
 
 function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
   const now = Date.now();
   const windowMs = 60 * 1000;
-  const maxRequests = 60;
 
-  let record = requestCounts.get(ip);
+  // Detect write tools
+  let isWrite = false;
+  if (req.body && req.body.method === 'tools/call' && req.body.params && req.body.params.name) {
+    const writeTools = [
+      'create_task', 'assign_task', 'update_agent_price', 'register_agent_profile',
+      'submit_execution_result', 'broadcast_transaction', 'update_agent_profile',
+      'set_availability', 'increase_budget', 'dispute_task', 'claim_payment',
+      'set_fee_rate', 'register_validator', 'submit_validation', 'finalize_task',
+      'distribute_treasury'
+    ];
+    if (writeTools.includes(req.body.params.name)) {
+      isWrite = true;
+    }
+  }
+
+  const limiters = isWrite ? writeLimiters : readLimiters;
+  const maxRequests = isWrite ? 10 : 60;
+
+  let record = limiters.get(ip);
   if (!record || now > record.resetAt) {
     record = { count: 0, resetAt: now + windowMs };
-    requestCounts.set(ip, record);
+    limiters.set(ip, record);
   }
 
   record.count++;
   if (record.count > maxRequests) {
-    res.status(429).json({ error: "Too many requests. Please slow down." });
+    res.status(429).json({ error: `Too many requests for ${isWrite ? 'write' : 'read'} operations. Limit is ${maxRequests} per minute.` });
     return;
   }
 
@@ -824,6 +830,11 @@ async function main() {
     let transport: SSEServerTransport | null = null;
 
     app.get("/sse", async (req, res) => {
+      const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
+      if (requiredToken && req.query.token !== requiredToken) {
+        res.status(401).send("Unauthorized. Invalid or missing token parameter.");
+        return;
+      }
       console.log("New SSE connection established");
       transport = new SSEServerTransport("/message", res);
       await server.connect(transport);
