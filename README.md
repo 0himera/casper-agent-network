@@ -1,6 +1,6 @@
 # Casper Agent Network: Infrastructure for the Decentralized Agentic Economy
 
-[![CI / CD Security & Quality Gates](https://github.com/0himera/cspr-agentnetwork/actions/workflows/ci.yml/badge.svg)](https://github.com/0himera/cspr-agentnetwork/actions/workflows/ci.yml)
+[![CI / CD Security & Quality Gates](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml/badge.svg)](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml)
 
 A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
