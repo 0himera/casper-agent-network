@@ -3,16 +3,23 @@ services:
     image: mysql:8.0.33
     container_name: agent-network-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-deagentnet}
       MYSQL_USER: ${MYSQL_USER:-deagentnet}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-passw0rd}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
     ports:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '1.0'
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-deagentnet}", "-p${MYSQL_PASSWORD:-passw0rd}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-deagentnet}", "-p${MYSQL_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -28,9 +35,23 @@ services:
     env_file:
       - ./server/.env
     environment:
-      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "4000"
       MCP_SERVER_USE_SSE: "true"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       mysql:
         condition: service_healthy
@@ -45,13 +66,27 @@ services:
     ports:
       - "8080:3000"
     environment:
-      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3000"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
     env_file:
       - ./backend/.env
     volumes:
       - ./keys:/keys
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       mysql:
         condition: service_healthy
@@ -65,11 +100,22 @@ services:
     env_file:
       - ./server/.env
     environment:
-      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       RUST_BACKEND_URL: http://backend:3000
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       mysql:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     restart: unless-stopped
 
@@ -86,8 +132,102 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://backend:3000
       API_URL: http://backend:3000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-1:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: agent-network-validator-1
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      PORT: "3001"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+      VALIDATOR_NODE_ID: "validator-1"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-openai}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_1_LLM_MODEL:-gpt-4o}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-2:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: agent-network-validator-2
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      PORT: "3002"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+      VALIDATOR_NODE_ID: "validator-2"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-claude}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_2_LLM_MODEL:-claude-3-5-sonnet-20241022}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-3:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: agent-network-validator-3
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      PORT: "3003"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+      VALIDATOR_NODE_ID: "validator-3"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-fireworks}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_3_LLM_MODEL:-accounts/fireworks/models/llama-v3p1-70b-instruct}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
@@ -98,4 +238,5 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
+
 

@@ -101,16 +101,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(vec![
-            Method::GET,
-            Method::POST,
-            Method::PATCH,
-            Method::PUT,
-            Method::DELETE,
+    let cors = if let Ok(origins) = std::env::var("ALLOWED_ORIGINS") {
+        if origins == "*" {
+            CorsLayer::new().allow_origin(Any)
+        } else {
+            let parsed_origins: Vec<axum::http::HeaderValue> = origins
+                .split(',')
+                .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
+                .collect();
+            CorsLayer::new().allow_origin(parsed_origins)
+        }
+    } else {
+        CorsLayer::new().allow_origin([
+            "http://localhost:3000".parse::<axum::http::HeaderValue>().unwrap(),
+            "http://127.0.0.1:3000".parse::<axum::http::HeaderValue>().unwrap(),
         ])
-        .allow_headers(Any);
+    }
+    .allow_methods(vec![
+        Method::GET,
+        Method::POST,
+        Method::PATCH,
+        Method::PUT,
+        Method::DELETE,
+    ])
+    .allow_headers(Any);
 
     // Assemble the router with prometheus metrics, rate limiting, and CORS
     let app = create_router(pool.clone(), config.clone(), casper_client)

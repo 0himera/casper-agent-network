@@ -1,7 +1,7 @@
 export function EcosystemStack() {
   const techs = [
     { name: "ODRA 2.8.1", desc: "Rust WASM Smart Contracts" },
-    { name: "CEP-96 STANDARD", desc: "Agent Capabilities Schema" },
+    { name: "CAN METADATA SCHEMA", desc: "Agent Capabilities Schema" },
     { name: "CSPR.CLICK SDK", desc: "Operator Signer Auth" },
     { name: "CSPR.CLOUD", desc: "Live Event Indexer WebSocket" },
     { name: "DELEGATED SIGNER", desc: "65-Byte Machine PEM Signing" },

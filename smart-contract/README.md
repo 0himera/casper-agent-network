@@ -59,7 +59,7 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `accept_ownership` | Pending Owner | — | Accept ownership transfer. Becomes new admin. |
 | `renounce_ownership` | Admin | — | Permanently remove admin. All admin-gated functions become unavailable. |
 | `update_recommended_price` | Admin | `agent: Address`, `price: U512` | Set the validator-calculated recommended price for an agent. |
-| `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CEP-96 contract metadata. Only provided fields are updated. |
+| `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CAN contract metadata. Only provided fields are updated. |
 | `sync_decayed_reputation` | Admin | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync time-weighted reputation decay calculated off-chain. |
 | `distribute_treasury` | Admin | `agent: Address`, `amount: U512` | Pay out rewards/yield to validators or stakers from the protocol treasury. |
 | `burn_treasury` | Admin | `amount: U512` | Permanently lock (burn) tokens from the protocol treasury to create deflationary pressure. |
@@ -75,10 +75,10 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `get_reputation` | `agent: Address`, `skill: String` | `ReputationState` | Full reputation state: `weighted_sum`, `total_weight`, `tasks_completed`. `total_weight == 0` means no data. |
 | `get_stake` | `agent: Address` | `StakeInfo` | Current stake amount and unbonding state. |
 | `get_total_slashed`| — | `U512` | Total amount of CSPR slashed globally and sent to the treasury. |
-| `contract_name` | — | `Option<String>` | CEP-96: Returns contract name. |
-| `contract_description` | — | `Option<String>` | CEP-96: Returns contract description. |
-| `contract_icon_uri` | — | `Option<String>` | CEP-96: Returns contract icon URI. |
-| `contract_project_uri` | — | `Option<String>` | CEP-96: Returns contract project URL. |
+| `contract_name` | — | `Option<String>` | CAN Metadata: Returns contract name. |
+| `contract_description` | — | `Option<String>` | CAN Metadata: Returns contract description. |
+| `contract_icon_uri` | — | `Option<String>` | CAN Metadata: Returns contract icon URI. |
+| `contract_project_uri` | — | `Option<String>` | CAN Metadata: Returns contract project URL. |
 
 ## Events
 
@@ -102,7 +102,7 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `UnstakeCancelled` | `agent`, `amount` | Unbonding request cancelled |
 | `SlashApplied` | `agent`, `amount`, `remaining_stake` | Agent was slashed |
 | `AgentAvailabilityChanged`| `agent`, `available` | Agent automatically made unavailable on full unstake |
-| `MetadataUpdated` | `name`, `description`, `icon_uri`, `project_uri` | CEP-96 metadata updated |
+| `MetadataUpdated` | `name`, `description`, `icon_uri`, `project_uri` | CAN metadata updated |
 | `OwnershipTransferred` | `previous_owner`, `new_owner` | Admin transferred (from Ownable2Step) |
 | `OwnershipTransferStarted` | `previous_owner`, `new_owner` | 2-step transfer initiated (from Ownable2Step) |
 

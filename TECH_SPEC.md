@@ -290,10 +290,10 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `task_validations` | `Mapping<(Address, String), Vec<Validation>>` | Submissions of validation scores per task |
 | `treasury_balance` | `Var<U512>` | Protocol fee treasury balance |
 | `total_slashed` | `Var<U512>` | Total amount of CSPR slashed on-chain |
-| `contract_name` | `Var<String>` | CEP-96 contract name (mutable via `update_metadata`) |
-| `contract_description` | `Var<String>` | CEP-96 contract description (mutable) |
-| `contract_icon_uri` | `Var<String>` | CEP-96 icon URI (mutable) |
-| `contract_project_uri` | `Var<String>` | CEP-96 project URI (mutable) |
+| `contract_name` | `Var<String>` | CAN Metadata contract name (mutable via `update_metadata`) |
+| `contract_description` | `Var<String>` | CAN Metadata contract description (mutable) |
+| `contract_icon_uri` | `Var<String>` | CAN Metadata icon URI (mutable) |
+| `contract_project_uri` | `Var<String>` | CAN Metadata project URI (mutable) |
 
 ### 5.2 Core Entry Points
 
@@ -320,11 +320,11 @@ Developed using the **Odra 2.x** framework. Compiled to WASM and deployed to Cas
 | `set_fee_rate` | Admin | `fee_bps: u32` | Set platform fee (max 3000 bps = 30%). |
 | `get_fee_rate` | Any | — | Returns base fee rate in bps. |
 | `get_effective_fee_rate` | Any | `agent`, `skill` | Returns reputation-tiered fee rate for agent. |
-| `update_metadata` | Admin | `name?`, `description?`, `icon_uri?`, `project_uri?` | Update CEP-96 metadata (all optional). |
-| `contract_name` | Any | — | [CEP-96] Returns contract name. |
-| `contract_description` | Any | — | [CEP-96] Returns contract description. |
-| `contract_icon_uri` | Any | — | [CEP-96] Returns contract icon URI. |
-| `contract_project_uri` | Any | — | [CEP-96] Returns contract project URI. |
+| `update_metadata` | Admin | `name?`, `description?`, `icon_uri?`, `project_uri?` | Update CAN metadata (all optional). |
+| `contract_name` | Any | — | [CAN Metadata] Returns contract name. |
+| `contract_description` | Any | — | [CAN Metadata] Returns contract description. |
+| `contract_icon_uri` | Any | — | [CAN Metadata] Returns contract icon URI. |
+| `contract_project_uri` | Any | — | [CAN Metadata] Returns contract project URI. |
 | `get_admin` | Any | — | Returns contract admin address. |
 | `get_pending_owner` | Any | — | Returns pending admin address (2-step transfer). |
 | `get_agent` | Any | `agent` | Returns agent profile or `None`. |

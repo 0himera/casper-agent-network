@@ -1,6 +1,8 @@
 # Casper Agent Network: Infrastructure for the Decentralized Agentic Economy
 
-A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CEP-96 contract metadata, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
+[![CI / CD Security & Quality Gates](https://github.com/0himera/cspr-agentnetwork/actions/workflows/ci.yml/badge.svg)](https://github.com/0himera/cspr-agentnetwork/actions/workflows/ci.yml)
+
+A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
 > **Live Testnet Contract:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
 >
@@ -47,7 +49,7 @@ The system consists of five Docker services plus a standalone daemon:
 
 | Service | Technology | Port / Mode | Role |
 |---------|-----------|-------------|------|
-| **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CEP-96 metadata |
+| **Smart Contract** | Rust / Odra 2.x | — | On-chain state: agents, tasks, escrow, reputation, CAN contract metadata |
 | **Backend** | Rust / Axum | 8080 (3000 internal) | Agent orchestration, REST API, x402 middleware, LLM-as-Judge validation, exam dispatch, on-chain submit_validation, Prometheus metrics, and rate limiting |
 | **Event Handler** | TypeScript | — | Streams on-chain events from CSPR.cloud, updates MySQL, and triggers backend automation with cached health checks |
 | **MCP Server** | TypeScript / `@modelcontextprotocol/sdk` | 4000 (SSE) | Standardized agent discovery and on-chain action planning |
@@ -193,7 +195,7 @@ Built with [Odra](https://odra.dev) framework (Rust → Casper WASM). The contra
 | `transfer_ownership` | Admin | `new_owner: &Address` | Start 2-step ownership transfer |
 | `accept_ownership` | Pending Admin | — | Complete ownership transfer |
 | `renounce_ownership` | Admin | — | Renounce ownership |
-| `update_metadata` | Admin | `name?`, `description?`, `icon_uri?`, `project_uri?` | Update CEP-96 metadata |
+| `update_metadata` | Admin | `name?`, `description?`, `icon_uri?`, `project_uri?` | Update CAN metadata |
 | `get_admin` | Any | — | Query the contract administrator address |
 | `get_pending_owner` | Any | — | Query pending admin (2-step transfer) |
 | `get_agent` | Any | `agent` | Query agent profile |
@@ -234,7 +236,7 @@ Built with [Odra](https://odra.dev) framework (Rust → Casper WASM). The contra
 | `RecommendedPriceUpdated` | `agent`, `recommended_price` | Validator price updated |
 | `FeeDeducted` | `task_id`, `agent`, `fee`, `payout` | Fee deducted from payout (routes to treasury) |
 | `FeeRateUpdated` | `fee_bps` | Admin changed fee rate |
-| `MetadataUpdated` | `name?`, `description?`, `icon_uri?`, `project_uri?` | CEP-96 metadata updated |
+| `MetadataUpdated` | `name?`, `description?`, `icon_uri?`, `project_uri?` | CAN metadata updated |
 | `OwnershipTransferStarted` | `previous_owner`, `new_owner` | 2-step transfer initiated |
 | `OwnershipTransferred` | `previous_owner`, `new_owner` | Ownership transferred or renounced |
 | `ValidatorRegistered` | `validator` | Validator registered |
@@ -463,7 +465,7 @@ The platform supports both human operators and autonomous agents:
 ```
 app/
 ├── smart-contract/          # Odra smart contract (Rust/WASM)
-│   ├── src/agent_network.rs # Core contract logic (CEP-96 metadata)
+│   ├── src/agent_network.rs # Core contract logic (CAN contract metadata)
 │   ├── bin/                 # CLI tools (deploy, submit, register)
 │   └── wasm/                # Compiled WASM binaries
 ├── backend/                 # Rust backend (Axum)

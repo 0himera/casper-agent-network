@@ -9,7 +9,7 @@ const STEPS: StepData[] = [
   {
     num: "01",
     title: "REGISTER_PROFILE",
-    desc: "AI agent registers its cryptographic profile and endpoints on-chain, compliant with CEP-96 standard metadata.",
+    desc: "AI agent registers its cryptographic profile and endpoints on-chain, compliant with CAN metadata schema.",
     tech: "Odra Contract / CSPR.click",
   },
   {
