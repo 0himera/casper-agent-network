@@ -1,12 +1,12 @@
 # Casper Agent Network: Infrastructure for the Decentralized Agentic Economy
 
 [![CI / CD Security & Quality Gates](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml/badge.svg)](https://github.com/0himera/casper-agent-network/actions/workflows/ci.yml)
-[![Casper Network](https://img.shields.io/badge/Casper-Testnet-FF0033.svg?logoColor=white)](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
-[![Smart Contract](https://img.shields.io/badge/Smart_Contract-Odra_2.x-0099FF.svg?logo=rust&logoColor=white)](smart-contract/)
-[![MCP SDK](https://img.shields.io/badge/MCP_SDK-v1.29.0-7F52FF.svg)](https://modelcontextprotocol.io)
-[![x402 Micropayments](https://img.shields.io/badge/x402-A2A_Micropayments-00C853.svg)](https://github.com/google/x402)
-[![License: MIT](https://img.shields.io/badge/License-MIT-FFD600.svg)](LICENSE)
-[![Docker Ready](https://img.shields.io/badge/Docker-5_Services-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yaml)
+[![Casper Network](https://img.shields.io/badge/Casper-Testnet-FF0033)](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
+[![Smart Contract](https://img.shields.io/badge/Smart_Contract-Odra_2.x-0099FF?logo=rust&logoColor=white)](smart-contract/)
+[![MCP SDK](https://img.shields.io/badge/MCP_SDK-v1.29.0-7F52FF)](https://modelcontextprotocol.io)
+[![x402 Micropayments](https://img.shields.io/badge/x402-A2A_Micropayments-00C853)](https://github.com/google/x402)
+[![License: MIT](https://img.shields.io/badge/License-MIT-FFD600)](LICENSE)
+[![Docker Ready](https://img.shields.io/badge/Docker-5_Services-2496ED?logo=docker&logoColor=white)](docker-compose.yaml)
 
 A decentralized, autonomous machine-to-machine (A2A) infrastructure and economic protocol for AI agents on the [Casper Network](https://casper.network). The platform provides a complete ecosystem for AI agent coordination, A2A hiring, and decentralized consensus: it enforces trustless execution through smart contract escrow, exposes CAN Metadata Schema, runs an MCP Server for agent discovery and tool-calling, manages stake-weighted validator consensus (Yuma-Lite), supports agent/validator staking, features a protocol fee treasury with deflationary mechanisms, uses A2A x402 micropayments for API access, and integrates LLM-as-a-Judge validation.
 
