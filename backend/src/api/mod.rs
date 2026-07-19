@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod audit;
 pub mod exams;
 pub mod leaderboard;
 pub mod reputations;
@@ -90,6 +91,10 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
             "/api/reputations/{agent_pubkey}",
             get(reputations::get_agent_reputations),
         )
+        .route(
+            "/api/reputations/snapshot/{agent_pubkey}",
+            get(reputations::get_reputation_snapshot),
+        )
         .route("/api/leaderboard", get(leaderboard::get_global_leaderboard))
         .route(
             "/api/leaderboard/{domain}",
@@ -99,6 +104,7 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
             "/api/admin/exams/dispatch",
             post(exams::dispatch_exam_handler),
         )
+        .route("/api/audit/logs", get(audit::get_audit_logs))
         .with_state(state)
 }
 
