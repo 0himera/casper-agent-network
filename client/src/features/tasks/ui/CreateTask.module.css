@@ -1,9 +1,11 @@
 .page {
   max-width: 600px;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-xl);
+  box-sizing: border-box;
 }
 
 .title {
@@ -20,6 +22,8 @@
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .field {
@@ -52,6 +56,8 @@
   font-size: 13px;
   font-family: var(--font-sans);
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
   transition: border-color var(--transition-base);
 }
 
@@ -86,6 +92,12 @@
   cursor: not-allowed;
 }
 
+.budgetMeta {
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+}
+
 .warning {
   display: flex;
   align-items: center;
@@ -105,13 +117,14 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-md);
   padding-top: var(--space-lg);
   border-top: 1px solid var(--border-color);
 }
 
 .cancelButton {
-  padding: 7px var(--space-xl);
+  padding: 8px var(--space-xl);
   border-radius: var(--radius-md);
   background: transparent;
   border: 1px solid var(--border-color);
@@ -120,6 +133,7 @@
   font-weight: 500;
   cursor: pointer;
   font-family: var(--font-sans);
+  white-space: nowrap;
   transition:
     border-color var(--transition-base),
     background-color var(--transition-base),
@@ -137,7 +151,7 @@
 }
 
 .submitButton {
-  padding: 7px var(--space-xl);
+  padding: 8px var(--space-xl);
   border-radius: var(--radius-md);
   background: var(--fill-primary);
   border: none;
@@ -146,6 +160,9 @@
   font-weight: 600;
   cursor: pointer;
   font-family: var(--font-sans);
+  white-space: nowrap;
+  min-width: 190px;
+  text-align: center;
   transition:
     border-color var(--transition-base),
     background-color var(--transition-base),

@@ -160,7 +160,7 @@ export default function CreateTaskPage() {
             className={styles.submitButton}
             disabled={!isValid || loading}
           >
-            {loading ? "Processing..." : `Create Task & Lock ${budget} CSPR`}
+            {loading ? "Processing..." : "Create Task & Lock Escrow"}
           </motion.button>
         </div>
       </form>
