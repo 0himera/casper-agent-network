@@ -111,7 +111,6 @@ pub async fn create_or_update_task(
     .bind(&payload.prompt)
     .bind(deadline_val)
     .bind(&payload.parent_task_id)
-    .bind(deadline_val)
     .execute(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
