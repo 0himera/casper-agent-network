@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Cloud, Check, Sparkles } from "lucide-react";
+import { Cpu, Check, ShieldCheck, Zap, Lock } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { toast } from "@/shared/ui/Toast";
@@ -20,10 +20,10 @@ import registerStyles from "@/features/agents/ui/Register.module.css";
 import styles from "./HostedAgentDialog.module.css";
 
 const features = [
-  "Cloud-managed agent with delegated signing",
-  "24/7 uptime without running your own node",
-  "Connect any OpenAI-compatible API endpoint",
-  "On-chain reputation & escrow participation",
+  "24/7 Managed Uptime in CAN Enterprise Node Cluster",
+  "Isolated Data & Memory Processing (Zero Data Leakage)",
+  "Delegated On-Chain Signing for Instant Task Execution",
+  "Automated Multi-Validator Audit & Reputation Tracking",
 ];
 
 export function HostedAgentDialog() {
@@ -34,14 +34,11 @@ export function HostedAgentDialog() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [skills, setSkills] = useState<AgentSkill[]>([]);
-  const [endpoint, setEndpoint] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
-  const canSubmit = walletAddress && name.trim() && endpoint.trim() && model.trim() && !loading;
+  const canSubmit = walletAddress && name.trim() && !loading;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,24 +51,17 @@ export function HostedAgentDialog() {
       toast.error("Please enter a name for your agent.");
       return;
     }
-    if (!endpoint.trim()) {
-      toast.error("Please enter an endpoint URL.");
-      return;
-    }
-    if (!model.trim()) {
-      toast.error("Please enter a model ID.");
-      return;
-    }
 
     setLoading(true);
-    setStatus("Initiating 0.1 CSPR registration payment...");
+    setStatus("Initiating 100 CSPR registration payment...");
     try {
       const adminPubkey =
         process.env.NEXT_PUBLIC_ADMIN_ACCOUNT ||
         "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8";
 
-      const transferTx = buildNativeTransferTx(walletAddress, adminPubkey, "100000000");
-      setStatus("Signing 0.1 CSPR payment...");
+      // 100 CSPR = 100,000,000,000 motes
+      const transferTx = buildNativeTransferTx(walletAddress, adminPubkey, "100000000000");
+      setStatus("Signing 100 CSPR subscription payment...");
       const transferTxHash = await signAndSendTransaction(transferTx, walletAddress);
 
       const paymentObj = {
@@ -91,8 +81,8 @@ export function HostedAgentDialog() {
       const registerTx = await buildRegisterAgentTx(
         walletAddress,
         name,
-        description || "Casper Hosted Agent",
-        "https://agentnetwork.io/metadata/" + walletAddress,
+        description || "CAN Enterprise Hosted Agent",
+        "https://casper-agent-network.vercel.app/metadata/" + walletAddress,
       );
       const registerTxHash = await signAndSendTransaction(registerTx, walletAddress);
 
@@ -100,17 +90,17 @@ export function HostedAgentDialog() {
       const setDelegatedTx = await buildSetDelegatedSignerTx(walletAddress, adminPubkey);
       const delegatedSignerTxHash = await signAndSendTransaction(setDelegatedTx, walletAddress);
 
-      setStatus("Saving hosted agent configuration...");
+      setStatus("Activating hosted agent instance...");
       await apiPost(
         "/api/agents/register",
         {
           public_key: walletAddress,
           name,
           description: description || null,
-          metadata_uri: "https://agentnetwork.io/metadata/" + walletAddress,
-          endpoint_url: endpoint,
-          api_key: apiKey || null,
-          model,
+          metadata_uri: "https://casper-agent-network.vercel.app/metadata/" + walletAddress,
+          endpoint_url: "http://localhost:11434",
+          api_key: null,
+          model: "gemma3:4b",
           system_prompt: systemPrompt.trim() || null,
           skills,
         },
@@ -119,9 +109,9 @@ export function HostedAgentDialog() {
         },
       );
 
-      setStatus("Agent successfully registered!");
+      setStatus("Hosted Agent successfully activated!");
       toast.success(
-        `Hosted agent registered!\nRegister Tx: ${registerTxHash}\nDelegation Tx: ${delegatedSignerTxHash}`,
+        `Hosted agent deployed to cluster!\nRegister Tx: ${registerTxHash}\nDelegation Tx: ${delegatedSignerTxHash}`,
       );
       setOpen(false);
       router.push("/my-agent");
@@ -144,29 +134,27 @@ export function HostedAgentDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <button type="button" className={styles.actionCard} onClick={() => setOpen(true)}>
-        <Cloud size={18} className={styles.actionIcon} aria-hidden="true" />
+        <Cpu size={18} className={styles.actionIcon} aria-hidden="true" />
         <span className={styles.actionContent}>
           <span className={styles.actionTitle}>Register Hosted Agent</span>
-          <span className={styles.actionDesc}>Cloud-managed, no server setup</span>
+          <span className={styles.actionDesc}>Enterprise Cluster Instance</span>
         </span>
       </button>
 
-      <DialogContent className={styles.dialogContent} style={{ maxWidth: "540px" }}>
+      <DialogContent className={styles.dialogContent} style={{ maxWidth: "560px" }}>
         <div className={styles.card}>
+          <div className={styles.planBadge}>[ENTERPRISE_PRIVATE_INSTANCE]</div>
+          
           <div className={styles.planHeader}>
-            <div className={styles.planIcon}>
-              <Cloud size={28} aria-hidden="true" />
-            </div>
             <DialogTitle className={styles.planTitle}>
-              Hosted Agent
-              <Sparkles size={14} className={styles.planBadgeIcon} aria-hidden="true" />
+              Hosted AI Agent Instance
             </DialogTitle>
             <DialogDescription className={styles.planDescription}>
-              Cloud-managed agent with delegated signing
+              Dedicated AI Agent deployed inside CAN’s private enterprise cluster. Fully managed execution with zero server setup.
             </DialogDescription>
-            <div className={styles.planPrice}>
-              <span className={styles.priceValue}>0.1 CSPR</span>
-              <span className={styles.pricePeriod}>one-time registration</span>
+            <div className={styles.planPriceTag}>
+              <span className={styles.priceValue}>100 CSPR</span>
+              <span className={styles.pricePeriod}>/ month</span>
             </div>
           </div>
 
@@ -179,6 +167,11 @@ export function HostedAgentDialog() {
             ))}
           </ul>
 
+          <div className={styles.clusterInfoBox}>
+            <Lock size={14} className={styles.infoIcon} />
+            <span>Hosted in CAN Secure Cluster &bull; Encrypted On-Chain State</span>
+          </div>
+
           <form className={styles.form} onSubmit={handleSubmit}>
             <div className={registerStyles.field}>
               <label className={registerStyles.label}>Agent Name</label>
@@ -186,18 +179,18 @@ export function HostedAgentDialog() {
                 className={registerStyles.input}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My DeFi Bot"
+                placeholder="e.g. DeFi Security Auditor"
                 disabled={loading}
               />
             </div>
 
             <div className={registerStyles.field}>
-              <label className={registerStyles.label}>Description</label>
+              <label className={registerStyles.label}>Description & Specialization</label>
               <textarea
                 className={registerStyles.textarea}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What does your agent do?"
+                placeholder="Briefly describe what your AI agent specializes in..."
                 disabled={loading}
                 rows={2}
               />
@@ -205,52 +198,16 @@ export function HostedAgentDialog() {
 
             <SkillsPicker selected={skills} onChange={setSkills} />
 
-            <div className={styles.hostedFields}>
-              <div className={registerStyles.field}>
-                <label className={registerStyles.label}>Endpoint URL</label>
-                <input
-                  className={registerStyles.input}
-                  value={endpoint}
-                  onChange={(e) => setEndpoint(e.target.value)}
-                  placeholder="https://api.example.com/v1/chat/completions"
-                  disabled={loading}
-                />
-              </div>
-
-              <div className={registerStyles.field}>
-                <label className={registerStyles.label}>API Key</label>
-                <input
-                  className={registerStyles.input}
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  disabled={loading}
-                />
-              </div>
-
-              <div className={registerStyles.field}>
-                <label className={registerStyles.label}>Model ID</label>
-                <input
-                  className={registerStyles.input}
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="gpt-4o-mini"
-                  disabled={loading}
-                />
-              </div>
-
-              <div className={registerStyles.field}>
-                <label className={registerStyles.label}>System Prompt</label>
-                <textarea
-                  className={registerStyles.textarea}
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder="Instructions for agent behavior"
-                  disabled={loading}
-                  rows={2}
-                />
-              </div>
+            <div className={registerStyles.field}>
+              <label className={registerStyles.label}>System Instructions & Behavior</label>
+              <textarea
+                className={registerStyles.textarea}
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="Define rules, tone, and operational guidelines for this agent..."
+                disabled={loading}
+                rows={3}
+              />
             </div>
 
             {status && (
@@ -266,7 +223,7 @@ export function HostedAgentDialog() {
               className={styles.submitButton}
               disabled={!canSubmit}
             >
-              {loading ? "Processing..." : "Subscribe & Register"}
+              {loading ? "Deploying Agent..." : "Deploy Hosted Agent (100 CSPR)"}
             </motion.button>
           </form>
         </div>
