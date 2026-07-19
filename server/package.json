@@ -11,7 +11,7 @@
     "event-handler:dev": "ts-node src/event-handler.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "axios": "^1.6.8",
     "casper-js-sdk": "^5.0.6",
     "dotenv": "^16.4.5",

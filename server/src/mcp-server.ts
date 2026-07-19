@@ -760,11 +760,66 @@ server.tool(
   }
 );
 
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxRequests = 60;
+
+  let record = requestCounts.get(ip);
+  if (!record || now > record.resetAt) {
+    record = { count: 0, resetAt: now + windowMs };
+    requestCounts.set(ip, record);
+  }
+
+  record.count++;
+  if (record.count > maxRequests) {
+    res.status(429).json({ error: "Too many requests. Please slow down." });
+    return;
+  }
+
+  next();
+}
+
+function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (req.path === "/health") {
+    return next();
+  }
+
+  const requiredKey = process.env.INTERNAL_SERVICE_KEY;
+  if (!requiredKey) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7).trim();
+    if (token === requiredKey) {
+      return next();
+    }
+  }
+
+  res.status(401).json({ error: "Unauthorized. Valid Bearer token required." });
+}
+
 async function main() {
   const useSse = process.env.MCP_SERVER_USE_SSE === "true" || process.argv.includes("--sse");
 
   if (useSse) {
     const app = express();
+    app.use(express.json());
+    app.use(rateLimiter);
+    app.use(authMiddleware);
+
+    app.get("/health", (req, res) => {
+      res.json({
+        status: "ok",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    });
 
     let transport: SSEServerTransport | null = null;
 
