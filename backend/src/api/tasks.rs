@@ -43,18 +43,8 @@ pub struct CreateOrUpdateTaskPayload {
 
 pub async fn get_tasks(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.005 CSPR = 5,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        5_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
-
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks ORDER BY timestamp DESC");
     let tasks = sqlx::query_as::<_, Task>(&query)
         .fetch_all(&state.pool)
@@ -72,19 +62,9 @@ pub async fn get_tasks(
 
 pub async fn get_task(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.002 CSPR = 2,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        2_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
-
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks WHERE id = ?");
     let task = sqlx::query_as::<_, Task>(&query)
         .bind(id)

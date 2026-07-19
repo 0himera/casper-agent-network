@@ -30,18 +30,8 @@ pub struct UpdatePricePayload {
 
 pub async fn get_agents(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.005 CSPR = 5,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        5_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
-
     let agents = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -71,18 +61,9 @@ pub async fn get_agents(
 
 pub async fn get_agent(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Path(public_key): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.002 CSPR = 2,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        2_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
     let agent = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,

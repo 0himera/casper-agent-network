@@ -92,18 +92,8 @@ const GLOBAL_LEADERBOARD_SMOOTHED_SQL: &str = "SELECT
 
 pub async fn get_global_leaderboard(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.01 CSPR = 10,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        10_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
-
     let sql = if state.config.exam_leaderboard_use_smoothed {
         GLOBAL_LEADERBOARD_SMOOTHED_SQL
     } else {
@@ -125,18 +115,9 @@ pub async fn get_global_leaderboard(
 
 pub async fn get_domain_leaderboard(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Path(domain): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.01 CSPR = 10,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        10_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
 
     let entries = sqlx::query_as::<_, LeaderboardEntry>(
         "SELECT 

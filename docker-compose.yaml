@@ -163,13 +163,16 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: agent-network-validator-1
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3001"
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
       VALIDATOR_NODE_ID: "validator-1"
-      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-openai}
-      VALIDATOR_LLM_MODEL: ${VALIDATOR_1_LLM_MODEL:-gpt-4o}
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-fireworks}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_1_LLM_MODEL:-accounts/fireworks/models/deepseek-v4-flash}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY}
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -194,13 +197,16 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: agent-network-validator-2
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3002"
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
       VALIDATOR_NODE_ID: "validator-2"
-      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-claude}
-      VALIDATOR_LLM_MODEL: ${VALIDATOR_2_LLM_MODEL:-claude-3-5-sonnet-20241022}
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-google}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_2_LLM_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -225,13 +231,16 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: agent-network-validator-3
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3003"
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
       VALIDATOR_NODE_ID: "validator-3"
-      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-fireworks}
-      VALIDATOR_LLM_MODEL: ${VALIDATOR_3_LLM_MODEL:-accounts/fireworks/models/llama-v3p1-70b-instruct}
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-openrouter}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_3_LLM_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     security_opt:
       - no-new-privileges:true
     cap_drop:

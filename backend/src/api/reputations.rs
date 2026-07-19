@@ -59,18 +59,8 @@ pub fn verify_reputation_snapshot(snapshot: &ReputationSnapshot) -> bool {
 
 pub async fn get_reputations(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // 0.01 CSPR = 10,000,000 motes
-    verify_payment(
-        &headers,
-        &state.pool,
-        &state.casper_client,
-        10_000_000,
-        &state.config.admin_account,
-    )
-    .await?;
-
     let reputations =
         sqlx::query_as::<_, Reputation>("SELECT * FROM reputations ORDER BY timestamp DESC")
             .fetch_all(&state.pool)

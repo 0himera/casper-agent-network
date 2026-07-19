@@ -115,6 +115,13 @@ pub async fn verify_payment(
     expected_amount_motes: u64,
     merchant_pubkey: &str,
 ) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if std::env::var("DISABLE_X402")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
     // 1. Get X-Payment header
     let x_payment_val = match headers.get("X-Payment") {
         Some(val) => val,
