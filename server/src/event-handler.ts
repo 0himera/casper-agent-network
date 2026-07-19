@@ -29,7 +29,8 @@ import {
   ValidatorStakedPayload,
   ValidatorUnstakedPayload,
   TreasuryDistributedPayload,
-  TreasuryBurnedPayload
+  TreasuryBurnedPayload,
+  DelegatedSignerUpdatedPayload
 } from "./events";
 
 async function fetchWithRetry(taskId: string, action: 'execute' | 'validate', options: RequestInit, retries = 3) {
@@ -453,6 +454,28 @@ async function main() {
           [payload.available ? 1 : 0, agentKey]
         );
         console.log(`Agent ${agentKey} availability changed to: ${payload.available}`);
+
+      } else if (eventName === 'DelegatedSignerUpdated') {
+        const payload = event.data.data as DelegatedSignerUpdatedPayload;
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        let signerKey: string | null = payload.delegated_signer;
+        if (payload.delegated_signer) {
+          try {
+            const account = await csprCloudClient.getAccount(payload.delegated_signer);
+            signerKey = account.data.public_key || payload.delegated_signer;
+          } catch (e) {}
+        }
+
+        await pool.execute(
+          'UPDATE agents SET delegated_signer = ? WHERE public_key = ?',
+          [signerKey, agentKey]
+        );
+        console.log(`Agent ${agentKey} delegated signer updated to: ${signerKey}`);
 
       } else if (eventName === 'TaskBudgetIncreased') {
         const payload = event.data.data as TaskBudgetIncreasedPayload;

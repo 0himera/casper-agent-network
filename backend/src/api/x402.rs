@@ -195,6 +195,29 @@ pub async fn cleanup_old_spent_payments(
     Ok(res.rows_affected())
 }
 
+/// Spawns a background task that cleans up expired spent payments every hour.
+pub fn spawn_spent_payments_cleanup_loop(pool: DbPool) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // once per hour
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            interval.tick().await;
+            tracing::info!("Running spent payments cleanup job...");
+            match cleanup_old_spent_payments(&pool, 24).await {
+                Ok(rows) => {
+                    if rows > 0 {
+                        tracing::info!("Cleaned up {} expired spent payment records", rows);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to clean up expired spent payments: {}", e);
+                }
+            }
+        }
+    })
+}
+
 fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
     use base64::{Engine as _, engine::general_purpose};
     general_purpose::STANDARD.decode(input.trim())

@@ -143,3 +143,8 @@ export interface ContractEvent<T> {
   };
   timestamp: string;
 }
+
+export interface DelegatedSignerUpdatedPayload {
+  agent: string;
+  delegated_signer: string | null;
+}
