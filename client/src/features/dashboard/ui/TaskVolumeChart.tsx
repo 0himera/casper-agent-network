@@ -66,8 +66,8 @@ export function TaskVolumeChart({ tasks, isLoading }: TaskVolumeChartProps) {
       ) : !hasActivity ? (
         <div className={styles.chartEmpty}>No task activity in the last 7 days.</div>
       ) : (
-        <div style={{ width: "100%", height: 200, marginTop: 10 }}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div style={{ width: "100%", height: 200, marginTop: 10, minWidth: 0 }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
             <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorTasks" x1="0" y1="0" x2="0" y2="1">

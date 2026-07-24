@@ -25,7 +25,7 @@ export const buildContractTransaction = async (
   attachedMotes: string = '0'
 ): Promise<any> => {
   const contractWasm = await getProxyWasm();
-  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || '9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064';
+  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || '2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19';
 
   const innerArgs = Args.fromMap(innerArgsMap);
 
@@ -211,6 +211,22 @@ export const buildSetDelegatedSignerTx = async (
   });
 };
 
+export const buildStakeTx = async (
+  senderHex: string,
+  attachedMotes: string = '50000000000'
+) => {
+  return buildContractTransaction(senderHex, 'stake', {}, attachedMotes);
+};
+
+export const buildRequestUnstakeTx = async (
+  senderHex: string,
+  amountMotes: string
+) => {
+  return buildContractTransaction(senderHex, 'request_unstake', {
+    amount: CLValue.newCLUInt512(amountMotes)
+  });
+};
+
 export const buildNativeTransferTx = (
   senderHex: string,
   recipientHex: string,
@@ -226,3 +242,4 @@ export const buildNativeTransferTx = (
     .payment(100_000_000) // 0.1 CSPR gas fee
     .build();
 };
+

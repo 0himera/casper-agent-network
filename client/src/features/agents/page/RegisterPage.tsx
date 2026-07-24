@@ -10,6 +10,7 @@ import {
   buildRegisterAgentTx,
   buildNativeTransferTx,
   buildSetDelegatedSignerTx,
+  buildStakeTx,
 } from "@/shared/utils/contract-transactions";
 import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
@@ -22,6 +23,7 @@ const features = [
   "Isolated Data & Memory Processing (Zero Data Leakage)",
   "Delegated On-Chain Signing for Instant Task Execution",
   "Automated Multi-Validator Audit & Reputation Tracking",
+  "50 CSPR Minimum On-Chain Stake Deposited to Smart Contract",
 ];
 
 export default function RegisterPage() {
@@ -55,9 +57,9 @@ export default function RegisterPage() {
         process.env.NEXT_PUBLIC_ADMIN_ACCOUNT ||
         "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8";
 
-      // 100 CSPR = 100,000,000,000 motes
+      // 1. 100 CSPR = 100,000,000,000 motes
       const transferTx = buildNativeTransferTx(walletAddress, adminPubkey, "100000000000");
-      setStatus("Signing 100 CSPR payment...");
+      setStatus("Signing 100 CSPR subscription payment...");
       const transferTxHash = await signAndSendTransaction(transferTx, walletAddress);
 
       const paymentObj = {
@@ -73,6 +75,7 @@ export default function RegisterPage() {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
+      // 2. Register Agent on-chain
       setStatus("Signing register_agent contract transaction...");
       const registerTx = await buildRegisterAgentTx(
         walletAddress,
@@ -82,10 +85,17 @@ export default function RegisterPage() {
       );
       const registerTxHash = await signAndSendTransaction(registerTx, walletAddress);
 
+      // 3. Deposit 50 CSPR Minimum Stake to Smart Contract
+      setStatus("Signing 50 CSPR agent contract stake transaction...");
+      const stakeTx = await buildStakeTx(walletAddress, "50000000000");
+      const stakeTxHash = await signAndSendTransaction(stakeTx, walletAddress);
+
+      // 4. Delegate signing to cluster node
       setStatus("Signing set_delegated_signer contract transaction...");
       const setDelegatedTx = await buildSetDelegatedSignerTx(walletAddress, adminPubkey);
       const delegatedSignerTxHash = await signAndSendTransaction(setDelegatedTx, walletAddress);
 
+      // 5. Deploy Hosted Agent Instance
       setStatus("Deploying hosted agent instance to CAN cluster...");
       await apiPost(
         "/api/agents/register",
@@ -105,9 +115,9 @@ export default function RegisterPage() {
         },
       );
 
-      setStatus("Hosted Agent successfully activated!");
+      setStatus("Hosted Agent successfully activated & staked!");
       toast.success(
-        `Hosted agent deployed to cluster!\nRegister Tx: ${registerTxHash}\nDelegation Tx: ${delegatedSignerTxHash}`,
+        `Hosted agent deployed & staked!\nRegister Tx: ${registerTxHash}\nStake Tx: ${stakeTxHash}\nDelegation Tx: ${delegatedSignerTxHash}`,
       );
       router.push("/my-agent");
     } catch (err: unknown) {
@@ -138,7 +148,7 @@ export default function RegisterPage() {
           </p>
           <div className={styles.priceTag}>
             <span className={styles.priceValue}>100 CSPR</span>
-            <span className={styles.pricePeriod}>/ month</span>
+            <span className={styles.pricePeriod}>/ month + 50 CSPR Stake</span>
           </div>
         </div>
 
@@ -153,7 +163,7 @@ export default function RegisterPage() {
 
         <div className={styles.guaranteeBox}>
           <Lock size={14} className={styles.guaranteeIcon} />
-          <span>Hosted in CAN Secure Cluster &bull; Zero Data Leakage &bull; Instant Execution</span>
+          <span>Hosted in CAN Secure Cluster &bull; Zero Data Leakage &bull; 50 CSPR Staked</span>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -207,10 +217,11 @@ export default function RegisterPage() {
             className={styles.submitButton}
             disabled={loading}
           >
-            {loading ? "Deploying Instance..." : "Buy & Deploy Hosted Agent (100 CSPR)"}
+            {loading ? "Deploying Instance..." : "Buy & Deploy Hosted Agent (100 CSPR + 50 CSPR Stake)"}
           </motion.button>
         </form>
       </div>
     </motion.div>
   );
 }
+

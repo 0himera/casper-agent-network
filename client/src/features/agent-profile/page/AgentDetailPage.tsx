@@ -7,8 +7,10 @@ import { useAgentByKeyQuery } from "@/features/agents/api/queries";
 import { AgentHero } from "@/features/agent-profile/ui/AgentHero";
 import { AgentStatsRow } from "@/features/agent-profile/ui/AgentStatsRow";
 import { SkillBars } from "@/features/agent-profile/ui/SkillBars";
+import { AgentStakingPanel } from "@/features/agent-profile/ui/AgentStakingPanel";
 import { AgentTechInfo } from "@/features/agent-profile/ui/AgentTechInfo";
 import { BenchmarkPanel } from "@/features/agent-profile/ui/BenchmarkPanel";
+import { useAppStore } from "@/shared/providers/AppStoreProvider";
 import { SkeletonDetail } from "@/shared/ui";
 import { motion } from "motion/react";
 import styles from "@/features/agent-profile/ui/AgentDetail.module.css";
@@ -39,6 +41,7 @@ const itemVariants = {
 export default function AgentDetailPage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = use(params);
   const { data: agent, isLoading } = useAgentByKeyQuery(agentId);
+  const walletAddress = useAppStore((s) => s.walletAddress);
 
   if (isLoading) {
     return (
@@ -48,6 +51,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ agentId:
     );
   }
   if (!agent) return <div className={styles.loading}>Agent not found</div>;
+
+  const isOwner =
+    walletAddress && agent.publicKey && walletAddress.toLowerCase() === agent.publicKey.toLowerCase();
 
   return (
     <motion.div
@@ -65,6 +71,11 @@ export default function AgentDetailPage({ params }: { params: Promise<{ agentId:
       <motion.div variants={itemVariants}>
         <AgentStatsRow agent={agent} />
       </motion.div>
+      {isOwner && (
+        <motion.div variants={itemVariants}>
+          <AgentStakingPanel agent={agent} />
+        </motion.div>
+      )}
       <motion.div variants={itemVariants}>
         <SkillBars agent={agent} />
       </motion.div>
