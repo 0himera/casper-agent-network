@@ -79,6 +79,7 @@ pub struct TaskPublic {
     pub result_signature: Option<String>,
     pub validator_audit: Option<serde_json::Value>,
     pub timestamp: DateTime<Utc>,
+    pub parent_task_id: Option<String>,
 }
 
 impl From<Task> for TaskPublic {
@@ -100,6 +101,7 @@ impl From<Task> for TaskPublic {
             result_signature: task.result_signature,
             validator_audit: task.validator_audit,
             timestamp: task.timestamp,
+            parent_task_id: task.parent_task_id,
         }
     }
 }
@@ -145,7 +147,7 @@ pub struct ExamAssignment {
 pub const TASK_PUBLIC_COLUMNS: &str = "\
     id, creator_public_key, assigned_agent_public_key, budget_motes, status, \
     result_hash, result, metadata_uri, transaction_hash, domain, skill_id, \
-    prompt, deadline, result_signature, validator_audit, timestamp";
+    prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id";
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Reputation {
@@ -186,6 +188,7 @@ mod tests {
             domain: "defi_analysis".into(),
             skill_id: None,
             prompt: "ANSWER: 42 usd".into(),
+            parent_task_id: None,
             deadline: 0,
             result_signature: None,
             validator_audit: None,

@@ -41,6 +41,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             custom_price_motes BIGINT UNSIGNED NOT NULL DEFAULT 0,
             system_prompt TEXT NULL,
             delegated_signer VARCHAR(128) NULL,
+            is_available TINYINT NOT NULL DEFAULT 1,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
     )
@@ -64,42 +65,13 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             deadline BIGINT UNSIGNED NOT NULL DEFAULT 0,
             result_signature TEXT NULL,
             validator_audit JSON NULL,
+            parent_task_id VARCHAR(128) NULL,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (assigned_agent_public_key) REFERENCES agents(public_key) ON DELETE SET NULL
         )",
     )
     .execute(&pool)
     .await?;
-
-    // Ensure columns exist on already created tables
-    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN model VARCHAR(255) NULL")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN deadline BIGINT UNSIGNED NOT NULL DEFAULT 0")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result_signature TEXT NULL")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result TEXT NULL")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN skill_id VARCHAR(100) NULL")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN validator_audit JSON NULL")
-        .execute(&pool)
-        .await;
-
-    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN delegated_signer VARCHAR(128) NULL")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN parent_task_id VARCHAR(128) NULL")
-        .execute(&pool)
-        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (

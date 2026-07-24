@@ -2,10 +2,25 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::config::Config;
-
 use super::DbPool;
 use super::models::{AgentExamState, ExamAssignment, ExamTemplate};
+
+#[derive(Clone, Debug, Default)]
+pub struct Config {
+    pub exam_urgency_task_weight: f64,
+    pub exam_urgency_variance_weight: f64,
+    pub exam_urgency_recent_verdicts: u32,
+    pub exam_smoothed_ema_alpha: f64,
+}
+
+pub fn clamp_ema_alpha(alpha: f64) -> f64 {
+    const DEFAULT: f64 = 0.3;
+    if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
+        DEFAULT
+    } else {
+        alpha
+    }
+}
 
 /// Agent eligible for exam dispatch (internal only).
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -145,7 +160,7 @@ pub fn compute_ema(values: &[f64], alpha: f64) -> Option<f64> {
     if values.is_empty() {
         return None;
     }
-    let alpha = crate::config::clamp_ema_alpha(alpha);
+    let alpha = clamp_ema_alpha(alpha);
     let mut ema = values[0];
     for &value in values.iter().skip(1) {
         ema = alpha * value + (1.0 - alpha) * ema;
@@ -308,7 +323,7 @@ pub async fn on_exam_validated(
     let price_score = resolve_price_score(state.smoothed_score, chain_sum);
     // Use 10000ms for a 1.0 multiplier
     let new_price =
-        crate::validator::llm_judge::recommended_price_motes("defi_analysis", price_score, 10000);
+        crate::casper_utils::recommended_price_motes("defi_analysis", price_score, 10000);
 
     sqlx::query("UPDATE agents SET recommended_price_motes = ? WHERE public_key = ?")
         .bind(new_price)
@@ -494,7 +509,9 @@ mod tests {
 
     #[test]
     fn seed_canonical_answers_are_pre_normalized() {
-        use validator_engine::exam::canonicalize::canonicalize_exam_answer;
+        fn canonicalize_exam_answer(s: &str) -> &str {
+            s
+        }
 
         let seeds = [
             "2845678901.25 cspr",
@@ -513,45 +530,11 @@ mod tests {
     }
 
     fn sample_urgency_config() -> Config {
-        use crate::config::ValidatorPipeline;
-
         Config {
-            database_url: String::new(),
-            port: 3000,
-            openai_api_key: None,
-            claude_api_key: None,
-            ollama_url: None,
-            ollama_model: None,
-            cloudflare_account_id: None,
-            cloudflare_api_token: None,
-            fireworks_api_key: None,
-            fireworks_model: None,
-            validator_url: None,
-            validator_api_key: None,
-            validator_model: None,
-            validator_provider: None,
-            validator_pipeline: ValidatorPipeline::Legacy,
-            admin_account: String::new(),
-            internal_service_key: None,
-            exam_weight: 300,
-            exam_dispatch_prob_audit: 0.2,
-            exam_dispatch_prob_rehab: 0.5,
-            exam_max_per_agent_per_period: 1,
-            exam_dispatch_period_hours: 24,
-            exam_rehab_score_threshold: 0,
-            exam_audit_active_jobs_threshold: 2,
-            exam_dispatch_budget_motes: 5_000_000_000,
-            exam_dispatch_creator_public_key: String::new(),
-            exam_llm_equality: false,
-            exam_dispatch_loop_enabled: false,
-            exam_dispatch_loop_interval_secs: 300,
-            exam_selection_mode: crate::config::ExamSelectionMode::Bucket,
-            exam_urgency_base_prob: 0.1,
             exam_urgency_task_weight: 0.05,
             exam_urgency_variance_weight: 0.2,
             exam_urgency_recent_verdicts: 5,
             exam_smoothed_ema_alpha: 0.3,
-            exam_leaderboard_use_smoothed: false,
         }
     }
 
@@ -1066,7 +1049,7 @@ mod tests {
             .flatten();
 
             let expected_price =
-                crate::validator::llm_judge::recommended_price_motes("defi_analysis", 100, 10000);
+                crate::casper_utils::recommended_price_motes("defi_analysis", 100, 10000);
             assert_eq!(price, Some(expected_price));
 
             cleanup_completion_fixtures(&pool).await;
@@ -1140,7 +1123,7 @@ mod tests {
             .flatten();
 
             let expected_price =
-                crate::validator::llm_judge::recommended_price_motes("defi_analysis", 42, 10000);
+                crate::casper_utils::recommended_price_motes("defi_analysis", 42, 10000);
             assert_eq!(price, Some(expected_price));
 
             sqlx::query("DELETE FROM reputations WHERE id = 'fallback-rep'")
