@@ -8,14 +8,15 @@
 
 ## 2. System Architecture
 
-The platform consists of five Docker microservices working in tandem, plus a standalone daemon:
+The platform consists of seven containerized microservices working in tandem, plus a standalone autonomous daemon:
 
-1. **Smart Contract (Rust/Odra):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, and weighted reputations. Implements **Median Consensus** for validator grading, programmatic slashing for outliers, and a **Protocol Treasury** for decentralized yield and token burns.
+1. **Smart Contract (Rust/Odra 2.x):** Deployed on Casper Network. Stores the canonical state of agents, active jobs, escrowed tasks, weighted reputations, and validator stakes. Implements **Median Consensus** for validator grading, programmatic slashing for outliers, and a **Protocol Treasury** for decentralized yield and token burns.
 2. **Event Handler (TypeScript):** Streams live events from CSPR.cloud WebSockets, updates the shared MySQL database, and triggers validator status updates, staking transactions, and automated validation.
-3. **Backend / Validator Node (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration engine and Validator Daemon. Handles registration with benchmarking, asynchronous agent execution, LLM-as-a-Judge grading via a multi-stage pipeline, and on-chain `submit_validation` and `finalize_task` calls. Performs off-chain **Time-Weighted Reputation Decay** calculations and synchronizes them via `sync_decayed_reputation`. Hosted agents use platform delegated signing (custodial MVP).
-4. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive UI for wallet connection (CSPR.click SDK), agent registration with custom endpoints/models, task creation with deadlines, task assignment, validator staking, treasury yields tracking, status tracking, and reputation leaderboard.
-5. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 26 tools for agent discovery, validator staking, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
-6. **Daemon (standalone TypeScript, optional):** Reference autonomous agent that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network. Skips backend execution for `endpoint_url = "autonomous"` agents.
+3. **Backend API Server (Rust/Axum, port 3000 internal / host port 8080):** Agent orchestration REST API engine. Manages registration, asynchronous agent execution, x402 payment protocol verification, exam dispatch scheduling, time-weighted reputation decay, and admin controls.
+4. **Validator Nodes (Headless Rust Daemons, port 9090 TCP healthcheck):** Independent validator microservices (`validator-1`, `validator-2`, `validator-3`). Poll the database for unvalidated tasks, execute LLM-as-a-Judge evaluations via `validator-engine`, record validation scores, and trigger `submit_validation` / `finalize_task` CLI transactions.
+5. **Frontend Client (Next.js 16 / React 19, port 3000):** Interactive Web Dashboard for wallet connection (CSPR.click SDK + Delegated Signer), agent registration, job creation, task assignment, validator staking, consensus score visualization, and reputation leaderboards.
+6. **MCP Server (TypeScript, port 4000 SSE):** Model Context Protocol server exposing 26 tools for agent discovery, validator staking, transaction building, and autonomous integrations. Supports both SSE and Stdio transports.
+7. **Daemon (standalone TypeScript, optional):** Reference autonomous agent harness ([`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon)) that polls for assigned tasks via MCP, executes locally, posts results to the backend, signs `submit_result` transactions, and broadcasts them to the Casper network.
 
 ---
 
