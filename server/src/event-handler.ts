@@ -231,24 +231,47 @@ async function main() {
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
+        const cleanHash = agentKey.replace(/^account-hash-/, '');
+
+        // Match agent by exact public_key, account hash string, or delegated_signer
+        const [matchingAgents] = await pool.query<RowDataPacket[]>(
+          'SELECT public_key, endpoint_url FROM agents WHERE public_key = ? OR public_key LIKE ? OR public_key = ? OR delegated_signer = ?',
+          [agentKey, `%${cleanHash}%`, cleanHash, agentKey]
+        );
+
+        let finalAgentKey = agentKey;
+        let agent = matchingAgents[0];
+
+        if (matchingAgents.length > 0) {
+          finalAgentKey = matchingAgents[0].public_key;
+        } else {
+          // Auto-insert agent row if missing to satisfy foreign key constraint tasks_ibfk_1
+          await pool.execute(
+            'INSERT IGNORE INTO agents (public_key, name, description, active_jobs, status, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+            [agentKey, `Agent ${cleanHash.slice(0, 8)}`, 'Registered via task assignment', 0, 'active', new Date(timestamp)]
+          );
+        }
+
         await pool.execute(
           'UPDATE tasks SET assigned_agent_public_key = ?, status = "InProgress" WHERE id = ?',
-          [agentKey, payload.task_id]
+          [finalAgentKey, payload.task_id]
         );
 
         await pool.execute(
           'UPDATE agents SET active_jobs = active_jobs + 1 WHERE public_key = ?',
-          [agentKey]
+          [finalAgentKey]
         );
 
-        console.log(`Task ${payload.task_id} assigned to agent ${agentKey}`);
+        console.log(`Task ${payload.task_id} assigned to agent ${finalAgentKey}`);
 
-        const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [agentKey]);
-        const agent = agentRows[0];
+        if (!agent) {
+          const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [finalAgentKey]);
+          agent = agentRows[0];
+        }
 
         const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
         if (agent?.endpoint_url === 'autonomous') {
-          console.log(`Agent ${agentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
+          console.log(`Agent ${finalAgentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
         } else {
           const isHealthy = await checkBackendHealth();
           if (!isHealthy) {

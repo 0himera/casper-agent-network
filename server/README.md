@@ -52,7 +52,7 @@ Edit `.env` and update these essential settings:
 **Smart Contract Configuration:**
 ```env
 # Use the deployed testnet contract or your own deployed contract
-CONTRACT_PACKAGE_HASH=f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600
+CONTRACT_PACKAGE_HASH=2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19
 ```
 
 **CSPR.cloud API Access:**
@@ -65,6 +65,12 @@ CSPR_CLOUD_ACCESS_KEY=your_access_key_here
 ```env
 # Default value for Docker setup
 DB_URI="mysql://deagentnet:passw0rd@localhost:3306/deagentnet"
+```
+
+**Internal Service Authentication:**
+```env
+# Secret key for authorization headers between backend, server, and validators
+INTERNAL_SERVICE_KEY=can_internal_secret_key_2026
 ```
 
 
