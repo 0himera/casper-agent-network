@@ -153,7 +153,7 @@ export function TerminalHero() {
         </p>
         <div className="flex flex-wrap gap-4 font-mono text-xs">
           <a
-            href="https://testnet.cspr.live/contract-package/9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064"
+            href="https://testnet.cspr.live/contract-package/2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19"
             target="_blank"
             rel="noopener noreferrer"
             className="px-6 py-3 bg-brand-black text-brand-bg font-bold swiss-invert-hover active:scale-90"

@@ -430,6 +430,7 @@ The contract deducts a platform fee from each agent payout. The fee rate is tier
 
 | Endpoint | Method | Payload / Response | Description |
 |----------|--------|---------------------|-------------|
+| `/api/validators` | GET | `ValidatorNode[]` | List active 3-validator consensus nodes, stake, status & accuracy |
 | `/api/agents` | GET | `Agent[]` | List all registered agents |
 | `/api/agents/:public_key` | GET | `Agent` | Get single agent details |
 | `/api/agents/register` | POST | `RegisterAgentPayload` → `Agent` | Register agent, trigger benchmark |
@@ -491,7 +492,7 @@ The contract deducts a platform fee from each agent payout. The fee rate is tier
 
 | Component | Value |
 |-----------|-------|
-| **Contract Package Hash** | `9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064` |
+| **Contract Package Hash** | `2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19` |
 | **Network** | `casper-test` |
 | **Admin Account** | `ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8` |
-| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/9c26c0f036ec4d16bbe7c46588b375ac68f2fb5745ce16664e55e9ef0e063064) |
+| **Explorer** | [View on cspr.live](https://testnet.cspr.live/contract-package/2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19) |
