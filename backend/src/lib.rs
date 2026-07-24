@@ -1,11 +1,11 @@
 pub mod api;
 pub mod casper;
 pub mod config;
-pub mod db;
 pub mod exam_dispatch;
 pub mod exam_dispatch_loop;
-pub mod metrics;
 pub mod orchestrator;
 pub mod reputation_decay;
 pub mod validator;
-pub mod validator_loop;
+
+pub use agentnet_core::db;
+pub use agentnet_core::metrics;

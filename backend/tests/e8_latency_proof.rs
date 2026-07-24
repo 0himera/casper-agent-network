@@ -107,7 +107,7 @@ async fn latency_proof_recalc_does_not_block_main_path() {
         "key".to_string(),
         "hash".to_string(),
     );
-    let mut router = create_router(pool.clone(), config.clone(), casper_client);
+    let router = create_router(pool.clone(), config.clone(), casper_client);
 
     // Provide raw result
     let request = axum::http::Request::builder()

@@ -1,5 +1,4 @@
 use crate::api::AppState;
-use crate::api::x402::verify_payment;
 use axum::{
     Json,
     extract::{Path, State},
@@ -118,7 +117,6 @@ pub async fn get_domain_leaderboard(
     _headers: HeaderMap,
     Path(domain): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-
     let entries = sqlx::query_as::<_, LeaderboardEntry>(
         "SELECT 
             a.public_key, 

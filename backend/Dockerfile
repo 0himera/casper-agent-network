@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # Build stage using bookworm to match runtime stage glibc
 FROM rust:1.96-slim-bookworm AS builder
 
@@ -11,38 +10,61 @@ RUN apt-get update && apt-get install -y \
 
 ENV CARGO_BUILD_JOBS=4
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+ENV RUSTC_BOOTSTRAP=1
 
 WORKDIR /usr/src/app
 
-# Stub workspace libraries to cache dependencies
-# 1. validator-engine stub
-RUN mkdir -p backend/validator/src && echo "pub fn dummy() {}" > backend/validator/src/lib.rs
-COPY backend/validator/Cargo.toml ./backend/validator/
+# Copy Cargo manifests for workspace dependency caching
+COPY Cargo.toml ./Cargo.toml
+COPY agentnet-core/Cargo.toml ./agentnet-core/Cargo.toml
+COPY validator-engine/Cargo.toml ./validator-engine/Cargo.toml
+COPY validator-node/Cargo.toml ./validator-node/Cargo.toml
+COPY backend/Cargo.toml ./backend/Cargo.toml
+COPY smart-contract/Cargo.toml smart-contract/Cargo.lock* ./smart-contract/
 
-# 2. backend stub
-RUN mkdir -p backend/src && echo "fn main() {}" > backend/src/main.rs
-COPY backend/Cargo.toml ./backend/
+# Create stub source files for pre-building dependencies
+RUN mkdir -p agentnet-core/src validator-engine/src validator-node/src backend/src smart-contract/src smart-contract/bin && \
+    echo "pub fn dummy() {}" > agentnet-core/src/lib.rs && \
+    echo "pub fn dummy() {}" > validator-engine/src/lib.rs && \
+    echo "fn main() {}" > validator-node/src/main.rs && \
+    echo "fn main() {}" > backend/src/main.rs && \
+    echo "pub fn dummy() {}" > smart-contract/src/lib.rs && \
+    echo "fn main() {}" > smart-contract/bin/submit_complete.rs && \
+    echo "fn main() {}" > smart-contract/bin/submit_result.rs && \
+    echo "fn main() {}" > smart-contract/bin/submit_validation.rs && \
+    echo "fn main() {}" > smart-contract/bin/finalize_task.rs && \
+    echo "fn main() {}" > smart-contract/bin/decay_reputation.rs && \
+    echo "fn main() {}" > smart-contract/bin/build_contract.rs && \
+    echo "fn main() {}" > smart-contract/bin/build_schema.rs && \
+    echo "fn main() {}" > smart-contract/bin/cli.rs && \
+    echo "fn main() {}" > smart-contract/bin/livenet_deploy.rs && \
+    echo "fn main() {}" > smart-contract/bin/register_agent.rs && \
+    echo "fn main() {}" > smart-contract/bin/update_metadata.rs
 
-# Pre-build dependencies
-WORKDIR /usr/src/app/backend
-RUN cargo build --release
+# Pre-build smart contract CLI dependencies
+WORKDIR /usr/src/app/smart-contract
+RUN cargo build --release --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
+
+# Pre-build backend dependencies
+WORKDIR /usr/src/app
+RUN cargo build --release -p backend
 
 # Copy real source code
-WORKDIR /usr/src/app
-RUN echo "Cache bust 3"
+COPY agentnet-core/src ./agentnet-core/src
+COPY validator-engine/src ./validator-engine/src
+COPY validator-engine/prompts ./validator-engine/prompts
 COPY backend/src ./backend/src
-COPY backend/validator ./backend/validator
+COPY smart-contract/src ./smart-contract/src
+COPY smart-contract/bin ./smart-contract/bin
 
-# Force Cargo to rebuild the stubbed targets since host files have older timestamps
-RUN echo "Force cache bust 1" && touch backend/src/main.rs backend/validator/src/lib.rs
+# Force Cargo to rebuild actual binaries
+RUN touch agentnet-core/src/lib.rs validator-engine/src/lib.rs backend/src/main.rs smart-contract/src/lib.rs smart-contract/bin/*.rs
 
-# Build actual binary
-WORKDIR /usr/src/app/backend
-RUN cargo build --release
-
-# Copy and build smart contract CLI tools
+# Build actual backend binary
 WORKDIR /usr/src/app
-COPY smart-contract ./smart-contract
+RUN cargo build --release -p backend
+
+# Build actual smart contract CLI binaries
 WORKDIR /usr/src/app/smart-contract
 RUN cargo build --release --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
 
@@ -54,13 +76,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
 RUN groupadd -g 10001 appuser && \
     useradd -r -u 10001 -g appuser appuser
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/backend/target/release/backend /usr/local/bin/backend
+COPY --from=builder /usr/src/app/target/release/backend /usr/local/bin/backend
 COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
 COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_result /usr/local/bin/agent_network_submit_result
 COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation

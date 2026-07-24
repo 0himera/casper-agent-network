@@ -105,6 +105,7 @@ pub fn create_router(pool: DbPool, config: Config, casper_client: CasperClient) 
             post(exams::dispatch_exam_handler),
         )
         .route("/api/audit/logs", get(audit::get_audit_logs))
+        .route("/api/validators", get(tasks::get_validators))
         .with_state(state)
 }
 

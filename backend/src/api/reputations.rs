@@ -1,5 +1,4 @@
 use crate::api::AppState;
-use crate::api::x402::verify_payment;
 use crate::db::models::Reputation;
 use axum::{
     Json,

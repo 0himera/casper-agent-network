@@ -20,6 +20,8 @@ pub struct RegisterAgentPayload {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub system_prompt: Option<String>,
+    pub delegated_signer: Option<String>,
+    #[serde(default)]
     pub skills: Vec<String>,
 }
 
@@ -127,10 +129,14 @@ pub async fn register_agent(
             })?;
 
     if agent_opt.is_some() {
+        let effective_signer = payload
+            .delegated_signer
+            .or_else(|| Some(state.config.admin_account.clone()));
+
         // Update existing agent with benchmarking configuration
         sqlx::query(
             "UPDATE agents 
-             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, model = ?, system_prompt = ?, status = 'benchmarking' 
+             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, model = ?, system_prompt = ?, delegated_signer = COALESCE(?, delegated_signer), status = 'benchmarking' 
              WHERE public_key = ?"
         )
         .bind(&payload.name)
@@ -140,15 +146,20 @@ pub async fn register_agent(
         .bind(&payload.api_key)
         .bind(&payload.model)
         .bind(&payload.system_prompt)
+        .bind(&effective_signer)
         .bind(&payload.public_key)
         .execute(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
     } else {
+        let effective_signer = payload
+            .delegated_signer
+            .or_else(|| Some(state.config.admin_account.clone()));
+
         // Insert agent with 'benchmarking' status
         sqlx::query(
-            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, model, system_prompt, status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
+            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, model, system_prompt, delegated_signer, status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
         )
         .bind(&payload.public_key)
         .bind(&payload.name)
@@ -158,6 +169,7 @@ pub async fn register_agent(
         .bind(&payload.api_key)
         .bind(&payload.model)
         .bind(&payload.system_prompt)
+        .bind(&effective_signer)
         .execute(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
