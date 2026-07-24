@@ -1,0 +1,18 @@
+[package]
+name = "validator-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9.34"
+dotenvy = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+async-trait = "0.1.83"
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

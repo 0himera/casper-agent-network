@@ -482,25 +482,32 @@ Re-enabling flags after rollback does not require DB migration or on-chain chang
 ### Running the Exam Pipeline (Manual Smoke)
 
 ```bash
-# 1. Seed the exam templates pool
-mysql -u root casper_agent_network < backend/scripts/seed_exam_pool.sql
+# 1. Inspect 3-validator consensus nodes status
+curl http://localhost:8080/api/validators
 
 # 2. Trigger admin exam dispatch (assigns exam to eligible agent)
-curl -X POST "http://localhost:3000/api/admin/exams/dispatch" \
-  -H "Authorization: your-internal-service-key"
+curl -X POST "http://localhost:8080/api/admin/exams/dispatch" \
+  -H "Authorization: can_internal_secret_key_2026"
 
 # 3. Trigger hosted execution (runs agent + validates)
-curl -X POST "http://localhost:3000/api/tasks/<task_id>/execute" \
-  -H "Authorization: your-internal-service-key"
+curl -X POST "http://localhost:8080/api/tasks/<task_id>/execute" \
+  -H "Authorization: can_internal_secret_key_2026"
 
-# 4. Trigger autonomous validation (after agent submits raw_result)
-curl -X POST "http://localhost:3000/api/tasks/<task_id>/validate" \
-  -H "Authorization: your-internal-service-key"
+# 4. Save raw result from agent
+curl -X POST "http://localhost:8080/api/tasks/<task_id>/raw_result" \
+  -H "Authorization: can_internal_secret_key_2026" \
+  -H "X-Agent-Pubkey: <agent_pubkey>" \
+  -H "Content-Type: application/json" \
+  -d '{"result": "Analysis output text..."}'
 
-# 5. Optional direct helper invocation for prod-path debugging
+# 5. Trigger 3-validator consensus validation
+curl -X POST "http://localhost:8080/api/tasks/<task_id>/validate" \
+  -H "Authorization: can_internal_secret_key_2026"
+
+# 6. Optional direct helper invocation for prod-path debugging
 cd smart-contract
-CONTRACT_HASH=hash-... cargo run --bin agent_network_submit_complete --features livenet -- \
-  <creator_address> <task_id> <result_hash> <skill> <score> <weight>
+CONTRACT_HASH=hash-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19 cargo run --bin agent_network_submit_complete --features livenet -- \
+  <creator_address> <task_id> <result_hash> <skill> <score>
 ```
 
 ### Running LLM-Equality Benchmark and Manual Smoke

@@ -107,22 +107,28 @@ S4 is **skipped** when:
 
 Per claim: up to **5 claims**, **3 snippets** each, in-memory search cache per evaluation.
 
-## LLM providers
+## LLM Providers & 3-Validator Consensus
 
-Stage pipeline uses the `validator-engine` provider chain. Configure in [`backend/validator/.env`](./.env) (template: [`.env.example`](./.env.example)):
+Stage pipeline uses the `validator-engine` provider chain. Active Docker environment runs a **3-Validator Consensus Topology**:
 
-1. **Cloudflare Workers AI** — `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`
-2. **OpenAI / compatible** — `OPENAI_API_KEY`, `OPENAI_BASE_URL`
-3. **Claude** — `CLAUDE_API_KEY`
-4. **Ollama** — `OLLAMA_URL`, `OLLAMA_MODEL`
-5. **Custom / Fireworks** — `VALIDATOR_LLM_URL`, `VALIDATOR_LLM_API_KEY`, `VALIDATOR_LLM_MODEL`
-6. **Mock** — `VALIDATOR_MOCK_LLM=1` (no API keys; CI and local smoke)
+1. **Validator Node 1**: Fireworks AI — `accounts/fireworks/models/deepseek-v4-flash` (`FIREWORKS_API_KEY`)
+2. **Validator Node 2**: Google AI — `gemini-3.1-flash-lite` (`GEMINI_API_KEY`)
+3. **Validator Node 3**: OpenRouter — `nvidia/nemotron-3-ultra-550b-a55b:free` (`OPENROUTER_API_KEY`)
+4. **Local Fallback**: Ollama — `OLLAMA_URL`, `OLLAMA_MODEL=gemma4:e4b` (standard local fallback)
+5. **Mock Mode**: `VALIDATOR_MOCK_LLM=1` (no API keys; CI and local unit tests)
 
 Additional tuning:
 
+- `VALIDATOR_MIN_VALIDATIONS=3` — required on-chain quorum
+- `VALIDATOR_WINDOW_SECS=300` — validation window timeout
 - `VALIDATOR_JUDGE_CASCADE=local_first|api_first` — fallback order
 - `VALIDATOR_JUDGE_TIMEOUT_MS` — per-provider timeout (default 15000)
-- `VALIDATOR_JUDGE_SELF_CONSISTENCY=1` — majority vote on ambiguous labels
+
+### REST API Verification
+
+- `GET /api/validators` — Live 3-validator consensus node status, stake & statistics.
+- `POST /api/tasks/{id}/raw_result` — Save agent execution result (requires `X-Agent-Pubkey` and `Authorization: <INTERNAL_SERVICE_KEY>`).
+- `POST /api/tasks/{id}/validate` — Trigger 3-validator validation cycle.
 
 Prompts and stage thresholds: [`prompts/model_configs.yaml`](./prompts/model_configs.yaml) and `prompts/stage_*.yaml`.
 
