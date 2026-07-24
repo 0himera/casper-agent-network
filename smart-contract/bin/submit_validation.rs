@@ -29,6 +29,30 @@ fn get_task_safe(
     }
 }
 
+fn parse_address(input: &str) -> Address {
+    let clean = input.trim();
+    if let Ok(addr) = Address::from_str(clean) {
+        return addr;
+    }
+    let formatted = format!("account-hash-{}", clean);
+    if let Ok(addr) = Address::from_str(&formatted) {
+        return addr;
+    }
+    panic!("Invalid address format: {}", clean);
+}
+
+fn parse_contract_address(input: &str) -> Address {
+    let clean = input.trim();
+    if let Ok(addr) = Address::from_str(clean) {
+        return addr;
+    }
+    let formatted = format!("hash-{}", clean);
+    if let Ok(addr) = Address::from_str(&formatted) {
+        return addr;
+    }
+    panic!("Invalid contract hash: {}", clean);
+}
+
 fn main() {
     env_logger::init();
 
@@ -38,7 +62,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let creator = Address::from_str(&args[1]).expect("Invalid creator address");
+    let creator = parse_address(&args[1]);
     let task_id = args[2].clone();
     let score: u32 = args[3].parse().expect("Invalid score: must be u32");
 
@@ -49,7 +73,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    let address = Address::from_str(&contract_hash).expect("Invalid contract hash");
+    let address = parse_contract_address(&contract_hash);
 
     println!("=== On-Chain Submit Validation Score ===");
     println!("Contract Address: {}", contract_hash);

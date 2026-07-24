@@ -2,7 +2,7 @@
 //!
 //! ## Usage
 //! ```bash
-//! CONTRACT_HASH=hash-f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600 cargo run --bin agent_network_update_metadata --features livenet
+//! CONTRACT_HASH=hash-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19 cargo run --bin agent_network_update_metadata --features livenet
 //! ```
 
 use agent_network::agent_network::AgentNetwork;
@@ -16,7 +16,7 @@ fn main() {
     let env = odra_casper_livenet_env::env();
 
     let contract_hash = std_env::var("CONTRACT_HASH").unwrap_or_else(|_| {
-        "hash-f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600".to_string()
+        "hash-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19".to_string()
     });
     let address = Address::from_str(&contract_hash).expect("Invalid contract hash");
 

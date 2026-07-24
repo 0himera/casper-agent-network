@@ -31,7 +31,7 @@ const MINIMUM_VALIDATOR_STAKE: u64 = 100_000_000_000u64; // 100 CSPR
 const DEVIATION_TOLERANCE: u32 = 10;
 const SLASH_DEVIATION_BPS_PER_10: u32 = 500; // 5% per 10 points over tolerance
 const MIN_VALIDATIONS: u32 = 3;
-const VALIDATION_WINDOW_MS: u64 = 300_000; // 5 minutes
+const VALIDATION_WINDOW_MS: u64 = 300_000; // 5 minutes in ms
 
 #[odra::odra_type]
 pub struct AgentProfile {
@@ -653,6 +653,21 @@ impl AgentNetwork {
         self.agents.set(&caller, agent);
         self.env().emit_event(DelegatedSignerUpdated {
             agent: caller,
+            delegated_signer,
+        });
+    }
+
+    /// Admin-only: set delegated_signer for any agent (for hosted agents).
+    pub fn admin_set_delegated_signer(&mut self, agent: Address, delegated_signer: Option<Address>) {
+        self.assert_admin();
+        let mut agent_profile = self
+            .agents
+            .get(&agent)
+            .unwrap_or_revert_with(&self.env(), ContractErrors::AgentNotFound);
+        agent_profile.delegated_signer = delegated_signer;
+        self.agents.set(&agent, agent_profile);
+        self.env().emit_event(DelegatedSignerUpdated {
+            agent,
             delegated_signer,
         });
     }

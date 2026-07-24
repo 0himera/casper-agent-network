@@ -14,6 +14,18 @@ use std::str::FromStr;
 
 const HALF_LIFE_MS: u64 = 30 * 86_400 * 1000; // 30 days in milliseconds
 
+fn parse_address(input: &str) -> Address {
+    let clean = input.trim();
+    if let Ok(addr) = Address::from_str(clean) {
+        return addr;
+    }
+    let formatted = format!("account-hash-{}", clean);
+    if let Ok(addr) = Address::from_str(&formatted) {
+        return addr;
+    }
+    panic!("Invalid address format: {}", clean);
+}
+
 fn main() {
     env_logger::init();
 
@@ -23,7 +35,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let agent = Address::from_str(&args[1]).expect("Invalid agent address");
+    let agent = parse_address(&args[1]);
     let skill = args[2].clone();
 
     let env = odra_casper_livenet_env::env();
