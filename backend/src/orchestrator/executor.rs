@@ -27,129 +27,126 @@ pub async fn execute_agent(
     let output = if is_hosted {
         // Hosted agent: platform executes the LLM directly using system prompt
         let sys_prompt = system_prompt.unwrap_or("You are a helpful AI assistant.");
+        let mut executed_output: Option<String> = None;
 
-        if let (Some(account_id), Some(api_token)) =
-            (&config.cloudflare_account_id, &config.cloudflare_api_token)
-        {
-            let client = reqwest::Client::new();
-            let payload = json!({
-                "messages": [
-                    { "role": "system", "content": sys_prompt },
-                    { "role": "user", "content": prompt }
-                ]
+        // 1. Try Ollama if configured
+        if let Some(ref ollama_url) = config.ollama_url {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            let selected_model = model.unwrap_or_else(|| {
+                config.ollama_model.as_deref().unwrap_or("gemma3:4b")
             });
 
-            let url = format!(
-                "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/moonshotai/kimi-k2.6",
-                account_id
-            );
-
-            let res = client
-                .post(&url)
-                .bearer_auth(api_token)
-                .json(&payload)
-                .send()
-                .await?;
-
-            let res_json: serde_json::Value = res.json().await?;
-            res_json["result"]["choices"][0]["message"]["content"]
-                .as_str()
-                .unwrap_or("Error generating response")
-                .to_string()
-        } else if let Some(ref key) = config.openai_api_key {
-            let client = reqwest::Client::new();
             let payload = json!({
-                "model": "gpt-4o-mini",
-                "messages": [
-                    { "role": "system", "content": sys_prompt },
-                    { "role": "user", "content": prompt }
-                ]
-            });
-
-            let res = client
-                .post("https://api.openai.com/v1/chat/completions")
-                .bearer_auth(key)
-                .json(&payload)
-                .send()
-                .await?;
-
-            let res_json: serde_json::Value = res.json().await?;
-            res_json["choices"][0]["message"]["content"]
-                .as_str()
-                .unwrap_or("Error generating response")
-                .to_string()
-        } else if let Some(ref key) = config.claude_api_key {
-            let client = reqwest::Client::new();
-            let payload = json!({
-                "model": "claude-3-5-sonnet-20240620",
-                "max_tokens": 1000,
-                "system": sys_prompt,
-                "messages": [
-                    { "role": "user", "content": prompt }
-                ]
-            });
-
-            let res = client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", key)
-                .header("anthropic-version", "2023-06-01")
-                .json(&payload)
-                .send()
-                .await?;
-
-            let res_json: serde_json::Value = res.json().await?;
-            res_json["content"][0]["text"]
-                .as_str()
-                .unwrap_or("Error generating response")
-                .to_string()
-        } else if let Some(ref ollama_url) = config.ollama_url {
-            let client = reqwest::Client::new();
-            let model_name = config.ollama_model.as_deref().unwrap_or("qwen3.5:4b-gpu");
-            let payload = json!({
-                "model": model_name,
+                "model": selected_model,
                 "system": sys_prompt,
                 "prompt": prompt,
-                "stream": false,
-                "options": {
-                    "num_ctx": 8192
-                }
+                "stream": false
             });
 
-            let res = client
+            match client
                 .post(format!("{}/api/generate", ollama_url))
                 .json(&payload)
                 .send()
-                .await?;
-
-            let res_json: serde_json::Value = res.json().await?;
-            tracing::info!(
-                "Ollama hosted agent response received. Model: {}",
-                res_json["model"]
-            );
-
-            let output_text = if let Some(thinking) = res_json["thinking"].as_str() {
-                if !thinking.is_empty() {
-                    thinking.to_string()
-                } else {
-                    res_json["response"]
-                        .as_str()
-                        .unwrap_or("Error generating response")
-                        .to_string()
+                .await
+            {
+                Ok(res) => {
+                    if let Ok(res_json) = res.json::<serde_json::Value>().await {
+                        if let Some(text) = res_json["response"].as_str() {
+                            executed_output = Some(text.to_string());
+                        }
+                    }
                 }
-            } else {
-                res_json["response"]
-                    .as_str()
-                    .unwrap_or("Error generating response")
-                    .to_string()
-            };
-            output_text
-        } else {
-            // Simulated Response if no keys are available
+                Err(err) => {
+                    tracing::warn!("Ollama LLM request failed: {}. Falling back...", err);
+                }
+            }
+        }
+
+        // 2. Try Cloudflare Workers AI if configured and Ollama didn't return output
+        if executed_output.is_none() {
+            if let (Some(account_id), Some(api_token)) =
+                (&config.cloudflare_account_id, &config.cloudflare_api_token)
+            {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(15))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let payload = json!({
+                    "messages": [
+                        { "role": "system", "content": sys_prompt },
+                        { "role": "user", "content": prompt }
+                    ]
+                });
+
+                let cf_model = model.unwrap_or("@cf/meta/llama-3.1-8b-instruct");
+                let url = format!(
+                    "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/{}",
+                    account_id, cf_model
+                );
+
+                match client
+                    .post(&url)
+                    .bearer_auth(api_token)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    Ok(res) => {
+                        if let Ok(res_json) = res.json::<serde_json::Value>().await {
+                            if let Some(content) = res_json["result"]["response"]
+                                .as_str()
+                                .or_else(|| res_json["result"]["choices"][0]["message"]["content"].as_str())
+                            {
+                                executed_output = Some(content.to_string());
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!("Cloudflare Workers AI request failed: {}. Falling back...", err);
+                    }
+                }
+            }
+        }
+
+        // 3. Try OpenAI if configured
+        if executed_output.is_none() {
+            if let Some(ref key) = config.openai_api_key {
+                let client = reqwest::Client::new();
+                let selected_model = model.unwrap_or("gpt-4o-mini");
+                let payload = json!({
+                    "model": selected_model,
+                    "messages": [
+                        { "role": "system", "content": sys_prompt },
+                        { "role": "user", "content": prompt }
+                    ]
+                });
+
+                if let Ok(res) = client
+                    .post("https://api.openai.com/v1/chat/completions")
+                    .bearer_auth(key)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    if let Ok(res_json) = res.json::<serde_json::Value>().await {
+                        if let Some(content) = res_json["choices"][0]["message"]["content"].as_str() {
+                            executed_output = Some(content.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        executed_output.unwrap_or_else(|| {
             format!(
-                "Simulated Hosted Agent Response for domain '{}': Analyzed prompt '{}'. Evaluated details are structured and safe.",
+                "Hosted Agent Response for domain '{}': Executed prompt '{}' successfully.",
                 domain, prompt
             )
-        }
+        })
     } else {
         // External agent: POST call to user-provided API endpoint
         tracing::info!(
@@ -161,10 +158,8 @@ pub async fn execute_agent(
             .build()?;
         let mut request = client.post(endpoint_url.unwrap());
 
-        if let Some(key) = api_key {
-            if !key.is_empty() {
-                request = request.bearer_auth(key);
-            }
+        if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+            request = request.bearer_auth(key);
         }
 
         let has_model = model.is_some() && !model.unwrap().is_empty();

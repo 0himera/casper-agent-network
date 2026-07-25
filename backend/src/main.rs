@@ -20,9 +20,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = init_db(&config.database_url).await?;
 
     let dispatch_loop = backend::exam_dispatch_loop::spawn_if_enabled(pool.clone(), config.clone());
+    let decay_loop =
+        backend::reputation_decay::spawn_decay_loop_if_enabled(pool.clone(), config.clone());
+    let spent_payments_cleanup =
+        backend::api::x402::spawn_spent_payments_cleanup_loop(pool.clone());
 
-    let casper_client = backend::casper::contract::CasperClient::from_env()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let casper_client =
+        backend::casper::contract::CasperClient::from_env().map_err(std::io::Error::other)?;
 
     // 1. Prometheus Metrics configuration
     let (prometheus_layer, metric_handle) = PrometheusMetricLayerBuilder::new()
@@ -101,16 +105,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(vec![
-            Method::GET,
-            Method::POST,
-            Method::PATCH,
-            Method::PUT,
-            Method::DELETE,
+    let cors = if let Ok(origins) = std::env::var("ALLOWED_ORIGINS") {
+        if origins == "*" {
+            CorsLayer::new().allow_origin(Any)
+        } else {
+            let parsed_origins: Vec<axum::http::HeaderValue> = origins
+                .split(',')
+                .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
+                .collect();
+            CorsLayer::new().allow_origin(parsed_origins)
+        }
+    } else {
+        CorsLayer::new().allow_origin([
+            "http://localhost:3000"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
+            "http://127.0.0.1:3000"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
         ])
-        .allow_headers(Any);
+    }
+    .allow_methods(vec![
+        Method::GET,
+        Method::POST,
+        Method::PATCH,
+        Method::PUT,
+        Method::DELETE,
+    ])
+    .allow_headers(Any);
 
     // Assemble the router with prometheus metrics, rate limiting, and CORS
     let app = create_router(pool.clone(), config.clone(), casper_client)
@@ -173,6 +195,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some((stop_tx, handle)) = dispatch_loop {
         backend::exam_dispatch_loop::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
     }
+    if let Some((stop_tx, handle)) = decay_loop {
+        backend::reputation_decay::shutdown(stop_tx, handle, Duration::from_secs(5)).await;
+    }
+    spent_payments_cleanup.abort();
 
     tokio::select! {
         res = server_task => {

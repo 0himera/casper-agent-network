@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-odra = { version = "2.8.2", features = [], default-features = false }
-odra-modules = { version = "2.8.2", default-features = false }
-odra-casper-livenet-env = { version = "2.8.2", optional = true }
+odra = { version = "=2.8.2", features = [], default-features = false }
+odra-modules = { version = "=2.8.2", default-features = false }
+odra-casper-livenet-env = { version = "=2.8.2", optional = true }
 env_logger = { version = "0.10.2", optional = true }
 
 [dev-dependencies]
-odra-test = { version = "2.8.2", features = [], default-features = false }
+odra-test = { version = "=2.8.2", features = [], default-features = false }
 
 [build-dependencies]
-odra-build = { version = "2.8.2", features = [], default-features = false }
+odra-build = { version = "=2.8.2", features = [], default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-odra-build = { version = "2.8.2", features = [], default-features = false }
-odra-cli = { version = "2.8.2", features = [], default-features = false }
+odra-build = { version = "=2.8.2", features = [], default-features = false }
+odra-cli = { version = "=2.8.2", features = [], default-features = false }
 
 [features]
 default = []
@@ -53,6 +53,42 @@ test = false
 [[bin]]
 name = "agent_network_submit_complete"
 path = "bin/submit_complete.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_submit_result"
+path = "bin/submit_result.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_submit_validation"
+path = "bin/submit_validation.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_finalize_task"
+path = "bin/finalize_task.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_decay_reputation"
+path = "bin/decay_reputation.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_update_metadata"
+path = "bin/update_metadata.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_register_validator"
+path = "bin/register_validator.rs"
 required-features = ["livenet"]
 test = false
 

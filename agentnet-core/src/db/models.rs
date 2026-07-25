@@ -23,6 +23,7 @@ pub struct Agent {
     pub recommended_price_motes: u64,
     pub custom_price_motes: u64,
     pub system_prompt: Option<String>,
+    pub delegated_signer: Option<String>,
     pub timestamp: DateTime<Utc>,
     #[sqlx(default)]
     pub is_available: bool,
@@ -187,11 +188,11 @@ mod tests {
             domain: "defi_analysis".into(),
             skill_id: None,
             prompt: "ANSWER: 42 usd".into(),
+            parent_task_id: None,
             deadline: 0,
             result_signature: None,
             validator_audit: None,
             timestamp: Utc::now(),
-            parent_task_id: None,
         })
         .expect("serialize TaskPublic");
 

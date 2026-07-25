@@ -1,0 +1,17 @@
+[package]
+name = "validator-node"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+agentnet-core = { path = "../agentnet-core" }
+validator-engine = { path = "../validator-engine" }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio-util = { workspace = true }

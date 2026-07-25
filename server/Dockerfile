@@ -7,6 +7,8 @@ RUN npm ci
 
 COPY . .
 
+USER node
+
 EXPOSE 4000
 
 CMD ["npm", "run", "event-handler:dev"]

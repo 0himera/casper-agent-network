@@ -3,16 +3,23 @@ services:
     image: mysql:8.0.33
     container_name: agent-network-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-deagentnet}
       MYSQL_USER: ${MYSQL_USER:-deagentnet}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-passw0rd}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
     ports:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '1.0'
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-deagentnet}", "-p${MYSQL_PASSWORD:-passw0rd}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-deagentnet}", "-p${MYSQL_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -28,9 +35,27 @@ services:
     env_file:
       - ./server/.env
     environment:
-      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "4000"
       MCP_SERVER_USE_SSE: "true"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-can_internal_secret_key_2026}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       mysql:
         condition: service_healthy
@@ -45,13 +70,31 @@ services:
     ports:
       - "8080:3000"
     environment:
-      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       PORT: "3000"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+      ALLOWED_ORIGINS: "*"
     env_file:
       - ./backend/.env
     volumes:
       - ./keys:/keys
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       mysql:
         condition: service_healthy
@@ -65,11 +108,25 @@ services:
     env_file:
       - ./server/.env
     environment:
-      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD:-passw0rd}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      DB_URI: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
       RUST_BACKEND_URL: http://backend:3000
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-default_internal_key}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY must be set}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       mysql:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     restart: unless-stopped
 
@@ -79,15 +136,160 @@ services:
       dockerfile: Dockerfile
       args:
         - API_URL=http://backend:3000
-        - NEXT_PUBLIC_API_URL=http://backend:3000
+        - NEXT_PUBLIC_API_URL=http://localhost:8080
     container_name: agent-network-client
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:3000
+      NEXT_PUBLIC_API_URL: http://localhost:8080
       API_URL: http://backend:3000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-1:
+    build:
+      context: .
+      dockerfile: validator-node/Dockerfile
+    container_name: agent-network-validator-1
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      VALIDATOR_ENABLED: "true"
+      VALIDATOR_NODE_ID: "validator-1"
+      VALIDATOR_SECRET_KEY_PATH: "/keys/validator_a_secret_key.pem"
+      VALIDATOR_PUBLIC_KEY: "01a74a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
+      VALIDATOR_MIN_VALIDATIONS: "3"
+      VALIDATOR_WINDOW_SECS: "300"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-fireworks}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_1_LLM_MODEL:-accounts/fireworks/models/deepseek-v4-flash}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      HEALTH_PORT: "9090"
+      HOME: /tmp
+    volumes:
+      - ./keys:/keys
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "validator-node", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 90s
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-2:
+    build:
+      context: .
+      dockerfile: validator-node/Dockerfile
+    container_name: agent-network-validator-2
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      VALIDATOR_ENABLED: "true"
+      VALIDATOR_NODE_ID: "validator-2"
+      VALIDATOR_SECRET_KEY_PATH: "/keys/validator_b_secret_key.pem"
+      VALIDATOR_PUBLIC_KEY: "01bad4de01164b7a4c90eb19bec1b218092ce000bb3bbbf09cc15b0f94da56ac75"
+      VALIDATOR_MIN_VALIDATIONS: "3"
+      VALIDATOR_WINDOW_SECS: "300"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-google}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_2_LLM_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      HEALTH_PORT: "9090"
+      HOME: /tmp
+    volumes:
+      - ./keys:/keys
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "validator-node", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 90s
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  validator-3:
+    build:
+      context: .
+      dockerfile: validator-node/Dockerfile
+    container_name: agent-network-validator-3
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
+      VALIDATOR_ENABLED: "true"
+      VALIDATOR_NODE_ID: "validator-3"
+      VALIDATOR_SECRET_KEY_PATH: "/keys/validator_c_secret_key.pem"
+      VALIDATOR_PUBLIC_KEY: "01bae700f4024cff103b68d66f86a0227ccd3b2c7b8f0d1d880a803808a53a8ff1"
+      VALIDATOR_MIN_VALIDATIONS: "3"
+      VALIDATOR_WINDOW_SECS: "300"
+      VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-openrouter}
+      VALIDATOR_LLM_MODEL: ${VALIDATOR_3_LLM_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      HEALTH_PORT: "9090"
+      HOME: /tmp
+    volumes:
+      - ./keys:/keys
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "validator-node", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 90s
+    depends_on:
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
@@ -98,4 +300,5 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
+
 

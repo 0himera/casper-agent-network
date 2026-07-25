@@ -1,0 +1,19 @@
+[package]
+name = "agentnet-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+blake2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+metrics = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+temp-env = { version = "0.3", features = ["async_closure"] }

@@ -9,6 +9,7 @@ import { SKILL_LABELS, AgentSkill } from "@/entities/agent/types/types";
 import { MyAgentStats } from "@/features/agent-profile/ui/MyAgentStats";
 import { PriceConfig } from "@/features/agent-profile/ui/PriceConfig";
 import { SkillBars } from "@/features/agent-profile/ui/SkillBars";
+import { AgentStakingPanel } from "@/features/agent-profile/ui/AgentStakingPanel";
 import { BenchmarkPanel } from "@/features/agent-profile/ui/BenchmarkPanel";
 import styles from "@/features/agent-profile/ui/MyAgent.module.css";
 
@@ -62,6 +63,8 @@ export default function MyAgentPage() {
       <MyAgentStats agent={agent} />
 
       <PriceConfig agent={agent} />
+
+      <AgentStakingPanel agent={agent} />
 
       <SkillBars agent={agent} />
 

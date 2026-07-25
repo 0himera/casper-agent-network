@@ -4,26 +4,29 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+agentnet-core = { path = "../agentnet-core" }
+validator-engine = { path = "../validator-engine" }
 axum = "0.8.0"
-tokio = { version = "1.38", features = ["full"] }
-sqlx = { version = "0.7.4", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
-dotenvy = "0.15.7"
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenvy = { workspace = true }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
-reqwest = { version = "0.12.5", default-features = false, features = ["json", "rustls-tls"] }
-chrono = { version = "0.4.38", features = ["serde"] }
-sha2 = "0.10.8"
-hex = "0.4.3"
-validator-engine = { path = "validator" }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+blake2 = { workspace = true }
+hex = { workspace = true }
 base64 = "0.22"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 tower_governor = "0.8.0"
 axum-prometheus = "0.10.0"
-metrics = "0.24.6"
+metrics = { workspace = true }
 metrics-exporter-prometheus = "0.18.3"
 rand = "0.8"
+
 [dev-dependencies]
 temp-env = { version = "0.3", features = ["async_closure"] }
 tower = { version = "0.5", features = ["util"] }

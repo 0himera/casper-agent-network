@@ -20,6 +20,8 @@ pub struct RegisterAgentPayload {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub system_prompt: Option<String>,
+    pub delegated_signer: Option<String>,
+    #[serde(default)]
     pub skills: Vec<String>,
 }
 
@@ -30,7 +32,8 @@ pub struct UpdatePricePayload {
 
 pub async fn get_agents(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    _headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let agents = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -53,15 +56,16 @@ pub async fn get_agents(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(agents))
+    Ok(Json(serde_json::json!(agents)))
 }
 
 pub async fn get_agent(
     State(state): State<AppState>,
+    _headers: HeaderMap,
     Path(public_key): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let agent = sqlx::query_as::<_, Agent>(
         "SELECT a.*, 
             CAST(COALESCE(t.completed_tasks, 0) AS SIGNED) as completed_tasks,
@@ -85,11 +89,14 @@ pub async fn get_agent(
         .bind(public_key)
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
     match agent {
-        Some(agent) => Ok(Json(agent)),
-        None => Err((StatusCode::NOT_FOUND, "Agent not found".to_string())),
+        Some(agent) => Ok(Json(serde_json::json!(agent))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Agent not found" })),
+        )),
     }
 }
 
@@ -99,17 +106,14 @@ pub async fn register_agent(
     Json(payload): Json<RegisterAgentPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // 0.1 CSPR = 100,000,000 motes
-    if let Err(e) = verify_payment(
+    verify_payment(
         &headers,
         &state.pool,
         &state.casper_client,
         100_000_000,
         &state.config.admin_account,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
 
     // 1. Check if agent already exists
     let agent_opt: Option<(String,)> =
@@ -125,10 +129,14 @@ pub async fn register_agent(
             })?;
 
     if agent_opt.is_some() {
+        let effective_signer = payload
+            .delegated_signer
+            .or_else(|| Some(state.config.admin_account.clone()));
+
         // Update existing agent with benchmarking configuration
         sqlx::query(
             "UPDATE agents 
-             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, model = ?, system_prompt = ?, status = 'benchmarking' 
+             SET name = ?, description = ?, metadata_uri = ?, endpoint_url = ?, api_key = ?, model = ?, system_prompt = ?, delegated_signer = COALESCE(?, delegated_signer), status = 'benchmarking' 
              WHERE public_key = ?"
         )
         .bind(&payload.name)
@@ -138,15 +146,20 @@ pub async fn register_agent(
         .bind(&payload.api_key)
         .bind(&payload.model)
         .bind(&payload.system_prompt)
+        .bind(&effective_signer)
         .bind(&payload.public_key)
         .execute(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
     } else {
+        let effective_signer = payload
+            .delegated_signer
+            .or_else(|| Some(state.config.admin_account.clone()));
+
         // Insert agent with 'benchmarking' status
         sqlx::query(
-            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, model, system_prompt, status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
+            "INSERT INTO agents (public_key, name, description, metadata_uri, endpoint_url, api_key, model, system_prompt, delegated_signer, status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'benchmarking')"
         )
         .bind(&payload.public_key)
         .bind(&payload.name)
@@ -156,6 +169,7 @@ pub async fn register_agent(
         .bind(&payload.api_key)
         .bind(&payload.model)
         .bind(&payload.system_prompt)
+        .bind(&effective_signer)
         .execute(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;

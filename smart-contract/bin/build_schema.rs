@@ -1,5 +1,5 @@
 #![doc = "Binary for building schema definitions from odra contracts."]
-#[allow(unused_imports)]
+#![allow(clippy::single_component_path_imports, unused_imports)]
 use agent_network;
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -1,6 +1,6 @@
 import {
   Args,
-  CLTypeUInt8, CLTypeString,
+  CLTypeUInt8, CLTypeString, CLTypeKey,
   CLValue,
   Hash,
   PublicKey,
@@ -25,7 +25,7 @@ export const buildContractTransaction = async (
   attachedMotes: string = '0'
 ): Promise<any> => {
   const contractWasm = await getProxyWasm();
-  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || 'f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600';
+  const packageHash = process.env.NEXT_PUBLIC_CONTRACT_PACKAGE_HASH || '2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19';
 
   const innerArgs = Args.fromMap(innerArgsMap);
 
@@ -195,6 +195,38 @@ export const buildAcceptOwnershipTx = async (
   return buildContractTransaction(senderHex, 'accept_ownership', {});
 };
 
+export const buildSetDelegatedSignerTx = async (
+  senderHex: string,
+  delegatedSignerHex: string | null
+) => {
+  let signerKeyVal: CLValue | null = null;
+  if (delegatedSignerHex) {
+    const signerKeyStr = PublicKey.fromHex(delegatedSignerHex).accountHash().toPrefixedString();
+    const signerKey = Key.newKey(signerKeyStr);
+    signerKeyVal = CLValue.newCLKey(signerKey);
+  }
+
+  return buildContractTransaction(senderHex, 'set_delegated_signer', {
+    delegated_signer: CLValue.newCLOption(signerKeyVal, CLTypeKey)
+  });
+};
+
+export const buildStakeTx = async (
+  senderHex: string,
+  attachedMotes: string = '50000000000'
+) => {
+  return buildContractTransaction(senderHex, 'stake', {}, attachedMotes);
+};
+
+export const buildRequestUnstakeTx = async (
+  senderHex: string,
+  amountMotes: string
+) => {
+  return buildContractTransaction(senderHex, 'request_unstake', {
+    amount: CLValue.newCLUInt512(amountMotes)
+  });
+};
+
 export const buildNativeTransferTx = (
   senderHex: string,
   recipientHex: string,
@@ -210,3 +242,4 @@ export const buildNativeTransferTx = (
     .payment(100_000_000) // 0.1 CSPR gas fee
     .build();
 };
+

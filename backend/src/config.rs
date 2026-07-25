@@ -296,6 +296,17 @@ impl Config {
     }
 }
 
+impl From<&Config> for agentnet_core::db::exam::Config {
+    fn from(c: &Config) -> Self {
+        Self {
+            exam_urgency_task_weight: c.exam_urgency_task_weight,
+            exam_urgency_variance_weight: c.exam_urgency_variance_weight,
+            exam_urgency_recent_verdicts: c.exam_urgency_recent_verdicts,
+            exam_smoothed_ema_alpha: c.exam_smoothed_ema_alpha,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

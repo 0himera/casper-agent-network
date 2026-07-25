@@ -16,7 +16,8 @@
 //! ```
 
 use agent_network::agent_network::{AgentNetwork, AgentNetworkInitArgs};
-use odra::host::Deployer;
+use odra::casper_types::U512;
+use odra::host::{Deployer, HostRef};
 use odra::prelude::Addressable;
 
 fn main() {
@@ -32,18 +33,42 @@ fn main() {
     // Deploy the contract (or load if already deployed)
     println!("Step 1: Deploying AgentNetwork contract...");
     let admin_address = env.get_account(0);
-    let mut contract = AgentNetwork::deploy(&env, AgentNetworkInitArgs { admin: admin_address });
+    let mut contract = AgentNetwork::deploy(
+        &env,
+        AgentNetworkInitArgs {
+            admin: admin_address,
+        },
+    );
     println!("✅ Contract deployed successfully!");
     println!("   Contract address: {:?}", contract.address());
 
     // Register a demo agent
     println!("\nStep 2: Registering demo agent...");
-    contract.register_agent(
-        "DeFi Arbitrage Agent".to_string(),
-        "Autonomous agent that monitors DeFi yield opportunities across DEXs".to_string(),
-        "https://agent-network.casper.dev/agents/defi-arb".to_string(),
-    );
-    println!("✅ Demo agent registered!");
+    let reg_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        contract.register_agent(
+            "DeFi Arbitrage Agent".to_string(),
+            "Autonomous agent that monitors DeFi yield opportunities across DEXs".to_string(),
+            "https://agent-network.casper.dev/agents/defi-arb".to_string(),
+        );
+    }));
+    if reg_res.is_ok() {
+        println!("✅ Demo agent registered!");
+    } else {
+        println!("⚠️ Demo agent registration skipped or already registered.");
+    }
+
+    // Register validator
+    println!("\nStep 3: Registering deployer as active validator...");
+    let val_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        contract
+            .with_tokens(U512::from(100_000_000_000u64))
+            .register_validator();
+    }));
+    if val_res.is_ok() {
+        println!("✅ Deployer registered as active validator (100 CSPR staked)!");
+    } else {
+        println!("⚠️ Validator registration skipped or already registered.");
+    }
 
     // Verify
     let caller = env.get_account(0);

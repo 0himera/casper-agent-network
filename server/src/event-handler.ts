@@ -29,13 +29,27 @@ import {
   ValidatorStakedPayload,
   ValidatorUnstakedPayload,
   TreasuryDistributedPayload,
-  TreasuryBurnedPayload
+  TreasuryBurnedPayload,
+  DelegatedSignerUpdatedPayload
 } from "./events";
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3) {
+async function fetchWithRetry(taskId: string, action: 'execute' | 'validate', options: RequestInit, retries = 3) {
+  let safeUrl: string;
+  try {
+    if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
+      throw new Error(`SSRF Prevention: Invalid task ID format: ${taskId}`);
+    }
+
+    const allowedBackend = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
+    safeUrl = new URL(`/api/tasks/${taskId}/${action}`, allowedBackend).toString();
+  } catch (err: any) {
+    console.error("SSRF Validation failure:", err.message);
+    throw err;
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await fetch(url, options);
+      const res = await fetch(safeUrl, options);
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
@@ -121,6 +135,37 @@ async function main() {
       const deployHash = event.extra.deploy_hash;
       const timestamp = formatDate(event.timestamp);
 
+      // Security Check: Validate event payloads to prevent SSRF, Path Traversal, and Injection
+      const payload = event.data.data;
+      if (payload && typeof payload === 'object') {
+        // Validate task IDs
+        if ('task_id' in payload && payload.task_id !== undefined && payload.task_id !== null) {
+          const taskId = String(payload.task_id);
+          if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
+            console.error(`Security Warning: Rejected event due to invalid task_id format: "${taskId}"`);
+            return;
+          }
+        }
+        if ('parent_task_id' in payload && payload.parent_task_id !== undefined && payload.parent_task_id !== null) {
+          const parentTaskId = String(payload.parent_task_id);
+          if (!/^[a-zA-Z0-9_-]+$/.test(parentTaskId)) {
+            console.error(`Security Warning: Rejected event due to invalid parent_task_id format: "${parentTaskId}"`);
+            return;
+          }
+        }
+        // Validate public key/account identifier fields
+        const actorFields = ['agent', 'creator', 'validator', 'disputer'];
+        for (const field of actorFields) {
+          if (field in payload && payload[field] !== undefined && payload[field] !== null) {
+            const actorVal = String(payload[field]);
+            if (!/^(account-hash-)?[a-fA-F0-9]{64,66}$/.test(actorVal)) {
+              console.error(`Security Warning: Rejected event due to invalid ${field} format: "${actorVal}"`);
+              return;
+            }
+          }
+        }
+      }
+
       if (eventName === 'AgentRegistered') {
         const payload = event.data.data as AgentRegisteredPayload;
         
@@ -186,31 +231,54 @@ async function main() {
           agentKey = account.data.public_key || payload.agent;
         } catch (e) {}
 
+        const cleanHash = agentKey.replace(/^account-hash-/, '');
+
+        // Match agent by exact public_key, account hash string, or delegated_signer
+        const [matchingAgents] = await pool.query<RowDataPacket[]>(
+          'SELECT public_key, endpoint_url FROM agents WHERE public_key = ? OR public_key LIKE ? OR public_key = ? OR delegated_signer = ?',
+          [agentKey, `%${cleanHash}%`, cleanHash, agentKey]
+        );
+
+        let finalAgentKey = agentKey;
+        let agent = matchingAgents[0];
+
+        if (matchingAgents.length > 0) {
+          finalAgentKey = matchingAgents[0].public_key;
+        } else {
+          // Auto-insert agent row if missing to satisfy foreign key constraint tasks_ibfk_1
+          await pool.execute(
+            'INSERT IGNORE INTO agents (public_key, name, description, active_jobs, status, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+            [agentKey, `Agent ${cleanHash.slice(0, 8)}`, 'Registered via task assignment', 0, 'active', new Date(timestamp)]
+          );
+        }
+
         await pool.execute(
           'UPDATE tasks SET assigned_agent_public_key = ?, status = "InProgress" WHERE id = ?',
-          [agentKey, payload.task_id]
+          [finalAgentKey, payload.task_id]
         );
 
         await pool.execute(
           'UPDATE agents SET active_jobs = active_jobs + 1 WHERE public_key = ?',
-          [agentKey]
+          [finalAgentKey]
         );
 
-        console.log(`Task ${payload.task_id} assigned to agent ${agentKey}`);
+        console.log(`Task ${payload.task_id} assigned to agent ${finalAgentKey}`);
 
-        const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [agentKey]);
-        const agent = agentRows[0];
+        if (!agent) {
+          const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [finalAgentKey]);
+          agent = agentRows[0];
+        }
 
         const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
         if (agent?.endpoint_url === 'autonomous') {
-          console.log(`Agent ${agentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
+          console.log(`Agent ${finalAgentKey} is autonomous, skipping backend execution for task ${payload.task_id}`);
         } else {
           const isHealthy = await checkBackendHealth();
           if (!isHealthy) {
             console.log(`Backend is unhealthy. Skipping automated execution for task ${payload.task_id}.`);
           } else {
             console.log(`Triggering automated execution for task ${payload.task_id} at ${rustBackendUrl}...`);
-            fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/execute`, {
+            fetchWithRetry(payload.task_id, 'execute', {
               method: 'POST',
               headers: fetchHeaders
             }).catch(err => {
@@ -234,7 +302,7 @@ async function main() {
         } else {
           const rustBackendUrl = process.env.RUST_BACKEND_URL || 'http://localhost:3000';
           console.log(`Triggering validation for task ${payload.task_id}...`);
-          fetchWithRetry(`${rustBackendUrl}/api/tasks/${payload.task_id}/validate`, {
+          fetchWithRetry(payload.task_id, 'validate', {
             method: 'POST',
             headers: fetchHeaders
           }).catch(err => {
@@ -409,6 +477,28 @@ async function main() {
           [payload.available ? 1 : 0, agentKey]
         );
         console.log(`Agent ${agentKey} availability changed to: ${payload.available}`);
+
+      } else if (eventName === 'DelegatedSignerUpdated') {
+        const payload = event.data.data as DelegatedSignerUpdatedPayload;
+        let agentKey = payload.agent;
+        try {
+          const account = await csprCloudClient.getAccount(payload.agent);
+          agentKey = account.data.public_key || payload.agent;
+        } catch (e) {}
+
+        let signerKey: string | null = payload.delegated_signer;
+        if (payload.delegated_signer) {
+          try {
+            const account = await csprCloudClient.getAccount(payload.delegated_signer);
+            signerKey = account.data.public_key || payload.delegated_signer;
+          } catch (e) {}
+        }
+
+        await pool.execute(
+          'UPDATE agents SET delegated_signer = ? WHERE public_key = ?',
+          [signerKey, agentKey]
+        );
+        console.log(`Agent ${agentKey} delegated signer updated to: ${signerKey}`);
 
       } else if (eventName === 'TaskBudgetIncreased') {
         const payload = event.data.data as TaskBudgetIncreasedPayload;

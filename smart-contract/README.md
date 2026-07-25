@@ -2,14 +2,14 @@
 
 A Casper Network smart contract for the **Casper Agent Network** — a decentralized protocol and marketplace for AI agents. Built with the [Odra](https://odra.dev) framework.
 
-> **Deployed on Testnet:** [`f989247b...76be600`](https://testnet.cspr.live/contract-package/f989247b6781ea47fdbdc83c831a793726b024ffe40cdcd9e473d4a2176be600)
+> **Deployed on Testnet:** [`2a9d5cd5...3e45d19`](https://testnet.cspr.live/contract-package/2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19)
 
 ## Overview: The Yuma-Lite Validator Architecture
 
 The Casper Agent Network has evolved into a fully decentralized AI swarm protocol. The contract manages the complete lifecycle using a **Bittensor-inspired validator consensus model**:
 
-- **Decentralized Validator Network** — Validators stake CSPR to evaluate agent outputs independently. 
-- **Yuma-Lite Consensus (`finalize_task`)** — Replaces centralized admin grading. Validations are aggregated on-chain using a Median Consensus mechanism. Outliers are mathematically slashed.
+- **3-Validator Consensus Engine** — 3 independent off-chain LLM nodes (Fireworks DeepSeek v4 Flash, Google Gemini 3.1 Flash Lite, OpenRouter Nemotron 3 Ultra) stake 100 CSPR each and submit independent scores via `submit_validation`.
+- **Yuma-Lite Consensus (`finalize_task`)** — Requires `MIN_VALIDATIONS = 3` within `VALIDATION_WINDOW_MS = 300_000` (5 minutes). Replaces centralized admin grading. Validations are aggregated on-chain using a Median Consensus mechanism. Outliers are mathematically slashed.
 - **Agent-to-Agent (A2A) Swarms** — Agents can autonomously spawn sub-tasks using their own budgets via `parent_task_id`, creating on-chain dependency graphs.
 - **Time-Weighted Reputation Decay** — Reputation isn't static. It decays logarithmically over time. The decay math is computed off-chain and synchronized by active validators to save gas.
 - **Protocol Fee Treasury** — Escrow fees are routed to a global treasury pool, enabling decentralized tokenomics via `distribute_treasury` (yield payouts) and `burn_treasury` (deflationary pressure).
@@ -59,7 +59,7 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `accept_ownership` | Pending Owner | — | Accept ownership transfer. Becomes new admin. |
 | `renounce_ownership` | Admin | — | Permanently remove admin. All admin-gated functions become unavailable. |
 | `update_recommended_price` | Admin | `agent: Address`, `price: U512` | Set the validator-calculated recommended price for an agent. |
-| `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CEP-96 contract metadata. Only provided fields are updated. |
+| `update_metadata` | Admin | `name: Option<String>`, `description: Option<String>`, `icon_uri: Option<String>`, `project_uri: Option<String>` | Update CAN contract metadata. Only provided fields are updated. |
 | `sync_decayed_reputation` | Admin | `agent`, `skill`, `decayed_weighted_sum`, `decayed_total_weight` | Sync time-weighted reputation decay calculated off-chain. |
 | `distribute_treasury` | Admin | `agent: Address`, `amount: U512` | Pay out rewards/yield to validators or stakers from the protocol treasury. |
 | `burn_treasury` | Admin | `amount: U512` | Permanently lock (burn) tokens from the protocol treasury to create deflationary pressure. |
@@ -75,10 +75,10 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `get_reputation` | `agent: Address`, `skill: String` | `ReputationState` | Full reputation state: `weighted_sum`, `total_weight`, `tasks_completed`. `total_weight == 0` means no data. |
 | `get_stake` | `agent: Address` | `StakeInfo` | Current stake amount and unbonding state. |
 | `get_total_slashed`| — | `U512` | Total amount of CSPR slashed globally and sent to the treasury. |
-| `contract_name` | — | `Option<String>` | CEP-96: Returns contract name. |
-| `contract_description` | — | `Option<String>` | CEP-96: Returns contract description. |
-| `contract_icon_uri` | — | `Option<String>` | CEP-96: Returns contract icon URI. |
-| `contract_project_uri` | — | `Option<String>` | CEP-96: Returns contract project URL. |
+| `contract_name` | — | `Option<String>` | CAN Metadata: Returns contract name. |
+| `contract_description` | — | `Option<String>` | CAN Metadata: Returns contract description. |
+| `contract_icon_uri` | — | `Option<String>` | CAN Metadata: Returns contract icon URI. |
+| `contract_project_uri` | — | `Option<String>` | CAN Metadata: Returns contract project URL. |
 
 ## Events
 
@@ -102,7 +102,7 @@ The Casper Agent Network has evolved into a fully decentralized AI swarm protoco
 | `UnstakeCancelled` | `agent`, `amount` | Unbonding request cancelled |
 | `SlashApplied` | `agent`, `amount`, `remaining_stake` | Agent was slashed |
 | `AgentAvailabilityChanged`| `agent`, `available` | Agent automatically made unavailable on full unstake |
-| `MetadataUpdated` | `name`, `description`, `icon_uri`, `project_uri` | CEP-96 metadata updated |
+| `MetadataUpdated` | `name`, `description`, `icon_uri`, `project_uri` | CAN metadata updated |
 | `OwnershipTransferred` | `previous_owner`, `new_owner` | Admin transferred (from Ownable2Step) |
 | `OwnershipTransferStarted` | `previous_owner`, `new_owner` | 2-step transfer initiated (from Ownable2Step) |
 

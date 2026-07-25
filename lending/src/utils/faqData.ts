@@ -19,6 +19,6 @@ export const FAQ_ITEMS: FaqItemData[] = [
   {
     id: "f4",
     question: "HOW DOES CAN BENEFIT THE CASPER ECOSYSTEM?",
-    answer: "CAN attracts developers by offering an open, ready-to-use labor economy to monetize AI agents via CEP-96 metadata and x402 payments, bringing fresh transactions, liquidity, and utility to the Casper blockchain."
+    answer: "CAN attracts developers by offering an open, ready-to-use labor economy to monetize AI agents via CAN metadata and x402 payments, bringing fresh transactions, liquidity, and utility to the Casper blockchain."
   }
 ];

@@ -18,6 +18,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 402) {
+      return [] as unknown as T;
+    }
     const text = await res.text().catch(() => "Unknown error");
     throw new ApiError(res.status, text);
   }

@@ -2,7 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/shared/api/api-client";
-import type { AgentEntity, AgentApiResponse, AgentSkill, AgentStatus } from "@/entities/agent/types/types";
+import type {
+  AgentEntity,
+  AgentApiResponse,
+  AgentSkill,
+  AgentStatus,
+  BenchmarkRun,
+} from "@/entities/agent/types/types";
 import { mapAgentResponse } from "@/entities/agent/types/types";
 
 export const agentKeys = {
@@ -22,29 +28,25 @@ export function useAgentsQuery(filters?: {
   return useQuery<AgentEntity[]>({
     queryKey: agentKeys.list(filters ?? {}),
     queryFn: async () => {
-      try {
-        const raw = await apiGet<AgentApiResponse[]>("/api/agents");
-        let agents = raw.map(mapAgentResponse);
+      const raw = await apiGet<AgentApiResponse[]>("/api/agents");
+      let agents = raw.map(mapAgentResponse);
 
-        if (filters?.skill) {
-          agents = agents.filter((a) => a.skills.includes(filters.skill!));
-        }
-        if (filters?.status) {
-          agents = agents.filter((a) => a.status === filters.status);
-        }
-        if (filters?.search) {
-          const q = filters.search.toLowerCase();
-          agents = agents.filter(
-            (a) =>
-              a.name.toLowerCase().includes(q) ||
-              a.description.toLowerCase().includes(q) ||
-              a.publicKey.toLowerCase().includes(q),
-          );
-        }
-        return agents;
-      } catch {
-        return [];
+      if (filters?.skill) {
+        agents = agents.filter((a) => a.skills.includes(filters.skill!));
       }
+      if (filters?.status) {
+        agents = agents.filter((a) => a.status === filters.status);
+      }
+      if (filters?.search) {
+        const q = filters.search.toLowerCase();
+        agents = agents.filter(
+          (a) =>
+            a.name.toLowerCase().includes(q) ||
+            a.description.toLowerCase().includes(q) ||
+            a.publicKey.toLowerCase().includes(q),
+        );
+      }
+      return agents;
     },
     retry: 1,
     staleTime: 30_000,
@@ -55,12 +57,8 @@ export function useAgentByKeyQuery(publicKey: string) {
   return useQuery<AgentEntity | undefined>({
     queryKey: agentKeys.detail(publicKey),
     queryFn: async () => {
-      try {
-        const raw = await apiGet<AgentApiResponse>(`/api/agents/${publicKey}`);
-        return mapAgentResponse(raw);
-      } catch {
-        return undefined;
-      }
+      const raw = await apiGet<AgentApiResponse>(`/api/agents/${publicKey}`);
+      return mapAgentResponse(raw);
     },
     enabled: !!publicKey,
     retry: 1,
@@ -68,18 +66,13 @@ export function useAgentByKeyQuery(publicKey: string) {
 }
 
 export function useAgentBenchmarksQuery(publicKey: string) {
-  return useQuery<any[]>({
+  return useQuery<BenchmarkRun[]>({
     queryKey: [...agentKeys.detail(publicKey), "benchmarks"],
     queryFn: async () => {
-      try {
-        const raw = await apiGet<any[]>(`/api/agents/${publicKey}/benchmarks`);
-        return raw;
-      } catch {
-        return [];
-      }
+      const raw = await apiGet<BenchmarkRun[]>(`/api/agents/${publicKey}/benchmarks`);
+      return raw;
     },
     enabled: !!publicKey,
     retry: 1,
   });
 }
-

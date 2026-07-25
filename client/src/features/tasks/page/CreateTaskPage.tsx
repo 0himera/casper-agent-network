@@ -11,6 +11,7 @@ import { buildCreateTaskTx } from "@/shared/utils/contract-transactions";
 import { signAndSendTransaction } from "@/features/wallet/utils/signing";
 import { apiPost } from "@/shared/api/api-client";
 import { useAppStore } from "@/shared/providers/AppStoreProvider";
+import { toast } from "@/shared/ui/Toast";
 import styles from "@/features/tasks/ui/CreateTask.module.css";
 
 export default function CreateTaskPage() {
@@ -32,7 +33,7 @@ export default function CreateTaskPage() {
     e.preventDefault();
 
     if (!walletAddress) {
-      alert("Please connect your Casper Wallet first.");
+      toast.error("Please connect your Casper Wallet first.");
       return;
     }
 
@@ -48,7 +49,7 @@ export default function CreateTaskPage() {
         budgetMotes,
         `https://agentnetwork.io/task/${taskId}`,
         deadlineMs,
-        parentTaskId.trim() || undefined
+        parentTaskId.trim() || undefined,
       );
       setStatus("Signing transaction...");
       const txHash = await signAndSendTransaction(transaction, walletAddress);
@@ -62,16 +63,16 @@ export default function CreateTaskPage() {
         domain: domain,
         prompt: prompt,
         deadline: deadlineMs,
-        parent_task_id: parentTaskId.trim() || null
+        parent_task_id: parentTaskId.trim() || null,
       });
 
       setStatus("Task successfully created!");
-      alert(`Task created on-chain and off-chain!\nTransaction Hash: ${txHash}`);
+      toast.success(`Task created on-chain and off-chain!\nTransaction Hash: ${txHash}`);
       router.push("/tasks");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setStatus("");
-      alert(`Failed to create task: ${err.message || err}`);
+      toast.error(`Failed to create task: ${String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -94,34 +95,72 @@ export default function CreateTaskPage() {
         <BudgetField value={budget} onChange={setBudget} recommended={SKILL_BASE_PRICES[domain]} />
         <div className={styles.field}>
           <label className={styles.label}>Parent Task ID (Optional - For A2A Swarms)</label>
-          <input className={styles.input} value={parentTaskId} onChange={(e) => setParentTaskId(e.target.value)} placeholder="e.g. task_abcdef" disabled={loading} />
+          <input
+            className={styles.input}
+            value={parentTaskId}
+            onChange={(e) => setParentTaskId(e.target.value)}
+            placeholder="e.g. task_abcdef"
+            disabled={loading}
+          />
         </div>
         <div className={styles.field}>
           <label className={styles.label}>Prompt</label>
-          <textarea className={styles.textarea} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the task..." disabled={loading} />
+          <textarea
+            className={styles.textarea}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe the task..."
+            disabled={loading}
+          />
         </div>
         <div className={styles.field}>
           <label className={styles.label}>Deadline</label>
-          <input type="datetime-local" className={styles.input} value={deadline} onChange={(e) => setDeadline(e.target.value)} disabled={loading} />
+          <input
+            type="datetime-local"
+            className={styles.input}
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            disabled={loading}
+          />
           <span className={styles.hint}>Default: +24 hours from now</span>
         </div>
 
         {status && (
-          <div className={styles.statusMessage} style={{ padding: "12px", background: "rgba(255,255,255,0.05)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "16px" }}>
+          <div
+            className={styles.statusMessage}
+            aria-live="polite"
+            aria-atomic="true"
+            style={{
+              padding: "12px",
+              background: "rgba(255,255,255,0.05)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              fontSize: "0.9rem",
+              color: "var(--text-muted)",
+              marginBottom: "16px",
+            }}
+          >
             {status}
           </div>
         )}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.cancelButton} onClick={() => router.back()} disabled={loading}>Cancel</button>
+          <button
+            type="button"
+            className={styles.cancelButton}
+            onClick={() => router.back()}
+            disabled={loading}
+          >
+            Cancel
+          </button>
           <motion.button
-            whileHover={{ scale: (isValid && !loading) ? 1.01 : 1 }}
-            whileTap={{ scale: (isValid && !loading) ? 0.99 : 1 }}
+            whileHover={{ scale: isValid && !loading ? 1.01 : 1 }}
+            whileTap={{ scale: isValid && !loading ? 0.99 : 1 }}
             type="submit"
             className={styles.submitButton}
             disabled={!isValid || loading}
           >
-            {loading ? "Processing..." : `Create Task & Lock ${budget} CSPR`}
+            {loading ? "Processing..." : "Create Task & Lock Escrow"}
           </motion.button>
         </div>
       </form>

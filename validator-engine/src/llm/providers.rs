@@ -363,7 +363,7 @@ async fn call_ollama(
     json_mode: bool,
 ) -> Result<String, ValidatorError> {
     let client = reqwest::Client::new();
-    let model_name = ollama_model.unwrap_or("qwen3.5:4b-gpu");
+    let model_name = ollama_model.unwrap_or("gemma4:e4b");
     let payload = build_ollama_payload(model_name, system_prompt, user_prompt, json_mode);
 
     let res = client

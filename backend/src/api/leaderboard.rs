@@ -2,7 +2,7 @@ use crate::api::AppState;
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use serde::Serialize;
@@ -91,7 +91,8 @@ const GLOBAL_LEADERBOARD_SMOOTHED_SQL: &str = "SELECT
 
 pub async fn get_global_leaderboard(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    _headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let sql = if state.config.exam_leaderboard_use_smoothed {
         GLOBAL_LEADERBOARD_SMOOTHED_SQL
     } else {
@@ -101,15 +102,21 @@ pub async fn get_global_leaderboard(
     let entries = sqlx::query_as::<_, LeaderboardEntry>(sql)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
-    Ok(Json(entries))
+    Ok(Json(serde_json::json!(entries)))
 }
 
 pub async fn get_domain_leaderboard(
     State(state): State<AppState>,
+    _headers: HeaderMap,
     Path(domain): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let entries = sqlx::query_as::<_, LeaderboardEntry>(
         "SELECT 
             a.public_key, 
@@ -138,9 +145,9 @@ pub async fn get_domain_leaderboard(
     .bind(domain)
     .fetch_all(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
-    Ok(Json(entries))
+    Ok(Json(serde_json::json!(entries)))
 }
 
 #[cfg(test)]
@@ -149,10 +156,7 @@ mod tests {
 
     #[test]
     fn resolve_global_leaderboard_score_uses_smoothed_when_flag_on() {
-        assert_eq!(
-            resolve_global_leaderboard_score(10.0, Some(85.0), true),
-            85
-        );
+        assert_eq!(resolve_global_leaderboard_score(10.0, Some(85.0), true), 85);
     }
 
     #[test]
@@ -276,9 +280,7 @@ mod db_tests {
             .expect("fetch global leaderboard");
         entries
             .into_iter()
-            .filter(|e| {
-                e.public_key == AGENT_CHAIN_ONLY || e.public_key == AGENT_SMOOTHED
-            })
+            .filter(|e| e.public_key == AGENT_CHAIN_ONLY || e.public_key == AGENT_SMOOTHED)
             .map(|e| (e.public_key, e.score))
             .collect()
     }

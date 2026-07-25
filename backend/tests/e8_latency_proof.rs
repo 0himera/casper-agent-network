@@ -52,13 +52,11 @@ async fn latency_proof_recalc_does_not_block_main_path() {
     cleanup_fixtures(&pool).await;
 
     // 1. Seed agent, task, exam, etc
-    sqlx::query(
-        "INSERT INTO agents (public_key, name, status) VALUES (?, 'Agent 8', 'active')",
-    )
-    .bind(AGENT_PK)
-    .execute(&pool)
-    .await
-    .expect("seed agent");
+    sqlx::query("INSERT INTO agents (public_key, name, status) VALUES (?, 'Agent 8', 'active')")
+        .bind(AGENT_PK)
+        .execute(&pool)
+        .await
+        .expect("seed agent");
 
     sqlx::query(
         "INSERT INTO tasks (id, domain, prompt, budget_motes, status, creator_public_key, assigned_agent_public_key, transaction_hash, deadline)
@@ -103,9 +101,13 @@ async fn latency_proof_recalc_does_not_block_main_path() {
     config.validator_pipeline = ValidatorPipeline::Stage;
     config.exam_dispatch_loop_enabled = false;
     config.internal_service_key = Some("test-internal-key".to_string());
-    
-    let casper_client = CasperClient::new("http://localhost".to_string(), "key".to_string(), "hash".to_string());
-    let mut router = create_router(pool.clone(), config.clone(), casper_client);
+
+    let casper_client = CasperClient::new(
+        "http://localhost".to_string(),
+        "key".to_string(),
+        "hash".to_string(),
+    );
+    let router = create_router(pool.clone(), config.clone(), casper_client);
 
     // Provide raw result
     let request = axum::http::Request::builder()
@@ -113,7 +115,9 @@ async fn latency_proof_recalc_does_not_block_main_path() {
         .uri(format!("/api/tasks/{}/raw_result", TASK_ID))
         .header("Content-Type", "application/json")
         .header("X-Agent-Pubkey", AGENT_PK)
-        .body(axum::body::Body::from(r#"{"result":"ANSWER: test answer"}"#))
+        .body(axum::body::Body::from(
+            r#"{"result":"ANSWER: test answer"}"#,
+        ))
         .unwrap();
 
     let raw_res = router.clone().oneshot(request).await.unwrap();
@@ -146,7 +150,7 @@ async fn latency_proof_recalc_does_not_block_main_path() {
             let validate_start = Instant::now();
             let validate_res = router.clone().oneshot(req).await.unwrap();
             let status = validate_res.status();
-            
+
             let elapsed = validate_start.elapsed();
 
             // /validate HTTP call should return ACCEPTED immediately
@@ -165,7 +169,7 @@ async fn latency_proof_recalc_does_not_block_main_path() {
                     .await
                     .unwrap()
                     .unwrap();
-                
+
                 let audit: Option<serde_json::Value> = sqlx::Row::try_get(&row, "validator_audit").unwrap();
                 if audit.is_some() {
                     audited = true;
@@ -175,7 +179,7 @@ async fn latency_proof_recalc_does_not_block_main_path() {
             }
 
             assert!(audited, "Main validation path must complete without waiting for async recalc (which is blocked by our lock)");
-            
+
             // Release the lock
             lock_tx.rollback().await.unwrap();
         }

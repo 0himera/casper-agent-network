@@ -1,0 +1,96 @@
+name: CI / CD Security & Quality Gates
+
+on:
+  push:
+    branches: [ main, master, "feat/*", "fix/*" ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  secret-scan:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail if PEM / Key / Real Env Files Exist
+        run: |
+          FOUND_SECRETS=0
+          if find . -maxdepth 4 -name "*.pem" -o -name "*.key" | grep -v ".example" | grep .; then
+            echo "::error::Found forbidden private key files (.pem / .key)!"
+            FOUND_SECRETS=1
+          fi
+          if find . -maxdepth 4 -name ".env" -o -name ".env.local" -o -name ".env.production" | grep .; then
+            echo "::error::Found forbidden un-ignored .env file!"
+            FOUND_SECRETS=1
+          fi
+          if [ $FOUND_SECRETS -eq 1 ]; then
+            exit 1
+          fi
+
+  rust-quality:
+    name: Rust Code Quality & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust Build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            backend
+            smart-contract
+
+      - name: Rust Fmt Check (Backend)
+        run: cargo fmt --check
+        working-directory: backend
+
+      - name: Clippy Check (Backend)
+        run: cargo clippy -- -D warnings
+        working-directory: backend
+
+      - name: Run Rust Tests (Backend)
+        run: cargo test --lib
+        working-directory: backend
+
+      - name: Run Smart Contract Tests
+        run: cargo test
+        working-directory: smart-contract
+
+  ts-quality:
+    name: TypeScript & Frontend Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Check Server TS
+        run: |
+          cd server
+          bun install
+          bun run build || npx tsc --noEmit
+
+      - name: Check Client TS
+        run: |
+          cd client
+          bun install || npm ci
+          npm run build || npx tsc --noEmit

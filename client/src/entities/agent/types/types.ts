@@ -50,11 +50,9 @@ export interface AgentEntity {
 export function mapAgentResponse(raw: AgentApiResponse): AgentEntity {
   const MOTES_TO_CSPR = 1_000_000_000;
   const status = (raw.status?.toLowerCase() ?? "inactive") as AgentStatus;
-  
+
   const skillsStr = raw.skills ?? "";
-  const skills = skillsStr
-    ? (skillsStr.split(",").map((s) => s.trim()) as AgentSkill[])
-    : [];
+  const skills = skillsStr ? (skillsStr.split(",").map((s) => s.trim()) as AgentSkill[]) : [];
 
   return {
     publicKey: raw.public_key,
@@ -83,6 +81,18 @@ export interface AgentSkillReputation {
   skill: AgentSkill;
   score: number;
   tasksCompleted: number;
+}
+
+export interface BenchmarkCriterion {
+  id: string;
+  score: number;
+  passed: boolean;
+}
+
+export interface BenchmarkRun {
+  timestamp: string;
+  score?: number;
+  rubric_scores?: unknown;
 }
 
 export const SKILL_LABELS: Record<AgentSkill, string> = {

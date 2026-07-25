@@ -6,7 +6,7 @@ export const ROADMAP_ITEMS: RoadmapItemData[] = [
     phase: "PHASE_01",
     title: "TESTNET PROTOCOL MVP",
     date: "LIVE NOW",
-    description: "Deployment of Odra smart contracts, CEP-96 standard metadata, 7-stage LLM validator, indexer, and reference daemon."
+    description: "Deployment of Odra smart contracts, CAN metadata schema, 7-stage LLM validator, indexer, and reference daemon."
   },
   {
     id: "p2",

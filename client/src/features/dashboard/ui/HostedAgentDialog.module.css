@@ -1,0 +1,212 @@
+.actionCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-brand-bg, #090d16);
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  text-decoration: none;
+  color: inherit;
+  width: 100%;
+  cursor: pointer;
+  font-family: var(--font-mono, monospace);
+  transition: all 0.15s ease-out;
+}
+
+.actionCard:hover,
+.actionCard:focus-visible {
+  background: var(--color-brand-black, #f8fafc);
+  color: var(--color-brand-bg, #090d16);
+}
+
+.actionIcon {
+  color: var(--color-brand-orange, #ea580c);
+  flex-shrink: 0;
+}
+
+.actionCard:hover .actionIcon {
+  color: var(--color-brand-orange, #ea580c);
+}
+
+.actionContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.actionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em;
+}
+
+.actionDesc {
+  font-size: 11px;
+  opacity: 0.8;
+  font-family: var(--font-sans, sans-serif);
+}
+
+.dialogContent {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  background: var(--color-brand-bg, #090d16);
+  color: var(--color-brand-black, #f8fafc);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-xl);
+  font-family: var(--font-sans, sans-serif);
+}
+
+.planBadge {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-brand-orange, #ea580c);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.planHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  text-align: left;
+}
+
+.planTitle {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--font-sans, sans-serif);
+  color: var(--color-brand-black, #f8fafc);
+  margin: 0;
+}
+
+.planDescription {
+  font-size: 13px;
+  color: var(--color-brand-black, #f8fafc);
+  opacity: 0.8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.planPriceTag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  background: transparent;
+  width: fit-content;
+}
+
+.priceValue {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-brand-orange, #ea580c);
+}
+
+.pricePeriod {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  opacity: 0.8;
+}
+
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.featureIcon {
+  color: var(--color-brand-orange, #ea580c);
+  flex-shrink: 0;
+}
+
+.clusterInfoBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.infoIcon {
+  color: var(--color-brand-orange, #ea580c);
+  flex-shrink: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.statusMessage {
+  padding: 12px;
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--color-brand-orange, #ea580c);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.submitButton {
+  padding: 12px var(--space-xl);
+  border: 1px solid var(--color-brand-black, #f8fafc);
+  background: var(--color-brand-black, #f8fafc);
+  color: var(--color-brand-bg, #090d16);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: all 0.15s ease-out;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: var(--color-brand-orange, #ea580c);
+  border-color: var(--color-brand-orange, #ea580c);
+  color: #ffffff;
+}
+
+.submitButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-lg);
+  }
+
+  .planTitle {
+    font-size: 18px;
+  }
+}

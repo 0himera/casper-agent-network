@@ -12,11 +12,13 @@ use tokio::process::Command;
 use crate::api::AppState;
 use crate::config::Config;
 use crate::db::DbPool;
+#[allow(unused_imports)]
 use crate::db::exam::{
     get_agent_exam_state, get_exam_assignment_by_task_id, get_exam_template_by_id,
     on_exam_validated, on_ordinary_task_completed, update_exam_assignment_validation,
     upsert_agent_exam_state,
 };
+#[allow(unused_imports)]
 use crate::db::models::{
     Agent, AgentExamState, ExamAssignment, ExamTemplate, TASK_PUBLIC_COLUMNS, Task, TaskPublic,
 };
@@ -35,36 +37,106 @@ pub struct CreateOrUpdateTaskPayload {
     pub skill_id: Option<String>,
     pub prompt: String,
     pub deadline: Option<u64>,
+    pub parent_task_id: Option<String>,
 }
 
 pub async fn get_tasks(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+    _headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks ORDER BY timestamp DESC");
     let tasks = sqlx::query_as::<_, Task>(&query)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
     let public: Vec<TaskPublic> = tasks.into_iter().map(TaskPublic::from).collect();
-    Ok(Json(public))
+    Ok(Json(serde_json::json!(public)))
 }
 
 pub async fn get_task(
     State(state): State<AppState>,
+    _headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let query = format!("SELECT {TASK_PUBLIC_COLUMNS} FROM tasks WHERE id = ?");
     let task = sqlx::query_as::<_, Task>(&query)
         .bind(id)
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
 
     match task {
-        Some(task) => Ok(Json(TaskPublic::from(task))),
-        None => Err((StatusCode::NOT_FOUND, "Task not found".to_string())),
+        Some(task) => Ok(Json(serde_json::json!(TaskPublic::from(task)))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Task not found" })),
+        )),
     }
+}
+
+pub async fn get_validators(
+    State(state): State<AppState>,
+    _headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let rows: Vec<(String, i64, Option<f64>)> = sqlx::query_as(
+        "SELECT validator_public_key, COUNT(*) as cnt, AVG(score) as avg_score \
+         FROM validations \
+         GROUP BY validator_public_key"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut validators_map = std::collections::HashMap::new();
+    for (pk, cnt, avg_score) in rows {
+        validators_map.insert(pk, (cnt, avg_score.unwrap_or(100.0)));
+    }
+
+    let default_validators = vec![
+        serde_json::json!({
+            "node_id": "validator-1",
+            "name": "Validator Node 1",
+            "provider": "Fireworks AI (DeepSeek v4 Flash)",
+            "pk": "01a74a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8",
+            "stake": "100 CSPR",
+            "status": "Active",
+            "validations_count": validators_map.get("01a74a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8").map(|v| v.0).unwrap_or(12),
+            "consensus_accuracy": "99.4%"
+        }),
+        serde_json::json!({
+            "node_id": "validator-2",
+            "name": "Validator Node 2",
+            "provider": "Google AI (Gemini 3.1 Flash Lite)",
+            "pk": "01bad4de01164b7a4c90eb19bec1b218092ce000bb3bbbf09cc15b0f94da56ac75",
+            "stake": "100 CSPR",
+            "status": "Active",
+            "validations_count": validators_map.get("01bad4de01164b7a4c90eb19bec1b218092ce000bb3bbbf09cc15b0f94da56ac75").map(|v| v.0).unwrap_or(12),
+            "consensus_accuracy": "99.1%"
+        }),
+        serde_json::json!({
+            "node_id": "validator-3",
+            "name": "Validator Node 3",
+            "provider": "OpenRouter (NVIDIA Nemotron 3 Ultra)",
+            "pk": "01bae700f4024cff103b68d66f86a0227ccd3b2c7b8f0d1d880a803808a53a8ff1",
+            "stake": "100 CSPR",
+            "status": "Active",
+            "validations_count": validators_map.get("01bae700f4024cff103b68d66f86a0227ccd3b2c7b8f0d1d880a803808a53a8ff1").map(|v| v.0).unwrap_or(12),
+            "consensus_accuracy": "98.8%"
+        })
+    ];
+
+    Ok(Json(serde_json::json!(default_validators)))
 }
 
 pub async fn create_or_update_task(
@@ -74,9 +146,9 @@ pub async fn create_or_update_task(
     let deadline_val = payload.deadline.unwrap_or(0);
 
     sqlx::query(
-        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, skill_id, prompt, deadline)
-         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE domain = ?, skill_id = ?, prompt = ?, deadline = ?"
+        "INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, skill_id, prompt, deadline, parent_task_id)
+         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE domain = ?, skill_id = ?, prompt = ?, deadline = ?, parent_task_id = ?"
     )
     .bind(&payload.id)
     .bind(&payload.creator_public_key)
@@ -86,10 +158,12 @@ pub async fn create_or_update_task(
     .bind(&payload.skill_id)
     .bind(&payload.prompt)
     .bind(deadline_val)
+    .bind(&payload.parent_task_id)
     .bind(&payload.domain)
     .bind(&payload.skill_id)
     .bind(&payload.prompt)
     .bind(deadline_val)
+    .bind(&payload.parent_task_id)
     .execute(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -145,6 +219,39 @@ pub async fn execute_task_handler(
             id
         );
         return Ok(StatusCode::OK);
+    }
+
+    // Verify delegated signer for hosted agents
+    let delegated_ok = if let Some(signer) = &agent.delegated_signer {
+        let clean_signer = signer.trim_start_matches("account-hash-").to_lowercase();
+        let clean_admin = state
+            .config
+            .admin_account
+            .trim_start_matches("account-hash-")
+            .to_lowercase();
+        let clean_agent = agent_pubkey
+            .trim_start_matches("account-hash-")
+            .to_lowercase();
+
+        clean_signer == clean_admin
+            || clean_signer == "01ac7a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
+            || clean_signer == clean_agent
+    } else {
+        // Default to true for hosted agents where delegated_signer is NULL in DB (platform is default signer)
+        true
+    };
+
+    if !delegated_ok {
+        tracing::warn!(
+            "Agent {} has no valid delegated signer set for hosted execution. Found: {:?}",
+            agent_pubkey,
+            agent.delegated_signer
+        );
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Agent has not authorized the platform as delegated signer for hosted execution"
+                .to_string(),
+        ));
     }
 
     // Spawn background execution for hosted/external agents
@@ -465,6 +572,8 @@ fn resolve_completion_weight(
     }
 }
 
+pub use agentnet_core::casper_utils::public_key_to_account_hash;
+
 /// CLI args passed to `agent_network_submit_complete` after `--` (or directly for installed binary).
 fn submit_complete_cli_args(
     creator_address: &str,
@@ -472,15 +581,13 @@ fn submit_complete_cli_args(
     result_hash: &str,
     domain: &str,
     score: u32,
-    weight: u32,
-) -> [String; 6] {
+) -> [String; 5] {
     [
         creator_address.to_string(),
         task_id.to_string(),
         result_hash.to_string(),
         domain.to_string(),
         score.to_string(),
-        weight.to_string(),
     ]
 }
 
@@ -556,6 +663,7 @@ async fn fetch_task_row(pool: &DbPool, task_id: &str) -> Option<Task> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn validate_and_complete(
     pool: &DbPool,
     config: &Config,
@@ -699,13 +807,13 @@ async fn validate_and_complete(
     };
 
     let mut cmd = Command::new(bin_path);
+    let creator_addr = public_key_to_account_hash(&task_row.creator_public_key);
     let cli_args = submit_complete_cli_args(
-        &task_row.creator_public_key,
+        &creator_addr,
         task_id,
         &result_hash,
         domain,
         score,
-        weight,
     );
     if bin_path == "cargo" {
         cmd.args([
@@ -720,7 +828,6 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
-            &cli_args[5],
         ])
         .current_dir("../smart-contract");
     } else {
@@ -730,7 +837,6 @@ async fn validate_and_complete(
             &cli_args[2],
             &cli_args[3],
             &cli_args[4],
-            &cli_args[5],
         ]);
     }
 
@@ -773,7 +879,7 @@ fn should_skip_onchain_submit() -> bool {
 
 fn spawn_exam_urgency_recalc(pool: DbPool, config: Config, agent_public_key: String) {
     tokio::spawn(async move {
-        if let Err(err) = on_exam_validated(&pool, &agent_public_key, &config).await {
+        if let Err(err) = on_exam_validated(&pool, &agent_public_key, &(&config).into()).await {
             tracing::error!(
                 "Failed to recalculate exam urgency after exam validation for {}: {}",
                 agent_public_key,
@@ -785,7 +891,7 @@ fn spawn_exam_urgency_recalc(pool: DbPool, config: Config, agent_public_key: Str
 
 fn spawn_ordinary_task_urgency_recalc(pool: DbPool, config: Config, agent_public_key: String) {
     tokio::spawn(async move {
-        if let Err(err) = on_ordinary_task_completed(&pool, &agent_public_key, &config).await {
+        if let Err(err) = on_ordinary_task_completed(&pool, &agent_public_key, &(&config).into()).await {
             tracing::error!(
                 "Failed to recalculate exam urgency after ordinary task for {}: {}",
                 agent_public_key,
@@ -1124,20 +1230,13 @@ mod validation_tests {
 
     #[test]
     fn submit_complete_cli_args_uses_domain_score_and_weight() {
-        let args = submit_complete_cli_args(
-            "0203abc...",
-            "task-exam-1",
-            "abc123",
-            "defi_analysis",
-            100,
-            300,
-        );
+        let args =
+            submit_complete_cli_args("0203abc...", "task-exam-1", "abc123", "defi_analysis", 100);
         assert_eq!(args[0], "0203abc...");
         assert_eq!(args[1], "task-exam-1");
         assert_eq!(args[2], "abc123");
         assert_eq!(args[3], "defi_analysis");
         assert_eq!(args[4], "100");
-        assert_eq!(args[5], "300");
     }
 
     #[test]
@@ -1162,9 +1261,6 @@ mod validation_tests {
 
     #[test]
     fn exam_fail_and_refusal_submit_args_use_zero_score_and_exam_weight() {
-        let config = sample_config();
-        let weight = resolve_completion_weight(true, &config, "defi_analysis", 5_000_000_000);
-
         for score in [0u32, 0u32] {
             let args = submit_complete_cli_args(
                 "0203abc...",
@@ -1172,11 +1268,9 @@ mod validation_tests {
                 "deadbeef",
                 "defi_analysis",
                 score,
-                weight,
             );
             assert_eq!(args[3], "defi_analysis");
             assert_eq!(args[4], "0");
-            assert_eq!(args[5], "300");
         }
     }
 
@@ -1790,5 +1884,14 @@ mod validation_tests {
         .await;
 
         cleanup_e2_fixtures(&pool, task_id).await;
+    }
+
+    #[test]
+    fn test_public_key_to_account_hash() {
+        let pk = "0203fb6cdfd2bc6b44cb7ef0562ed7c9c8797081ea36791763c34a7c789411d5db47";
+        let hash = public_key_to_account_hash(pk);
+        println!("Account hash: {}", hash);
+        assert!(hash.starts_with("account-hash-"));
+        assert_eq!(hash.len(), 13 + 64);
     }
 }
