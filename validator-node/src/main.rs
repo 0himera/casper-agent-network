@@ -107,7 +107,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let poll_interval_secs = node_config.poll_interval_secs;
     let node_config_clone = node_config.clone();
 
-    let loop_handle = tokio::spawn(async move {
+    let mut loop_handle = tokio::spawn(async move {
         let mut ticker = interval(Duration::from_secs(poll_interval_secs));
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -155,8 +155,18 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         shutdown_token.cancel();
     });
 
-    // Wait for main loop task to finish with a 60s timeout join
-    match tokio::time::timeout(Duration::from_secs(60), loop_handle).await {
+    // Wait for cancellation or loop completion
+    tokio::select! {
+        _ = cancel_token.cancelled() => {
+            tracing::info!("Shutdown signal received, waiting for main loop to exit...");
+        }
+        _ = &mut loop_handle => {
+            tracing::info!("Validator loop finished unexpectedly.");
+        }
+    }
+
+    // Wait for main loop task to finish with a 5s timeout join
+    match tokio::time::timeout(Duration::from_secs(5), loop_handle).await {
         Ok(res) => {
             if let Err(e) = res {
                 tracing::error!(error = %e, "Validator loop task panicked");
@@ -165,7 +175,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Err(_) => {
-            tracing::warn!("Validator loop shutdown timed out after 60s");
+            tracing::warn!("Validator loop shutdown timed out after 5s");
         }
     }
 

@@ -5,6 +5,9 @@ members = [
     "validator-node",
     "backend",
 ]
+exclude = [
+    "smart-contract",
+]
 resolver = "3"
 
 [workspace.dependencies]
@@ -22,3 +25,8 @@ dotenvy = "0.15.7"
 blake2 = "0.10.6"
 metrics = "0.24.6"
 tokio-util = "0.7"
+
+[profile.dev]
+opt-level = 0
+debug = 0
+

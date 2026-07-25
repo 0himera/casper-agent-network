@@ -161,6 +161,7 @@ services:
     restart: unless-stopped
 
   validator-1:
+    image: agent-network-validator:dev
     build:
       context: .
       dockerfile: validator-node/Dockerfile
@@ -205,9 +206,7 @@ services:
     restart: unless-stopped
 
   validator-2:
-    build:
-      context: .
-      dockerfile: validator-node/Dockerfile
+    image: agent-network-validator:dev
     container_name: agent-network-validator-2
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
@@ -249,9 +248,7 @@ services:
     restart: unless-stopped
 
   validator-3:
-    build:
-      context: .
-      dockerfile: validator-node/Dockerfile
+    image: agent-network-validator:dev
     container_name: agent-network-validator-3
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}

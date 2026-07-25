@@ -127,7 +127,14 @@ pub async fn run_validator_iteration(
         }
         cmd.env("CONTRACT_HASH", &contract_hash);
 
-        let output = cmd.output();
+        let output = tokio::task::spawn_blocking(move || cmd.output()).await;
+        let output = match output {
+            Ok(res) => res,
+            Err(e) => {
+                tracing::error!(task_id = %task.id, error = %e, "Spawn blocking task failed");
+                continue;
+            }
+        };
         match output {
             Ok(out) if out.status.success() => {
                 tracing::info!(task_id = %task.id, score = score, "On-chain validation submitted successfully");
@@ -218,7 +225,14 @@ pub async fn run_validator_iteration(
                 .unwrap_or_default();
             fin_cmd.env("CONTRACT_HASH", &contract_hash);
 
-            let fin_output = fin_cmd.output();
+            let fin_output = tokio::task::spawn_blocking(move || fin_cmd.output()).await;
+            let fin_output = match fin_output {
+                Ok(res) => res,
+                Err(e) => {
+                    tracing::error!(task_id = %task.id, error = %e, "Spawn blocking finalization task failed");
+                    continue;
+                }
+            };
             match fin_output {
                 Ok(out) if out.status.success() => {
                     tracing::info!(task_id = %task.id, "On-chain task finalization succeeded");

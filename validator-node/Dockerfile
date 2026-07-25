@@ -8,17 +8,17 @@ RUN apt-get update && apt-get install -y \
     clang \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_BUILD_JOBS=4
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 ENV RUSTC_BOOTSTRAP=1
 
 WORKDIR /usr/src/app
 
-# Copy Cargo manifests for dependency caching
-COPY Cargo.toml ./Cargo.toml
+# Copy Cargo manifests and lockfile for dependency caching
+COPY Cargo.toml Cargo.lock ./
 COPY agentnet-core/Cargo.toml ./agentnet-core/Cargo.toml
 COPY validator-engine/Cargo.toml ./validator-engine/Cargo.toml
 COPY validator-node/Cargo.toml ./validator-node/Cargo.toml
+COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY smart-contract/Cargo.toml smart-contract/Cargo.lock* ./smart-contract/
 
 # Create stub source files for dependency pre-build
@@ -42,15 +42,16 @@ RUN mkdir -p agentnet-core/src validator-engine/src validator-node/src backend/s
 
 # Pre-build smart contract CLI dependencies
 WORKDIR /usr/src/app/smart-contract
-RUN cargo build --release --bin agent_network_submit_validation --bin agent_network_finalize_task --features livenet
+RUN cargo build --bin agent_network_submit_validation --bin agent_network_finalize_task --features livenet
 
 # Pre-build validator-node dependencies
 WORKDIR /usr/src/app
-RUN cargo build --release -p validator-node
+RUN cargo build -p validator-node
 
 # Copy real source code
 COPY agentnet-core/src ./agentnet-core/src
 COPY validator-engine/src ./validator-engine/src
+COPY validator-engine/prompts ./validator-engine/prompts
 COPY validator-node/src ./validator-node/src
 COPY smart-contract/src ./smart-contract/src
 COPY smart-contract/bin ./smart-contract/bin
@@ -60,11 +61,11 @@ RUN touch agentnet-core/src/lib.rs validator-engine/src/lib.rs validator-node/sr
 
 # Build release validator-node binary
 WORKDIR /usr/src/app
-RUN cargo build --release -p validator-node
+RUN cargo build -p validator-node
 
 # Build release smart contract CLI binaries
 WORKDIR /usr/src/app/smart-contract
-RUN cargo build --release --bin agent_network_submit_validation --bin agent_network_finalize_task --features livenet
+RUN cargo build --bin agent_network_submit_validation --bin agent_network_finalize_task --features livenet
 
 # Final runtime stage
 FROM debian:bookworm-slim
@@ -78,9 +79,9 @@ RUN groupadd -g 10001 appuser && \
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/target/release/validator-node /usr/local/bin/validator-node
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_finalize_task /usr/local/bin/agent_network_finalize_task
+COPY --from=builder /usr/src/app/target/debug/validator-node /usr/local/bin/validator-node
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_finalize_task /usr/local/bin/agent_network_finalize_task
 
 RUN chmod +x /usr/local/bin/*
 
