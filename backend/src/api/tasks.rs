@@ -799,44 +799,32 @@ async fn validate_and_complete(
         return;
     }
 
-    let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_submit_complete").exists()
-    {
-        "/usr/local/bin/agent_network_submit_complete"
+    let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_submit_result").exists() {
+        "/usr/local/bin/agent_network_submit_result"
     } else {
         "cargo"
     };
 
     let mut cmd = Command::new(bin_path);
     let creator_addr = public_key_to_account_hash(&task_row.creator_public_key);
-    let cli_args = submit_complete_cli_args(
-        &creator_addr,
-        task_id,
-        &result_hash,
-        domain,
-        score,
-    );
     if bin_path == "cargo" {
         cmd.args([
             "run",
             "--bin",
-            "agent_network_submit_complete",
+            "agent_network_submit_result",
             "--features",
             "livenet",
             "--",
-            &cli_args[0],
-            &cli_args[1],
-            &cli_args[2],
-            &cli_args[3],
-            &cli_args[4],
+            &creator_addr,
+            task_id,
+            &result_hash,
         ])
         .current_dir("../smart-contract");
     } else {
         cmd.args([
-            &cli_args[0],
-            &cli_args[1],
-            &cli_args[2],
-            &cli_args[3],
-            &cli_args[4],
+            &creator_addr,
+            task_id,
+            &result_hash,
         ]);
     }
 
@@ -849,8 +837,9 @@ async fn validate_and_complete(
     match cmd.status().await {
         Ok(status) => {
             if status.success() {
-                tracing::info!("✅ Successfully completed task {} on-chain!", task_id);
-                let _ = sqlx::query("UPDATE tasks SET status = 'Completed' WHERE id = ?")
+                tracing::info!("✅ Successfully submitted result hash for task {} on-chain!", task_id);
+                let _ = sqlx::query("UPDATE tasks SET result_hash = ? WHERE id = ?")
+                    .bind(&result_hash)
                     .bind(task_id)
                     .execute(pool)
                     .await;
