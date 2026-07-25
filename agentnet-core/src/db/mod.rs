@@ -212,6 +212,17 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    // Cross-instance /validate lease: TTL recovery if a backend replica crashes mid-flight.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS validate_leases (
+            task_id VARCHAR(128) PRIMARY KEY,
+            expires_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!("Database schema successfully checked/initialized.");
     Ok(pool)
 }

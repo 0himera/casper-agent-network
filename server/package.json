@@ -8,7 +8,13 @@
     "lint": "eslint src/**/*.ts",
     "format": "eslint 'src/**/*.ts' --fix && prettier src/**/*.ts --write",
     "mcp:dev": "ts-node src/mcp-server.ts",
-    "event-handler:dev": "ts-node src/event-handler.ts"
+    "event-handler:dev": "ts-node src/event-handler.ts",
+    "test:mcp": "ts-node src/run-mcp-tests.ts",
+    "test:mcp-db": "ts-node src/run-mcp-db-tests.ts",
+    "test:mcp-http": "ts-node src/run-mcp-http-tests.ts",
+    "test:mcp-write-parity": "ts-node src/run-mcp-write-parity-tests.ts",
+    "test:event-handler": "ts-node src/run-event-handler-tests.ts",
+    "test:wave4": "npm run test:mcp && npm run test:mcp-http && npm run test:mcp-db && npm run test:mcp-write-parity && npm run test:event-handler"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

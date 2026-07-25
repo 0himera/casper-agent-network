@@ -71,4 +71,21 @@ mod tests {
             .is_ok()
         );
     }
+
+    /// Wave 4 scenario 5: MIN_OUTPUT_LEN is byte length; boundary is 19 fail / 20 pass / 21 pass.
+    #[test]
+    fn fixture_free_boundary_len_19_20_21() {
+        let s19 = "a".repeat(19);
+        let s20 = "a".repeat(20);
+        let s21 = "a".repeat(21);
+        assert_eq!(s19.len(), 19);
+        assert_eq!(s20.len(), 20);
+        assert_eq!(s21.len(), 21);
+        assert_eq!(
+            check_input_fixture_free(&s19),
+            Err(GateFailure::MinLength)
+        );
+        assert!(check_input_fixture_free(&s20).is_ok());
+        assert!(check_input_fixture_free(&s21).is_ok());
+    }
 }

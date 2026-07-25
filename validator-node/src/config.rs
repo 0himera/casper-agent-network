@@ -37,6 +37,37 @@ impl Default for ValidatorNodeConfig {
 }
 
 impl ValidatorNodeConfig {
+    /// Validate production-critical fields when the node is enabled.
+    /// Soft on mock/dev: secret key is optional when `EXAM_SKIP_ONCHAIN=1`.
+    pub fn validate_startup(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.validator_public_key.as_ref().is_none_or(|v| v.is_empty()) {
+            return Err(
+                "VALIDATOR_PUBLIC_KEY (or VALIDATOR_NODE_ID) must be set when VALIDATOR_ENABLED=true"
+                    .to_string(),
+            );
+        }
+
+        let skip_onchain = std::env::var("EXAM_SKIP_ONCHAIN")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if !skip_onchain
+            && self
+                .validator_secret_key_path
+                .as_ref()
+                .is_none_or(|v| v.is_empty())
+        {
+            return Err(
+                "VALIDATOR_SECRET_KEY_PATH must be set when VALIDATOR_ENABLED=true and EXAM_SKIP_ONCHAIN is unset"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn from_env() -> Self {
         let _ = dotenvy::dotenv();
 
@@ -120,5 +151,57 @@ mod tests {
         assert_eq!(cfg.poll_interval_secs, 15);
         assert_eq!(cfg.min_validations, 3);
         assert_eq!(cfg.validation_window_secs, 300);
+    }
+
+    #[test]
+    fn custom_env_config_parsing() {
+        unsafe {
+            std::env::set_var("VALIDATOR_ENABLED", "true");
+            std::env::set_var("POLL_INTERVAL_SECS", "45");
+            std::env::set_var("VALIDATOR_MIN_VALIDATIONS", "5");
+            std::env::set_var("VALIDATOR_WINDOW_SECS", "600");
+            std::env::set_var("VALIDATOR_PUBLIC_KEY", "01020304");
+        }
+
+        let cfg = ValidatorNodeConfig::from_env();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.poll_interval_secs, 45);
+        assert_eq!(cfg.min_validations, 5);
+        assert_eq!(cfg.validation_window_secs, 600);
+        assert_eq!(cfg.validator_public_key, Some("01020304".to_string()));
+
+        // Clean up
+        unsafe {
+            std::env::remove_var("VALIDATOR_ENABLED");
+            std::env::remove_var("POLL_INTERVAL_SECS");
+            std::env::remove_var("VALIDATOR_MIN_VALIDATIONS");
+            std::env::remove_var("VALIDATOR_WINDOW_SECS");
+            std::env::remove_var("VALIDATOR_PUBLIC_KEY");
+        }
+    }
+
+    #[test]
+    fn validate_startup_requires_pubkey_when_enabled() {
+        let mut cfg = ValidatorNodeConfig::default();
+        cfg.enabled = true;
+        cfg.validator_public_key = None;
+        assert!(cfg.validate_startup().is_err());
+
+        cfg.validator_public_key = Some("01020304".to_string());
+        unsafe {
+            std::env::set_var("EXAM_SKIP_ONCHAIN", "1");
+        }
+        assert!(cfg.validate_startup().is_ok());
+        unsafe {
+            std::env::remove_var("EXAM_SKIP_ONCHAIN");
+        }
+    }
+
+    #[test]
+    fn validate_startup_noop_when_disabled() {
+        let mut cfg = ValidatorNodeConfig::default();
+        cfg.enabled = false;
+        cfg.validator_public_key = None;
+        assert!(cfg.validate_startup().is_ok());
     }
 }

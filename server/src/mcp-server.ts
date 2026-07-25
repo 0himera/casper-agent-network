@@ -22,7 +22,7 @@ import {
   Transaction
 } from 'casper-js-sdk';
 
-const server = new McpServer({
+export const server = new McpServer({
   name: "casper-agent-network",
   version: "1.0.0",
 });
@@ -31,7 +31,7 @@ const server = new McpServer({
 const TASK_PUBLIC_COLUMNS = `
   id, creator_public_key, assigned_agent_public_key, budget_motes, status,
   result_hash, result, metadata_uri, transaction_hash, domain, skill_id,
-  prompt, deadline, result_signature, validator_audit, timestamp
+  prompt, deadline, result_signature, validator_audit, timestamp, parent_task_id
 `.trim();
 
 type PublicTaskRow = {
@@ -51,6 +51,7 @@ type PublicTaskRow = {
   result_signature: string | null;
   validator_audit: unknown;
   timestamp: Date;
+  parent_task_id: string | null;
 };
 
 function toPublicTask(row: RowDataPacket): PublicTaskRow {
@@ -71,6 +72,7 @@ function toPublicTask(row: RowDataPacket): PublicTaskRow {
     result_signature: row.result_signature ?? null,
     validator_audit: row.validator_audit ?? null,
     timestamp: row.timestamp,
+    parent_task_id: row.parent_task_id ?? null,
   };
 }
 
@@ -220,14 +222,18 @@ server.tool(
     budgetMotes: z.string().describe("Amount of CSPR to escrow (in motes, e.g. 5000000000 for 5 CSPR)"),
     metadataUri: z.string().describe("Off-chain task description URI"),
     deadline: z.number().describe("Unix timestamp deadline for task execution"),
+    parentTaskId: z.string().optional().describe("Optional parent task id for A2A child tasks"),
   },
-  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline }) => {
+  async ({ senderHex, taskId, budgetMotes, metadataUri, deadline, parentTaskId }) => {
     try {
       const tx = buildContractTransaction(senderHex, 'create_task', {
         task_id: CLValue.newCLString(taskId),
         metadata_uri: CLValue.newCLString(metadataUri),
         deadline: CLValue.newCLUint64(deadline),
-        parent_task_id: CLValue.newCLOption(null, CLTypeString)
+        parent_task_id: CLValue.newCLOption(
+          parentTaskId ? CLValue.newCLString(parentTaskId) : null,
+          CLTypeString
+        )
       }, budgetMotes);
       return {
         content: [{ type: "text", text: JSON.stringify(tx, null, 2) }]
@@ -485,6 +491,31 @@ server.tool(
   }
 );
 
+// 14b. get_subtasks — read-only filter by parent_task_id (A2A child listing; no orchestration).
+server.tool(
+  "get_subtasks",
+  {
+    parentTaskId: z.string().describe("Parent task id whose children to list"),
+  },
+  async ({ parentTaskId }) => {
+    try {
+      const [tasks] = await pool.query<RowDataPacket[]>(
+        `SELECT ${TASK_PUBLIC_COLUMNS} FROM tasks WHERE parent_task_id = ? ORDER BY timestamp DESC`,
+        [parentTaskId]
+      );
+      const publicTasks = tasks.map(toPublicTask);
+      return {
+        content: [{ type: "text", text: JSON.stringify(publicTasks, null, 2) }]
+      };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Error fetching subtasks: ${err.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 // 15. update_agent_profile
 server.tool(
   "update_agent_profile",
@@ -732,15 +763,22 @@ server.tool(
   "distribute_treasury",
   {
     senderHex: z.string().describe("Casper public key of caller"),
+    agentHex: z.string().describe("Casper public key of recipient agent"),
+    amountMotes: z.string().describe("Amount to distribute in motes"),
     adminToken: z.string().describe("Admin authentication token"),
   },
-  async ({ senderHex, adminToken }) => {
+  async ({ senderHex, agentHex, amountMotes, adminToken }) => {
     const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
     if (requiredToken && adminToken !== requiredToken) {
       return { content: [{ type: "text", text: "Error: Unauthorized. Invalid adminToken." }], isError: true };
     }
     try {
-      const tx = buildContractTransaction(senderHex, 'distribute_treasury', {});
+      const agentKeyStr = PublicKey.fromHex(agentHex).accountHash().toPrefixedString();
+      const agentKey = Key.newKey(agentKeyStr);
+      const tx = buildContractTransaction(senderHex, 'distribute_treasury', {
+        agent: CLValue.newCLKey(agentKey),
+        amount: CLValue.newCLUInt512(amountMotes),
+      });
       return { content: [{ type: "text", text: JSON.stringify(tx, null, 2) }] };
     } catch (err: any) {
       return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
@@ -751,7 +789,47 @@ server.tool(
 const readLimiters = new Map<string, { count: number; resetAt: number }>();
 const writeLimiters = new Map<string, { count: number; resetAt: number }>();
 
-function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction): void {
+/** Hard cap on tracked IPs per map so scanners cannot grow Maps without bound (B9). */
+const MAX_TRACKED_IPS = 1024;
+
+/** Test hook: sizes of in-memory rate-limit maps (scenario B9). */
+export function getRateLimiterSizes(): { read: number; write: number } {
+  return { read: readLimiters.size, write: writeLimiters.size };
+}
+
+/** Test hook: clear limiter maps between cases. */
+export function resetRateLimiters(): void {
+  readLimiters.clear();
+  writeLimiters.clear();
+}
+
+function evictStaleLimiterEntries(
+  limiters: Map<string, { count: number; resetAt: number }>,
+  now: number,
+  keepIp?: string
+): void {
+  // 1) Drop expired windows (lazy cleanup).
+  for (const [key, entry] of limiters) {
+    if (now > entry.resetAt) {
+      limiters.delete(key);
+    }
+  }
+
+  // 2) If still over hard cap, drop soonest-to-expire entries first (never drop keepIp).
+  if (limiters.size <= MAX_TRACKED_IPS) {
+    return;
+  }
+  const ranked = Array.from(limiters.entries())
+    .filter(([key]) => key !== keepIp)
+    .sort((a, b) => a[1].resetAt - b[1].resetAt);
+  let overflow = limiters.size - MAX_TRACKED_IPS;
+  for (let i = 0; i < ranked.length && overflow > 0; i++) {
+    limiters.delete(ranked[i][0]);
+    overflow--;
+  }
+}
+
+export function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
   const now = Date.now();
   const windowMs = 60 * 1000;
@@ -774,9 +852,18 @@ function rateLimiter(req: express.Request, res: express.Response, next: express.
   const limiters = isWrite ? writeLimiters : readLimiters;
   const maxRequests = isWrite ? 10 : 60;
 
+  evictStaleLimiterEntries(limiters, now, ip);
+
   let record = limiters.get(ip);
   if (!record || now > record.resetAt) {
     record = { count: 0, resetAt: now + windowMs };
+    limiters.set(ip, record);
+  }
+
+  // Re-bound after insert so a flood of unique IPs cannot grow past the cap.
+  if (limiters.size > MAX_TRACKED_IPS) {
+    evictStaleLimiterEntries(limiters, now, ip);
+    record = limiters.get(ip) ?? { count: 0, resetAt: now + windowMs };
     limiters.set(ip, record);
   }
 
@@ -789,13 +876,15 @@ function rateLimiter(req: express.Request, res: express.Response, next: express.
   next();
 }
 
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+export function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
   if (req.path === "/health") {
     return next();
   }
 
   const requiredKey = process.env.INTERNAL_SERVICE_KEY;
   if (!requiredKey) {
+    // Fallback / public mode — callers should treat this as non-prod.
+    console.warn("[mcp-auth] INTERNAL_SERVICE_KEY unset; authMiddleware allowing request (fallback mode)");
     return next();
   }
 
@@ -810,43 +899,52 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   res.status(401).json({ error: "Unauthorized. Valid Bearer token required." });
 }
 
+/**
+ * Build Express SSE app without binding a port (testable seam for scenario B6/B10).
+ * Single global transport: only one SSE session at a time.
+ */
+export function createApp(): express.Express {
+  const app = express();
+  app.use(express.json());
+  app.use(rateLimiter);
+  app.use(authMiddleware);
+
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  let transport: SSEServerTransport | null = null;
+
+  app.get("/sse", async (req, res) => {
+    const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
+    if (requiredToken && req.query.token !== requiredToken) {
+      res.status(401).send("Unauthorized. Invalid or missing token parameter.");
+      return;
+    }
+    console.log("New SSE connection established");
+    transport = new SSEServerTransport("/message", res);
+    await server.connect(transport);
+  });
+
+  app.post("/message", async (req, res) => {
+    if (!transport) {
+      return res.status(400).send("SSE connection not established");
+    }
+    await transport.handlePostMessage(req, res);
+  });
+
+  return app;
+}
+
 async function main() {
   const useSse = process.env.MCP_SERVER_USE_SSE === "true" || process.argv.includes("--sse");
 
   if (useSse) {
-    const app = express();
-    app.use(express.json());
-    app.use(rateLimiter);
-    app.use(authMiddleware);
-
-    app.get("/health", (req, res) => {
-      res.json({
-        status: "ok",
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString(),
-      });
-    });
-
-    let transport: SSEServerTransport | null = null;
-
-    app.get("/sse", async (req, res) => {
-      const requiredToken = process.env.MCP_ADMIN_TOKEN || process.env.INTERNAL_SERVICE_KEY;
-      if (requiredToken && req.query.token !== requiredToken) {
-        res.status(401).send("Unauthorized. Invalid or missing token parameter.");
-        return;
-      }
-      console.log("New SSE connection established");
-      transport = new SSEServerTransport("/message", res);
-      await server.connect(transport);
-    });
-
-    app.post("/message", async (req, res) => {
-      if (!transport) {
-        return res.status(400).send("SSE connection not established");
-      }
-      await transport.handlePostMessage(req, res);
-    });
-
+    const app = createApp();
     const port = process.env.PORT || 4000;
     app.listen(port, () => {
       console.log(`MCP SSE Server listening on port ${port}`);
@@ -858,7 +956,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("Server error:", error);
-  process.exit(1);
-});
+// Avoid auto-start when imported by test runners.
+const entry = process.argv[1] || "";
+const isDirectRun =
+  process.env.MCP_SERVER_FORCE_MAIN === "1" ||
+  entry.endsWith("mcp-server.ts") ||
+  entry.endsWith("mcp-server.js");
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error("Server error:", error);
+    process.exit(1);
+  });
+}

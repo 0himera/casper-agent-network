@@ -272,4 +272,198 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(resp.headers().get("WWW-Authenticate").unwrap(), "x402");
     }
+
+    /// Wave 4 scenario 21: malformed / incomplete headers → strict BAD_REQUEST.
+    #[test]
+    fn test_w4_x402_bad_header_rejected() {
+        assert!(parse_x_payment_header("not-json-or-b64").is_err());
+        assert!(parse_x_payment_header("{}").is_err());
+        assert!(parse_x_payment_header(r#"{"x402Version":1}"#).is_err());
+        println!("[PASS] scenario 21a: bad X-Payment parse rejected");
+    }
+
+    async fn connect_test_pool() -> Option<DbPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        if url.is_empty() {
+            return None;
+        }
+        sqlx::MySqlPool::connect(&url).await.ok()
+    }
+
+    /// Local mock for CSPR.cloud `/deploys/{hash}` used by verify_payment_proof.
+    async fn spawn_mock_cspr_cloud(
+        merchant: &str,
+        amount: u64,
+        ok_status: &str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use axum::{Router, routing::get, extract::Path};
+        let merchant = merchant.to_string();
+        let status = ok_status.to_string();
+        let app = Router::new().route(
+            "/deploys/{hash}",
+            get(move |Path(_hash): Path<String>| {
+                let merchant = merchant.clone();
+                let status = status.clone();
+                async move {
+                    Json(json!({
+                        "data": {
+                            "status": status,
+                            "transfers": [{
+                                "amount": amount.to_string(),
+                                "to": merchant
+                            }]
+                        }
+                    }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock");
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        (format!("http://{}", addr), handle)
+    }
+
+    /// Wave 4 scenario 20: successful verify then replay → already spent.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_x402_replay_rejected() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        unsafe {
+            std::env::remove_var("DISABLE_X402");
+        }
+
+        let merchant = "01aabbccdd00112233445566778899aabbccddeeff00112233445566778899aa";
+        let amount = 5_000_000_000u64;
+        let deploy = format!("w4-deploy-replay-{}", chrono::Utc::now().timestamp_millis());
+        let _ = sqlx::query("DELETE FROM spent_payments WHERE deploy_hash = ?")
+            .bind(&deploy)
+            .execute(&pool)
+            .await;
+
+        let (base, handle) = spawn_mock_cspr_cloud(merchant, amount, "executed").await;
+        let client = CasperClient::new(base, "test-key".into(), "pkg".into());
+
+        let header_json = json!({
+            "x402Version": 1,
+            "scheme": "exact",
+            "network": "casper-testnet",
+            "payload": { "txid": deploy }
+        })
+        .to_string();
+
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Payment", header_json.parse().unwrap());
+
+        let first = verify_payment(&headers, &pool, &client, amount, merchant).await;
+        assert!(first.is_ok(), "first payment must succeed: {:?}", first);
+
+        let second = verify_payment(&headers, &pool, &client, amount, merchant).await;
+        let err = second.expect_err("replay must fail");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert!(
+            err.1 .0["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("already spent"),
+            "got {:?}",
+            err.1 .0
+        );
+        println!("[PASS] scenario 20: replay of same payment proof rejected");
+
+        let _ = sqlx::query("DELETE FROM spent_payments WHERE deploy_hash = ?")
+            .bind(&deploy)
+            .execute(&pool)
+            .await;
+        handle.abort();
+    }
+
+    /// Wave 4 scenario 21: bad chain status / amount → 402, reservation rolled back.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_x402_bad_proof_rolls_back_reservation() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        unsafe {
+            std::env::remove_var("DISABLE_X402");
+        }
+
+        let merchant = "01aabbccdd00112233445566778899aabbccddeeff00112233445566778899aa";
+        let amount = 5_000_000_000u64;
+        let deploy = format!("w4-deploy-bad-{}", chrono::Utc::now().timestamp_millis());
+        let _ = sqlx::query("DELETE FROM spent_payments WHERE deploy_hash = ?")
+            .bind(&deploy)
+            .execute(&pool)
+            .await;
+
+        // Mock returns non-success status → verify_payment_proof Ok(false) → 402 + DELETE
+        let (base, handle) = spawn_mock_cspr_cloud(merchant, amount, "pending").await;
+        let client = CasperClient::new(base, "test-key".into(), "pkg".into());
+
+        let header_json = json!({
+            "x402Version": 1,
+            "scheme": "exact",
+            "network": "casper-testnet",
+            "payload": { "txid": deploy, "signature": "deadbeef" }
+        })
+        .to_string();
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Payment", header_json.parse().unwrap());
+
+        let res = verify_payment(&headers, &pool, &client, amount, merchant).await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().0, StatusCode::PAYMENT_REQUIRED);
+
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM spent_payments WHERE deploy_hash = ?")
+                .bind(&deploy)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count.0, 0, "failed verify must roll back reservation");
+        println!("[PASS] scenario 21: bad proof → 402 and reservation rollback");
+        handle.abort();
+    }
+
+    /// Wave 4 scenario 22: mass invalid headers — error class visible, no raw secrets.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_x402_mass_invalid_no_secret_leak() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        unsafe {
+            std::env::remove_var("DISABLE_X402");
+        }
+        let client = CasperClient::new("http://127.0.0.1:9".into(), "secret-key-xyz".into(), "pkg".into());
+
+        for i in 0..20 {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "X-Payment",
+                format!("invalid-proof-{}", i).parse().unwrap(),
+            );
+            let err = verify_payment(&headers, &pool, &client, 1, "merchant")
+                .await
+                .expect_err("must fail");
+            assert_eq!(err.0, StatusCode::BAD_REQUEST);
+            let msg = err.1 .0.to_string();
+            assert!(!msg.contains("secret-key-xyz"), "no API key leak");
+            assert!(
+                msg.to_lowercase().contains("parse") || msg.to_lowercase().contains("failed"),
+                "reason class present: {}",
+                msg
+            );
+        }
+        println!("[PASS] scenario 22: mass invalid X-Payment — typed errors, no secrets");
+    }
 }

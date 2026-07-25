@@ -79,7 +79,7 @@ pub async fn get_agent_reputations(
     Path(agent_pubkey): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let reputations = sqlx::query_as::<_, Reputation>(
-        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC",
+        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC, skill ASC",
     )
     .bind(agent_pubkey)
     .fetch_all(&state.pool)
@@ -93,8 +93,12 @@ pub async fn get_reputation_snapshot(
     State(state): State<AppState>,
     Path(agent_pubkey): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // Secondary skill ASC makes equal-score ties deterministic across requests.
+    // Semantics (Wave 4 G24 / product decision): duplicate skill rows are returned as-is.
+    // The handler does NOT merge/dedupe by skill — snapshot signatures reflect the raw
+    // row set, and callers must treat dirty DB state as visible rather than silently fixed.
     let reputations = sqlx::query_as::<_, Reputation>(
-        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC",
+        "SELECT * FROM reputations WHERE agent_public_key = ? ORDER BY score DESC, skill ASC",
     )
     .bind(&agent_pubkey)
     .fetch_all(&state.pool)

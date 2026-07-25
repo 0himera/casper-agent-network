@@ -5,6 +5,9 @@ members = [
     "validator-node",
     "backend",
 ]
+# Odra WASM package uses a separate toolchain/target; keep it outside this workspace
+# so `cargo run --bin ...` from smart-contract/ does not collide with root metadata.
+exclude = ["smart-contract"]
 resolver = "3"
 
 [workspace.dependencies]

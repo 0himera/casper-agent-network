@@ -121,4 +121,33 @@ mod tests {
         guard.finish("task-1");
         assert!(guard.try_start("task-1"));
     }
+
+    #[test]
+    fn validate_inflight_concurrent_safety() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let guard = Arc::new(ValidateInflight::default());
+        let barrier = Arc::new(Barrier::new(20));
+        let success_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut handles = vec![];
+        for _ in 0..20 {
+            let guard = Arc::clone(&guard);
+            let barrier = Arc::clone(&barrier);
+            let success_count = Arc::clone(&success_count);
+            handles.push(thread::spawn(move || {
+                barrier.wait(); // Wait for all threads to be ready
+                if guard.try_start("task-concurrent") {
+                    success_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(success_count.load(std::sync::atomic::Ordering::SeqCst), 1, "Exactly one thread must succeed in starting the task");
+    }
 }
