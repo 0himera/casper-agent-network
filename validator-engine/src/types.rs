@@ -76,43 +76,40 @@ impl LlmConfig {
 
         let provider = env("VALIDATOR_LLM_PROVIDER").or(env("VALIDATOR_PROVIDER"));
 
-        let mut custom_url = env("VALIDATOR_LLM_URL");
-        let mut custom_api_key = env("VALIDATOR_LLM_API_KEY").or(env("FIREWORKS_API_KEY"));
-        let mut custom_model = env("VALIDATOR_LLM_MODEL").or(env("FIREWORKS_MODEL"));
+        // Universal API Key lookup
+        let custom_api_key = env("VALIDATOR_LLM_API_KEY")
+            .or_else(|| env("VALIDATOR_API_KEY"))
+            .or_else(|| env("FIREWORKS_API_KEY"))
+            .or_else(|| env("GEMINI_API_KEY"))
+            .or_else(|| env("OPENROUTER_API_KEY"))
+            .or_else(|| env("GROQ_API_KEY"))
+            .or_else(|| env("TOGETHER_API_KEY"));
 
-        let gemini_key = env("GEMINI_API_KEY");
-        let openrouter_key = env("OPENROUTER_API_KEY");
+        let custom_model = env("VALIDATOR_LLM_MODEL")
+            .or_else(|| env("VALIDATOR_MODEL"))
+            .or_else(|| env("FIREWORKS_MODEL"));
 
-        if let Some(ref p) = provider {
-            match p.to_ascii_lowercase().as_str() {
-                "google" | "gemini" => {
-                    if let Some(ref key) = gemini_key {
-                        custom_api_key = Some(key.clone());
-                        if custom_url.is_none() {
-                            custom_url = Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string());
-                        }
-                    }
+        // Resolve base URL: explicitly specified > inferred from provider name > default
+        let custom_url = env("VALIDATOR_LLM_URL")
+            .or_else(|| env("VALIDATOR_LLM_BASE_URL"))
+            .or_else(|| {
+                provider.as_ref().and_then(|p| match p.to_ascii_lowercase().as_str() {
+                    "google" | "gemini" => Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
+                    "openrouter" => Some("https://openrouter.ai/api/v1".to_string()),
+                    "fireworks" => Some("https://api.fireworks.ai/inference/v1".to_string()),
+                    "groq" => Some("https://api.groq.com/openai/v1".to_string()),
+                    "together" => Some("https://api.together.xyz/v1".to_string()),
+                    "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
+                    _ => None,
+                })
+            })
+            .or_else(|| {
+                if custom_api_key.is_some() {
+                    Some("https://api.fireworks.ai/inference/v1".to_string())
+                } else {
+                    None
                 }
-                "openrouter" => {
-                    if let Some(ref key) = openrouter_key {
-                        custom_api_key = Some(key.clone());
-                        if custom_url.is_none() {
-                            custom_url = Some("https://openrouter.ai/api/v1".to_string());
-                        }
-                    }
-                }
-                "fireworks" => {
-                    if custom_url.is_none() && custom_api_key.is_some() {
-                        custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if custom_url.is_none() && custom_api_key.is_some() {
-            custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
-        }
+            });
 
         let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
             "local_first" => Some(JudgeCascadeMode::LocalFirst),
