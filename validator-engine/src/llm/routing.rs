@@ -118,7 +118,7 @@ async fn call_judge_impl_once(
     let try_custom_first = config.provider.as_ref().is_some_and(|provider| {
         matches!(
             provider.to_ascii_lowercase().as_str(),
-            "custom" | "fireworks"
+            "custom" | "fireworks" | "google" | "gemini" | "openrouter"
         )
     }) || config.provider.is_none();
 

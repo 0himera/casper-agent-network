@@ -74,9 +74,41 @@ impl LlmConfig {
             .ok()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
+        let provider = env("VALIDATOR_LLM_PROVIDER").or(env("VALIDATOR_PROVIDER"));
+
         let mut custom_url = env("VALIDATOR_LLM_URL");
-        let custom_api_key = env("VALIDATOR_LLM_API_KEY").or(env("FIREWORKS_API_KEY"));
-        let custom_model = env("VALIDATOR_LLM_MODEL").or(env("FIREWORKS_MODEL"));
+        let mut custom_api_key = env("VALIDATOR_LLM_API_KEY").or(env("FIREWORKS_API_KEY"));
+        let mut custom_model = env("VALIDATOR_LLM_MODEL").or(env("FIREWORKS_MODEL"));
+
+        let gemini_key = env("GEMINI_API_KEY");
+        let openrouter_key = env("OPENROUTER_API_KEY");
+
+        if let Some(ref p) = provider {
+            match p.to_ascii_lowercase().as_str() {
+                "google" | "gemini" => {
+                    if let Some(ref key) = gemini_key {
+                        custom_api_key = Some(key.clone());
+                        if custom_url.is_none() {
+                            custom_url = Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string());
+                        }
+                    }
+                }
+                "openrouter" => {
+                    if let Some(ref key) = openrouter_key {
+                        custom_api_key = Some(key.clone());
+                        if custom_url.is_none() {
+                            custom_url = Some("https://openrouter.ai/api/v1".to_string());
+                        }
+                    }
+                }
+                "fireworks" => {
+                    if custom_url.is_none() && custom_api_key.is_some() {
+                        custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
 
         if custom_url.is_none() && custom_api_key.is_some() {
             custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
@@ -107,7 +139,7 @@ impl LlmConfig {
             custom_url,
             custom_api_key,
             custom_model,
-            provider: env("VALIDATOR_PROVIDER"),
+            provider,
             mock,
             factuality_enabled,
             serpapi_api_key: env("SERPAPI_API_KEY"),
