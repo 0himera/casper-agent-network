@@ -62,6 +62,19 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     // 2. Initialize DB pool via agentnet_core::db::init_db
     let pool = agentnet_core::db::init_db(&node_config.database_url).await?;
 
+    // Auto-register this validator in the DB so FK constraints are satisfied
+    if let Some(ref pk) = node_config.validator_public_key {
+        sqlx::query(
+            "INSERT INTO validators (public_key, stake_motes, is_active, total_validations, timestamp) \
+             VALUES (?, 0, 1, 0, NOW()) \
+             ON DUPLICATE KEY UPDATE is_active = 1"
+        )
+        .bind(pk)
+        .execute(&pool)
+        .await?;
+        tracing::info!(public_key = %pk, "Validator auto-registered in DB");
+    }
+
     let cancel_token = CancellationToken::new();
 
     // 3. Setup TCP healthcheck listener on HEALTH_PORT
