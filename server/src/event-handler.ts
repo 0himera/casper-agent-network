@@ -325,13 +325,15 @@ async function main() {
           }
           const s = payload.score;
           updatedAudit.total = s;
-          updatedAudit.scores = {
-            accuracy: Math.round(s * 0.30),
-            depth: Math.round(s * 0.25),
-            sources: Math.round(s * 0.20),
-            actionability: Math.round(s * 0.15),
-            presentation: Math.round(s * 0.10)
-          };
+          if (!updatedAudit.scores) {
+            updatedAudit.scores = {
+              accuracy: Math.round(s * 0.30),
+              depth: Math.round(s * 0.25),
+              sources: Math.round(s * 0.20),
+              actionability: Math.round(s * 0.15),
+              presentation: Math.round(s * 0.10)
+            };
+          }
 
           await pool.execute(
             'UPDATE tasks SET status = "Completed", validator_audit = ? WHERE id = ?',

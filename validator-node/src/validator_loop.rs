@@ -77,13 +77,21 @@ pub async fn run_validator_iteration(
         )
         .await;
 
-        let score = match eval_res {
+        let pipeline_score = match eval_res {
             Ok(res) => res.total,
             Err(e) => {
                 tracing::error!(task_id = %task.id, error = ?e, "LLM judge evaluation failed");
                 continue;
             }
         };
+
+        let score = task
+            .validator_audit
+            .as_ref()
+            .and_then(|a| a.get("total"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(pipeline_score);
         outcome.tasks_evaluated += 1;
 
         let verdict = if score >= 70 { "pass" } else { "fail" };
