@@ -577,7 +577,7 @@ mod tests {
     fn compute_smoothed_score_from_verdicts_skips_unknown() {
         let verdicts = vec!["passed".into(), "unknown".into(), "failed".into()];
         let score = compute_smoothed_score_from_verdicts(&verdicts, 0.3).expect("score");
-        assert!(score >= 0.0 && score <= 100.0);
+        assert!((0.0..=100.0).contains(&score));
     }
 
     #[test]

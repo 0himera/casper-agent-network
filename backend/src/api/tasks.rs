@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -575,6 +577,7 @@ fn resolve_completion_weight(
 pub use agentnet_core::casper_utils::public_key_to_account_hash;
 
 /// CLI args passed to `agent_network_submit_complete` after `--` (or directly for installed binary).
+#[allow(dead_code)]
 fn submit_complete_cli_args(
     creator_address: &str,
     task_id: &str,

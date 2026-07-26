@@ -165,6 +165,7 @@ fn parse_claim_verdict_from_snippets(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn parse_claim_verdict_mock_fallback(claim_text: &str) -> ClaimVerdict {
     let lower = claim_text.to_ascii_lowercase();
     if lower.contains("risk-free") || lower.contains("50%") {

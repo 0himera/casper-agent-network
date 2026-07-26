@@ -418,8 +418,10 @@ mod tests {
     const EXAM_ID: &str = "exam-test-1";
     const TASK_PROMPT: &str = "Compute the fee-adjusted yield and return ANSWER: <value>";
     const EXPECTED_CANONICAL: &str = "12345.67 usd";
+    #[allow(dead_code)]
     const EXPECTED_RAW: &str = "12345.67 USD";
 
+    #[allow(dead_code)]
     fn empty_actual_hash() -> String {
         sha256_hex("")
     }

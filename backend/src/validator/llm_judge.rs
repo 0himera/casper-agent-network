@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use crate::config::Config;
 use serde::{Deserialize, Serialize};
 
