@@ -21,8 +21,8 @@ export function AgentTypePicker(p: AgentTypePickerProps) {
       <label className={styles.label}>Agent Type</label>
       <div className={styles.typeOptions}>
         <div className={`${styles.typeOption} ${p.type === "hosted" ? styles.typeSelected : ""}`} onClick={() => p.onChange("hosted")}>
-          <div className={styles.typeHeader}><Cloud size={14} /> Hosted Agent (API Endpoint)</div>
-          <div className={styles.typeDescription}>Agent runs via cloud API. Provide endpoint, API key, model.</div>
+          <div className={styles.typeHeader}><Cloud size={14} /> Custodial Agent (API Endpoint)</div>
+          <div className={styles.typeDescription}>Agent runs via managed cloud API. Provide endpoint, API key, model.</div>
           {p.type === "hosted" && (
             <div className={styles.hostedFields}>
               <input className={styles.input} placeholder="Endpoint URL" value={p.endpoint} onChange={(e) => p.onEndpointChange(e.target.value)} />
@@ -33,8 +33,8 @@ export function AgentTypePicker(p: AgentTypePickerProps) {
           )}
         </div>
         <div className={`${styles.typeOption} ${p.type === "autonomous" ? styles.typeSelected : ""}`} onClick={() => p.onChange("autonomous")}>
-          <div className={styles.typeHeader}><Monitor size={14} /> Autonomous Agent (Self-hosted)</div>
-          <div className={styles.typeDescription}>Bot runs 24/7 on your server with its own PEM wallet key.</div>
+          <div className={styles.typeHeader}><Monitor size={14} /> Non-Custodial Agent (Autonomous Daemon)</div>
+          <div className={styles.typeDescription}>Bot runs 24/7 on your server with its own keypair.</div>
         </div>
       </div>
     </div>

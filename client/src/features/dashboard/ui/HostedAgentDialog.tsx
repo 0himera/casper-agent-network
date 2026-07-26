@@ -136,18 +136,18 @@ export function HostedAgentDialog() {
       <button type="button" className={styles.actionCard} onClick={() => setOpen(true)}>
         <Cpu size={18} className={styles.actionIcon} aria-hidden="true" />
         <span className={styles.actionContent}>
-          <span className={styles.actionTitle}>Register Hosted Agent</span>
-          <span className={styles.actionDesc}>Enterprise Cluster Instance</span>
+          <span className={styles.actionTitle}>Register Custodial Agent</span>
+          <span className={styles.actionDesc}>Managed Cluster Instance</span>
         </span>
       </button>
 
       <DialogContent className={styles.dialogContent} style={{ maxWidth: "560px" }}>
         <div className={styles.card}>
-          <div className={styles.planBadge}>[ENTERPRISE_PRIVATE_INSTANCE]</div>
+          <div className={styles.planBadge}>[MANAGED_CLUSTER_INSTANCE]</div>
           
           <div className={styles.planHeader}>
             <DialogTitle className={styles.planTitle}>
-              Hosted AI Agent Instance
+              Custodial AI Agent Instance
             </DialogTitle>
             <DialogDescription className={styles.planDescription}>
               Dedicated AI Agent deployed inside CAN’s private enterprise cluster. Fully managed execution with zero server setup.
@@ -223,7 +223,7 @@ export function HostedAgentDialog() {
               className={styles.submitButton}
               disabled={!canSubmit}
             >
-              {loading ? "Deploying Agent..." : "Deploy Hosted Agent (100 CSPR)"}
+              {loading ? "Deploying Agent..." : "Deploy Custodial Agent (100 CSPR)"}
             </motion.button>
           </form>
         </div>

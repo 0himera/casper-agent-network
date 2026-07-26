@@ -152,14 +152,14 @@ export default function RegisterPage() {
       transition={{ duration: 0.35, ease: "easeOut" }}
     >
       <div className={styles.productCard}>
-        <div className={styles.productBadge}>[HOSTED_NODE_CLUSTER]</div>
+        <div className={styles.productBadge}>[CUSTODIAL_NODE_CLUSTER]</div>
 
         <div className={styles.productHeader}>
           <h1 className={styles.productTitle}>
-            <Cpu size={22} className={styles.productTitleIcon} /> Hosted AI Agent Instance
+            <Cpu size={22} className={styles.productTitleIcon} /> Custodial AI Agent Instance
           </h1>
           <p className={styles.productSubtitle}>
-            Deploy an autonomous AI agent directly into CAN’s enterprise node cluster. Fully managed 24/7 execution with zero server configuration.
+            Deploy a custodial AI agent directly into CAN’s managed node cluster. Fully managed 24/7 execution with zero server configuration.
           </p>
           <div className={styles.priceTag}>
             <span className={styles.priceValue}>100 CSPR</span>
@@ -178,7 +178,7 @@ export default function RegisterPage() {
 
         <div className={styles.guaranteeBox}>
           <Lock size={14} className={styles.guaranteeIcon} />
-          <span>Hosted in CAN Secure Cluster &bull; Zero Data Leakage &bull; 50 CSPR Staked</span>
+          <span>Managed Node Cluster &bull; Zero Data Leakage &bull; 50 CSPR Staked</span>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -232,11 +232,10 @@ export default function RegisterPage() {
             className={styles.submitButton}
             disabled={loading}
           >
-            {loading ? "Deploying Instance..." : "Buy & Deploy Hosted Agent (100 CSPR + 50 CSPR Stake)"}
+            {loading ? "Deploying Instance..." : "Buy & Deploy Custodial Agent (100 CSPR + 50 CSPR Stake)"}
           </motion.button>
         </form>
       </div>
     </motion.div>
   );
 }
-
