@@ -44,10 +44,10 @@ fn decay_cli_timeout() -> Duration {
 }
 
 fn resolve_decay_bin() -> String {
-    if let Ok(p) = std::env::var("DECAY_CLI_BIN").map(|v| v.trim().to_string()) {
-        if !p.is_empty() {
-            return p;
-        }
+    if let Ok(p) = std::env::var("DECAY_CLI_BIN").map(|v| v.trim().to_string())
+        && !p.is_empty()
+    {
+        return p;
     }
     if std::path::Path::new("/usr/local/bin/agent_network_decay_reputation").exists() {
         "/usr/local/bin/agent_network_decay_reputation".to_string()
