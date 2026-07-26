@@ -43,7 +43,11 @@ impl ValidatorNodeConfig {
         if !self.enabled {
             return Ok(());
         }
-        if self.validator_public_key.as_ref().is_none_or(|v| v.is_empty()) {
+        if self
+            .validator_public_key
+            .as_ref()
+            .is_none_or(|v| v.is_empty())
+        {
             return Err(
                 "VALIDATOR_PUBLIC_KEY (or VALIDATOR_NODE_ID) must be set when VALIDATOR_ENABLED=true"
                     .to_string(),

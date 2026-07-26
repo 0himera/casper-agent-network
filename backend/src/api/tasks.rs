@@ -695,13 +695,11 @@ async fn try_claim_validate_lease(pool: &DbPool, task_id: &str) -> Result<bool, 
     let ttl = validate_lease_ttl_secs();
 
     // Drop expired lease first so crash recovery can reclaim without UPDATE races.
-    sqlx::query(
-        "DELETE FROM validate_leases WHERE task_id = ? AND expires_at < UTC_TIMESTAMP()",
-    )
-    .bind(task_id)
-    .execute(pool)
-    .await
-    .map_err(|e| format!("validate lease expire cleanup failed: {e}"))?;
+    sqlx::query("DELETE FROM validate_leases WHERE task_id = ? AND expires_at < UTC_TIMESTAMP()")
+        .bind(task_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("validate lease expire cleanup failed: {e}"))?;
 
     // INSERT IGNORE is atomic under the unique PK: exactly one concurrent caller gets rows=1.
     let result = sqlx::query(

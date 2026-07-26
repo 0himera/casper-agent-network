@@ -90,10 +90,7 @@ fn run_decay_cli_with_timeout(
                 if start.elapsed() > timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(format!(
-                        "decay CLI timed out after {}s",
-                        timeout.as_secs()
-                    ));
+                    return Err(format!("decay CLI timed out after {}s", timeout.as_secs()));
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
@@ -152,11 +149,10 @@ pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), 
         // Blocking CLI runs on a worker thread so the async runtime stays responsive.
         let agent_pk_log = agent_pk.clone();
         let skill_log = skill.clone();
-        let cli_result = tokio::task::spawn_blocking(move || {
-            run_decay_cli_with_timeout(cmd, timeout)
-        })
-        .await
-        .map_err(|e| format!("decay CLI join error: {}", e))?;
+        let cli_result =
+            tokio::task::spawn_blocking(move || run_decay_cli_with_timeout(cmd, timeout))
+                .await
+                .map_err(|e| format!("decay CLI join error: {}", e))?;
 
         match cli_result {
             Ok(out) if out.status.success() => {
@@ -362,7 +358,10 @@ mod tests {
         let config = crate::config::Config::from_env();
         temp_env::async_with_vars(
             [
-                ("DECAY_CLI_BIN", Some("/nonexistent/agent_network_decay_reputation")),
+                (
+                    "DECAY_CLI_BIN",
+                    Some("/nonexistent/agent_network_decay_reputation"),
+                ),
                 ("DECAY_CLI_TIMEOUT_SECS", Some("2")),
                 ("ADMIN_SECRET_KEY_PATH", None::<&str>),
             ],

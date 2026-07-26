@@ -235,7 +235,9 @@ pub async fn call_judge_raw(
     if let Some(ref fixture_env) = config.judge_raw_fixture {
         if !fixture_env.is_empty() {
             // Try parsing as JSON map
-            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(fixture_env) {
+            if let Ok(map) =
+                serde_json::from_str::<std::collections::HashMap<String, String>>(fixture_env)
+            {
                 if let Some(body) = map.get(routing_key) {
                     return Ok(body.clone());
                 }

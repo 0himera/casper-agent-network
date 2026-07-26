@@ -130,8 +130,8 @@ async fn get_snapshot(app: Router, agent: &str) -> (StatusCode, ReputationSnapsh
     let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
         .await
         .unwrap();
-    let snapshot: ReputationSnapshot =
-        serde_json::from_slice(&body).unwrap_or_else(|e| panic!("snapshot json: {e} body={body:?}"));
+    let snapshot: ReputationSnapshot = serde_json::from_slice(&body)
+        .unwrap_or_else(|e| panic!("snapshot json: {e} body={body:?}"));
     (status, snapshot)
 }
 
@@ -273,36 +273,30 @@ async fn test_w4_reputation_snapshot_dirty_rows_no_500() {
     // Keep under reputations.skill VARCHAR(100).
     let noisy = "noisy_skill_!@#$%^&*()[]{};:,.<>/?`~_tail_xx";
     assert!(noisy.len() <= 100);
-    sqlx::query(
-        "INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)",
-    )
-    .bind("w4-snap-d1")
-    .bind(AGENT_DIRTY)
-    .bind("dup_skill")
-    .bind(80)
-    .execute(&pool)
-    .await
-    .expect("seed d1");
-    sqlx::query(
-        "INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)",
-    )
-    .bind("w4-snap-d2")
-    .bind(AGENT_DIRTY)
-    .bind("dup_skill")
-    .bind(60)
-    .execute(&pool)
-    .await
-    .expect("seed d2");
-    sqlx::query(
-        "INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)",
-    )
-    .bind("w4-snap-d3")
-    .bind(AGENT_DIRTY)
-    .bind(&noisy)
-    .bind(40)
-    .execute(&pool)
-    .await
-    .expect("seed d3");
+    sqlx::query("INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)")
+        .bind("w4-snap-d1")
+        .bind(AGENT_DIRTY)
+        .bind("dup_skill")
+        .bind(80)
+        .execute(&pool)
+        .await
+        .expect("seed d1");
+    sqlx::query("INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)")
+        .bind("w4-snap-d2")
+        .bind(AGENT_DIRTY)
+        .bind("dup_skill")
+        .bind(60)
+        .execute(&pool)
+        .await
+        .expect("seed d2");
+    sqlx::query("INSERT INTO reputations (id, agent_public_key, skill, score) VALUES (?, ?, ?, ?)")
+        .bind("w4-snap-d3")
+        .bind(AGENT_DIRTY)
+        .bind(&noisy)
+        .bind(40)
+        .execute(&pool)
+        .await
+        .expect("seed d3");
 
     let app = build_test_router(pool.clone());
     let (status, snapshot) = get_snapshot(app, AGENT_DIRTY).await;

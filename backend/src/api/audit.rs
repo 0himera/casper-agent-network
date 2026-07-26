@@ -35,11 +35,11 @@ pub async fn get_audit_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::MySqlPool;
     use crate::api::AppState;
-    use crate::config::Config;
-    use crate::casper::contract::CasperClient;
     use crate::api::ValidateInflight;
+    use crate::casper::contract::CasperClient;
+    use crate::config::Config;
+    use sqlx::MySqlPool;
 
     #[test]
     fn test_audit_log_row_structure() {
@@ -75,7 +75,9 @@ mod tests {
         let pool = match connect_test_pool().await {
             Some(p) => p,
             None => {
-                println!("Skipping test_get_audit_logs_db_integration: DATABASE_URL not set or unreachable");
+                println!(
+                    "Skipping test_get_audit_logs_db_integration: DATABASE_URL not set or unreachable"
+                );
                 return;
             }
         };
@@ -90,7 +92,7 @@ mod tests {
         let _ = sqlx::query(
             "INSERT INTO agents (public_key, name, status, active_jobs)
              VALUES ('test-agent-pk', 'Test Agent', 'active', 0)
-             ON DUPLICATE KEY UPDATE status = 'active'"
+             ON DUPLICATE KEY UPDATE status = 'active'",
         )
         .execute(&pool)
         .await;
@@ -108,7 +110,7 @@ mod tests {
                 id, creator_public_key, assigned_agent_public_key, budget_motes, status,
                 transaction_hash, domain, prompt, deadline, validator_audit, timestamp
             ) VALUES (?, 'test-creator-pk', 'test-agent-pk', 100, 'Completed',
-                      'test-tx-hash-1', 'defi_analysis', 'test prompt', 123456, ?, NOW())"
+                      'test-tx-hash-1', 'defi_analysis', 'test prompt', 123456, ?, NOW())",
         )
         .bind(task_id_audit)
         .bind(&audit_data)
@@ -122,7 +124,7 @@ mod tests {
                 id, creator_public_key, assigned_agent_public_key, budget_motes, status,
                 transaction_hash, domain, prompt, deadline, validator_audit, timestamp
             ) VALUES (?, 'test-creator-pk', 'test-agent-pk', 100, 'Completed',
-                      'test-tx-hash-2', 'defi_analysis', 'test prompt', 123456, NULL, NOW())"
+                      'test-tx-hash-2', 'defi_analysis', 'test prompt', 123456, NULL, NOW())",
         )
         .bind(task_id_no_audit)
         .execute(&pool)
@@ -149,8 +151,7 @@ mod tests {
         let body_bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
             .await
             .expect("read body");
-        let logs: Vec<AuditLogRow> = serde_json::from_slice(&body_bytes)
-            .expect("deserialize logs");
+        let logs: Vec<AuditLogRow> = serde_json::from_slice(&body_bytes).expect("deserialize logs");
 
         // Assertions:
         // - Should contain the seeded task with audit
@@ -158,11 +159,20 @@ mod tests {
         let found_audit = logs.iter().find(|l| l.id == task_id_audit);
         let found_no_audit = logs.iter().find(|l| l.id == task_id_no_audit);
 
-        assert!(found_audit.is_some(), "Seeded task with audit must be present in logs");
+        assert!(
+            found_audit.is_some(),
+            "Seeded task with audit must be present in logs"
+        );
         assert_eq!(found_audit.unwrap().domain, "defi_analysis");
-        assert_eq!(found_audit.unwrap().validator_audit.as_ref().unwrap()["total"], 85);
+        assert_eq!(
+            found_audit.unwrap().validator_audit.as_ref().unwrap()["total"],
+            85
+        );
 
-        assert!(found_no_audit.is_none(), "Seeded task without audit must NOT be present in logs");
+        assert!(
+            found_no_audit.is_none(),
+            "Seeded task without audit must NOT be present in logs"
+        );
 
         // Clean up
         cleanup_task(&pool, task_id_audit).await;

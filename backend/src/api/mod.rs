@@ -148,6 +148,10 @@ mod tests {
             handle.join().unwrap();
         }
 
-        assert_eq!(success_count.load(std::sync::atomic::Ordering::SeqCst), 1, "Exactly one thread must succeed in starting the task");
+        assert_eq!(
+            success_count.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "Exactly one thread must succeed in starting the task"
+        );
     }
 }

@@ -5,11 +5,11 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use rand::RngCore;
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
-use sha2::{Sha256, Digest};
-use rand::RngCore;
 
 static X402_SECRET: OnceLock<Vec<u8>> = OnceLock::new();
 
@@ -43,21 +43,23 @@ pub fn verify_challenge_token(token: &str, price_motes: u64, resource: &str) -> 
     }
     let valid_until_str = parts[0];
     let sig = parts[1];
-    
-    let valid_until: u64 = valid_until_str.parse().map_err(|_| "Invalid validUntil timestamp".to_string())?;
-    
+
+    let valid_until: u64 = valid_until_str
+        .parse()
+        .map_err(|_| "Invalid validUntil timestamp".to_string())?;
+
     let now = chrono::Utc::now().timestamp() as u64;
     if now > valid_until {
         return Err("Challenge token expired".to_string());
     }
-    
+
     let expected_token = generate_challenge_token(valid_until, price_motes, resource);
     let expected_sig = expected_token.split('.').nth(1).unwrap_or("");
-    
+
     if sig != expected_sig {
         return Err("Challenge token signature mismatch".to_string());
     }
-    
+
     Ok(())
 }
 
@@ -381,7 +383,7 @@ mod tests {
         amount: u64,
         ok_status: &str,
     ) -> (String, tokio::task::JoinHandle<()>) {
-        use axum::{Router, routing::get, extract::Path};
+        use axum::{Router, extract::Path, routing::get};
         let merchant = merchant.to_string();
         let status = ok_status.to_string();
         let app = Router::new().route(
@@ -459,12 +461,12 @@ mod tests {
         let err = second.expect_err("replay must fail");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         assert!(
-            err.1 .0["error"]
+            err.1.0["error"]
                 .as_str()
                 .unwrap_or("")
                 .contains("already spent"),
             "got {:?}",
-            err.1 .0
+            err.1.0
         );
         println!("[PASS] scenario 20: replay of same payment proof rejected");
 
@@ -542,19 +544,20 @@ mod tests {
         unsafe {
             std::env::remove_var("DISABLE_X402");
         }
-        let client = CasperClient::new("http://127.0.0.1:9".into(), "secret-key-xyz".into(), "pkg".into());
+        let client = CasperClient::new(
+            "http://127.0.0.1:9".into(),
+            "secret-key-xyz".into(),
+            "pkg".into(),
+        );
 
         for i in 0..20 {
             let mut headers = HeaderMap::new();
-            headers.insert(
-                "X-Payment",
-                format!("invalid-proof-{}", i).parse().unwrap(),
-            );
+            headers.insert("X-Payment", format!("invalid-proof-{}", i).parse().unwrap());
             let err = verify_payment(&headers, &pool, &client, 1, "merchant")
                 .await
                 .expect_err("must fail");
             assert_eq!(err.0, StatusCode::BAD_REQUEST);
-            let msg = err.1 .0.to_string();
+            let msg = err.1.0.to_string();
             assert!(!msg.contains("secret-key-xyz"), "no API key leak");
             assert!(
                 msg.to_lowercase().contains("parse") || msg.to_lowercase().contains("failed"),
@@ -569,18 +572,18 @@ mod tests {
     fn test_challenge_token_valid_and_expired() {
         let price = 100_000_000;
         let resource = "https://api.can.dev";
-        
+
         // 1. Valid token
         let valid_until = (chrono::Utc::now().timestamp() + 10) as u64;
         let token = generate_challenge_token(valid_until, price, resource);
         assert!(verify_challenge_token(&token, price, resource).is_ok());
-        
+
         // 2. Expired token
         let expired_until = (chrono::Utc::now().timestamp() - 10) as u64;
         let expired_token = generate_challenge_token(expired_until, price, resource);
         let err = verify_challenge_token(&expired_token, price, resource).unwrap_err();
         assert!(err.contains("expired"));
-        
+
         // 3. Tampered token
         let tampered_token = format!("{}.invalid_sig", valid_until);
         let err2 = verify_challenge_token(&tampered_token, price, resource).unwrap_err();

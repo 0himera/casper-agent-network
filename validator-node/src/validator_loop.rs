@@ -1,9 +1,9 @@
+use agentnet_core::casper_utils::public_key_to_account_hash;
+use agentnet_core::db::DbPool;
+use agentnet_core::db::models::Task;
+use agentnet_core::metrics;
 use std::process::Command;
 use std::time::Duration;
-use agentnet_core::casper_utils::public_key_to_account_hash;
-use agentnet_core::db::models::Task;
-use agentnet_core::db::DbPool;
-use agentnet_core::metrics;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ValidatorNodeConfig;
@@ -20,7 +20,10 @@ fn validator_cli_timeout() -> Duration {
 }
 
 /// Run one CLI invocation off the async runtime with a hard timeout.
-async fn run_cli_with_timeout(cmd: Command, timeout: Duration) -> Result<std::process::Output, String> {
+async fn run_cli_with_timeout(
+    cmd: Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
     tokio::task::spawn_blocking(move || run_cli_with_timeout_blocking(cmd, timeout))
         .await
         .map_err(|e| format!("validator CLI join error: {e}"))?
@@ -232,7 +235,7 @@ pub async fn run_validator_iteration(
 
             // Record validation record in DB
             sqlx::query(
-                "INSERT INTO validations (task_id, validator_public_key, score) VALUES (?, ?, ?)"
+                "INSERT INTO validations (task_id, validator_public_key, score) VALUES (?, ?, ?)",
             )
             .bind(&task.id)
             .bind(&validator_pubkey)
@@ -372,7 +375,9 @@ mod tests {
         let pool = match connect_test_pool().await {
             Some(p) => p,
             None => {
-                println!("Skipping test_validator_loop_db_happy_path: DATABASE_URL not set or unreachable");
+                println!(
+                    "Skipping test_validator_loop_db_happy_path: DATABASE_URL not set or unreachable"
+                );
                 return;
             }
         };
@@ -384,7 +389,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO agents (public_key, name, status, active_jobs)
              VALUES ('test-agent-pk', 'Test Agent', 'active', 0)
-             ON DUPLICATE KEY UPDATE status = 'active'"
+             ON DUPLICATE KEY UPDATE status = 'active'",
         )
         .execute(&pool)
         .await
@@ -394,7 +399,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO validators (public_key, stake_motes, is_active, total_validations)
              VALUES ('test-validator-pubkey-happy', 1000, 1, 0)
-             ON DUPLICATE KEY UPDATE is_active = 1"
+             ON DUPLICATE KEY UPDATE is_active = 1",
         )
         .execute(&pool)
         .await
@@ -436,12 +441,14 @@ mod tests {
         assert_eq!(res.tasks_finalized, 1);
 
         // Verify Validation row created
-        let val_row: (i32,) = sqlx::query_as("SELECT score FROM validations WHERE task_id = ? AND validator_public_key = ?")
-            .bind(task_id)
-            .bind("test-validator-pubkey-happy")
-            .fetch_one(&pool)
-            .await
-            .expect("fetch validation");
+        let val_row: (i32,) = sqlx::query_as(
+            "SELECT score FROM validations WHERE task_id = ? AND validator_public_key = ?",
+        )
+        .bind(task_id)
+        .bind("test-validator-pubkey-happy")
+        .fetch_one(&pool)
+        .await
+        .expect("fetch validation");
         // Verify Task is Completed in DB
         let status_row: (String,) = sqlx::query_as("SELECT status FROM tasks WHERE id = ?")
             .bind(task_id)
@@ -449,7 +456,11 @@ mod tests {
             .await
             .expect("fetch task status");
 
-        assert_eq!(val_row.0, 93, "Validation score was {}, status: {}, outcome: {:?}", val_row.0, status_row.0, res);
+        assert_eq!(
+            val_row.0, 93,
+            "Validation score was {}, status: {}, outcome: {:?}",
+            val_row.0, status_row.0, res
+        );
         assert_eq!(status_row.0, "Completed");
 
         cleanup_task(&pool, task_id).await;
@@ -472,7 +483,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO agents (public_key, name, status, active_jobs)
              VALUES ('test-agent-pk', 'Test Agent', 'active', 0)
-             ON DUPLICATE KEY UPDATE status = 'active'"
+             ON DUPLICATE KEY UPDATE status = 'active'",
         )
         .execute(&pool)
         .await
@@ -482,7 +493,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO validators (public_key, stake_motes, is_active, total_validations)
              VALUES ('test-validator-pubkey-already', 1000, 1, 0)
-             ON DUPLICATE KEY UPDATE is_active = 1"
+             ON DUPLICATE KEY UPDATE is_active = 1",
         )
         .execute(&pool)
         .await
@@ -502,12 +513,14 @@ mod tests {
         .expect("seed task");
 
         // Seed a prior validation from this same validator
-        sqlx::query("INSERT INTO validations (task_id, validator_public_key, score) VALUES (?, ?, 85)")
-            .bind(task_id)
-            .bind("test-validator-pubkey-already")
-            .execute(&pool)
-            .await
-            .expect("seed validation");
+        sqlx::query(
+            "INSERT INTO validations (task_id, validator_public_key, score) VALUES (?, ?, 85)",
+        )
+        .bind(task_id)
+        .bind("test-validator-pubkey-already")
+        .execute(&pool)
+        .await
+        .expect("seed validation");
 
         unsafe {
             std::env::set_var("VALIDATOR_MOCK_LLM", "1");
@@ -545,8 +558,13 @@ mod tests {
         let cancel_token = CancellationToken::new();
         let res = run_validator_iteration(&pool, &node_cfg, &cancel_token).await;
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err(), "VALIDATOR_PUBLIC_KEY not set in configuration");
-        println!("[PASS] scenario 1: missing VALIDATOR_PUBLIC_KEY fails iteration (not silent defaults)");
+        assert_eq!(
+            res.unwrap_err(),
+            "VALIDATOR_PUBLIC_KEY not set in configuration"
+        );
+        println!(
+            "[PASS] scenario 1: missing VALIDATOR_PUBLIC_KEY fails iteration (not silent defaults)"
+        );
     }
 
     /// Wave 4 scenario 2a: bad DATABASE_URL / unreachable pool → query error, no hang.
@@ -725,4 +743,3 @@ mod tests {
         cleanup_task(&pool, task_id).await;
     }
 }
-

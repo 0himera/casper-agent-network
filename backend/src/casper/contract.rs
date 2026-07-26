@@ -219,10 +219,8 @@ impl CasperClient {
             return Ok(false);
         }
 
-        let merchant_account_hash = agentnet_core::casper_utils::public_key_to_account_hash(
-            merchant_pubkey,
-        )
-        .to_lowercase();
+        let merchant_account_hash =
+            agentnet_core::casper_utils::public_key_to_account_hash(merchant_pubkey).to_lowercase();
         let merchant_hash_bare = merchant_account_hash
             .trim_start_matches("account-hash-")
             .to_string();
@@ -231,9 +229,7 @@ impl CasperClient {
         let recipient_matches = |to: &str| -> bool {
             let to_l = to.to_lowercase();
             let to_bare = to_l.trim_start_matches("account-hash-");
-            to_l == merchant_pk
-                || to_l == merchant_account_hash
-                || to_bare == merchant_hash_bare
+            to_l == merchant_pk || to_l == merchant_account_hash || to_bare == merchant_hash_bare
         };
 
         let parse_amount = |v: &serde_json::Value| -> u64 {
@@ -249,10 +245,7 @@ impl CasperClient {
         // Legacy / mock shape: data.transfers[{amount,to}]
         if let Some(transfers_list) = data.get("transfers").and_then(|t| t.as_array()) {
             for transfer in transfers_list {
-                let amount = transfer
-                    .get("amount")
-                    .map(parse_amount)
-                    .unwrap_or(0);
+                let amount = transfer.get("amount").map(parse_amount).unwrap_or(0);
                 let to = transfer
                     .get("to")
                     .or_else(|| transfer.get("to_account_hash"))
@@ -282,10 +275,7 @@ impl CasperClient {
                 .map_err(|e| format!("Failed to parse transfer details: {}", e))?;
             if let Some(transfers_list) = transfers_body.get("data").and_then(|t| t.as_array()) {
                 for transfer in transfers_list {
-                    let amount = transfer
-                        .get("amount")
-                        .map(parse_amount)
-                        .unwrap_or(0);
+                    let amount = transfer.get("amount").map(parse_amount).unwrap_or(0);
                     let to = transfer
                         .get("to_account_hash")
                         .or_else(|| transfer.get("to"))
