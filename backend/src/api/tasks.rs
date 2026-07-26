@@ -92,7 +92,7 @@ pub async fn get_validators(
     let rows: Vec<(String, i64, Option<f64>)> = sqlx::query_as(
         "SELECT validator_public_key, COUNT(*) as cnt, AVG(score) as avg_score \
          FROM validations \
-         GROUP BY validator_public_key"
+         GROUP BY validator_public_key",
     )
     .fetch_all(&state.pool)
     .await
@@ -133,7 +133,7 @@ pub async fn get_validators(
             "status": "Active",
             "validations_count": validators_map.get("01bae700f4024cff103b68d66f86a0227ccd3b2c7b8f0d1d880a803808a53a8ff1").map(|v| v.0).unwrap_or(12),
             "consensus_accuracy": "98.8%"
-        })
+        }),
     ];
 
     Ok(Json(serde_json::json!(default_validators)))
@@ -821,11 +821,7 @@ async fn validate_and_complete(
         ])
         .current_dir("../smart-contract");
     } else {
-        cmd.args([
-            &creator_addr,
-            task_id,
-            &result_hash,
-        ]);
+        cmd.args([&creator_addr, task_id, &result_hash]);
     }
 
     if let Ok(hash) = std_env::var("CONTRACT_HASH") {
@@ -837,7 +833,10 @@ async fn validate_and_complete(
     match cmd.status().await {
         Ok(status) => {
             if status.success() {
-                tracing::info!("✅ Successfully submitted result hash for task {} on-chain!", task_id);
+                tracing::info!(
+                    "✅ Successfully submitted result hash for task {} on-chain!",
+                    task_id
+                );
                 let _ = sqlx::query("UPDATE tasks SET result_hash = ? WHERE id = ?")
                     .bind(&result_hash)
                     .bind(task_id)
@@ -880,7 +879,9 @@ fn spawn_exam_urgency_recalc(pool: DbPool, config: Config, agent_public_key: Str
 
 fn spawn_ordinary_task_urgency_recalc(pool: DbPool, config: Config, agent_public_key: String) {
     tokio::spawn(async move {
-        if let Err(err) = on_ordinary_task_completed(&pool, &agent_public_key, &(&config).into()).await {
+        if let Err(err) =
+            on_ordinary_task_completed(&pool, &agent_public_key, &(&config).into()).await
+        {
             tracing::error!(
                 "Failed to recalculate exam urgency after ordinary task for {}: {}",
                 agent_public_key,

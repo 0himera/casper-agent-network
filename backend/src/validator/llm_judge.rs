@@ -192,7 +192,10 @@ Return JSON format exactly matching:
             ]
         });
 
-        let cf_model = config.validator_model.as_deref().unwrap_or("@cf/meta/llama-3.1-8b-instruct");
+        let cf_model = config
+            .validator_model
+            .as_deref()
+            .unwrap_or("@cf/meta/llama-3.1-8b-instruct");
         let url = format!(
             "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/{}",
             account_id, cf_model
@@ -216,7 +219,8 @@ Return JSON format exactly matching:
                     {
                         if json_start < json_end {
                             let json_str = &text_content[json_start..=json_end];
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str)
+                            {
                                 if let Ok(scores) =
                                     serde_json::from_value::<RubricScores>(parsed["scores"].clone())
                                 {

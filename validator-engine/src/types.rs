@@ -93,15 +93,19 @@ impl LlmConfig {
         let custom_url = env("VALIDATOR_LLM_URL")
             .or_else(|| env("VALIDATOR_LLM_BASE_URL"))
             .or_else(|| {
-                provider.as_ref().and_then(|p| match p.to_ascii_lowercase().as_str() {
-                    "google" | "gemini" => Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
-                    "openrouter" => Some("https://openrouter.ai/api/v1".to_string()),
-                    "fireworks" => Some("https://api.fireworks.ai/inference/v1".to_string()),
-                    "groq" => Some("https://api.groq.com/openai/v1".to_string()),
-                    "together" => Some("https://api.together.xyz/v1".to_string()),
-                    "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
-                    _ => None,
-                })
+                provider
+                    .as_ref()
+                    .and_then(|p| match p.to_ascii_lowercase().as_str() {
+                        "google" | "gemini" => Some(
+                            "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+                        ),
+                        "openrouter" => Some("https://openrouter.ai/api/v1".to_string()),
+                        "fireworks" => Some("https://api.fireworks.ai/inference/v1".to_string()),
+                        "groq" => Some("https://api.groq.com/openai/v1".to_string()),
+                        "together" => Some("https://api.together.xyz/v1".to_string()),
+                        "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
+                        _ => None,
+                    })
             })
             .or_else(|| {
                 if custom_api_key.is_some() {

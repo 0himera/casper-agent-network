@@ -6,13 +6,19 @@ pub fn public_key_to_account_hash(pk_hex: &str) -> String {
     if clean.len() == 64 {
         return format!("account-hash-{}", clean);
     }
-    if (clean.starts_with("01") && clean.len() == 66) || (clean.starts_with("02") && clean.len() == 68) {
+    if (clean.starts_with("01") && clean.len() == 66)
+        || (clean.starts_with("02") && clean.len() == 68)
+    {
         if let Ok(bytes) = hex::decode(clean) {
-            use blake2::digest::consts::U32;
             use blake2::digest::Digest;
+            use blake2::digest::consts::U32;
             type Blake2b256 = blake2::Blake2b<U32>;
 
-            let tag = if bytes[0] == 1 { b"ed25519\0".as_slice() } else { b"secp256k1\0".as_slice() };
+            let tag = if bytes[0] == 1 {
+                b"ed25519\0".as_slice()
+            } else {
+                b"secp256k1\0".as_slice()
+            };
             let mut hasher = Blake2b256::new();
             hasher.update(tag);
             hasher.update(&bytes[1..]);

@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

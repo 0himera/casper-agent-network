@@ -44,8 +44,9 @@ impl ValidatorNodeConfig {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "mysql://root:rootpassword@127.0.0.1:3306/cspr_agent_network".to_string());
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "mysql://root:rootpassword@127.0.0.1:3306/cspr_agent_network".to_string()
+        });
 
         let poll_interval_secs = std::env::var("POLL_INTERVAL_SECS")
             .or_else(|_| std::env::var("VALIDATOR_POLL_INTERVAL_SECS"))
@@ -60,7 +61,11 @@ impl ValidatorNodeConfig {
         let validator_public_key = std::env::var("VALIDATOR_PUBLIC_KEY")
             .ok()
             .filter(|v| !v.is_empty())
-            .or_else(|| std::env::var("VALIDATOR_NODE_ID").ok().filter(|v| !v.is_empty()));
+            .or_else(|| {
+                std::env::var("VALIDATOR_NODE_ID")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            });
 
         let llm_provider = std::env::var("VALIDATOR_LLM_PROVIDER")
             .ok()

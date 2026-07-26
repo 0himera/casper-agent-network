@@ -1,8 +1,8 @@
-use std::process::Command;
 use agentnet_core::casper_utils::public_key_to_account_hash;
-use agentnet_core::db::models::Task;
 use agentnet_core::db::DbPool;
+use agentnet_core::db::models::Task;
 use agentnet_core::metrics;
+use std::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ValidatorNodeConfig;
@@ -98,11 +98,12 @@ pub async fn run_validator_iteration(
         metrics::record_validator_decision(verdict);
 
         // 3. Submit validation score on-chain via CLI tool
-        let bin_path = if std::path::Path::new("/usr/local/bin/agent_network_submit_validation").exists() {
-            "/usr/local/bin/agent_network_submit_validation"
-        } else {
-            "cargo"
-        };
+        let bin_path =
+            if std::path::Path::new("/usr/local/bin/agent_network_submit_validation").exists() {
+                "/usr/local/bin/agent_network_submit_validation"
+            } else {
+                "cargo"
+            };
 
         let mut cmd = Command::new(bin_path);
         let score_str = score.to_string();

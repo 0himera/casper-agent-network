@@ -170,12 +170,14 @@ async fn test_full_e2e_lifecycle() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // 3. Assign Task
-    sqlx::query("UPDATE tasks SET assigned_agent_public_key = ?, status = 'InProgress' WHERE id = ?")
-        .bind(AGENT_PK)
-        .bind(TASK_ID)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE tasks SET assigned_agent_public_key = ?, status = 'InProgress' WHERE id = ?",
+    )
+    .bind(AGENT_PK)
+    .bind(TASK_ID)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // 4. Submit Result
     let res = app
@@ -218,12 +220,11 @@ async fn test_full_e2e_lifecycle() {
     );
 
     // 7. Check Database task record
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT status FROM tasks WHERE id = ?")
-            .bind(TASK_ID)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
+    let row: Option<(String,)> = sqlx::query_as("SELECT status FROM tasks WHERE id = ?")
+        .bind(TASK_ID)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
 
     assert!(row.is_some(), "Task should exist in database");
 }
