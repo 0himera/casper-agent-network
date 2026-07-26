@@ -23,8 +23,9 @@
   "overrides": {
     "sha.js": "^2.4.12",
     "axios": "^1.8.2",
-    "brace-expansion": "^2.0.2",
-    "fast-uri": "^3.1.4"
+    "brace-expansion": "^5.0.8",
+    "fast-uri": "^3.1.4",
+    "@hono/node-server": "^2.0.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
