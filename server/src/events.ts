@@ -109,6 +109,12 @@ export interface ValidatorRegisteredPayload {
   validator: string;
 }
 
+export interface ValidationSubmittedPayload {
+  task_id: string;
+  validator: string;
+  score: number | string;
+}
+
 export interface ValidatorStakedPayload {
   validator: string;
   amount: string;

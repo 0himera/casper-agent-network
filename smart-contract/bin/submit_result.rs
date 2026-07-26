@@ -104,8 +104,13 @@ fn main() {
                     break;
                 }
             } else {
-                eprintln!("❌ Task not found on-chain!");
-                std::process::exit(1);
+                // Dictionary reads can lag just after create/assign on livenet.
+                eprintln!(
+                    "⚠️ Task not found on-chain yet (attempt {}). Waiting 10s...",
+                    attempt
+                );
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                continue;
             }
         }
 

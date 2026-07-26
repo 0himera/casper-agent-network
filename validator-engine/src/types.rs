@@ -60,6 +60,7 @@ pub struct LlmConfig {
     pub judge_self_consistency: Option<bool>,
     /// Post-MVP (E6): LLM semantic equality fallback after exact mismatch.
     pub exam_llm_equality: bool,
+    pub judge_raw_fixture: Option<String>,
 }
 
 impl LlmConfig {
@@ -149,6 +150,7 @@ impl LlmConfig {
             judge_self_consistency,
             exam_llm_equality: env("EXAM_LLM_EQUALITY")
                 .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
+            judge_raw_fixture: env("VALIDATOR_JUDGE_RAW_FIXTURE"),
         }
     }
 }

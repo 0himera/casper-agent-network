@@ -232,6 +232,24 @@ pub async fn call_judge_raw(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, ValidatorError> {
+    if let Some(ref fixture_env) = config.judge_raw_fixture
+        && !fixture_env.is_empty()
+    {
+        // Try parsing as JSON map
+        if let Ok(map) =
+            serde_json::from_str::<std::collections::HashMap<String, String>>(fixture_env)
+        {
+            if let Some(body) = map.get(routing_key) {
+                return Ok(body.clone());
+            }
+        } else {
+            // Fallback to routing_key:body
+            let prefix = format!("{}:", routing_key);
+            if fixture_env.starts_with(&prefix) {
+                return Ok(fixture_env[prefix.len()..].to_string());
+            }
+        }
+    }
     call_judge_impl(config, routing_key, system_prompt, user_prompt).await
 }
 

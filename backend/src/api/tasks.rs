@@ -389,12 +389,30 @@ pub async fn validate_task_handler(
         ));
     }
 
+    // Fast path: same-process dedup before hitting the DB lease table.
     if !state.validate_inflight.try_start(&id) {
         return Ok(validate_http_response(
             StatusCode::ACCEPTED,
             "in_progress",
             "Validation already in progress",
         ));
+    }
+
+    // Cross-instance lease so two backend replicas cannot both evaluate the same task.
+    match try_claim_validate_lease(&state.pool, &id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            state.validate_inflight.finish(&id);
+            return Ok(validate_http_response(
+                StatusCode::ACCEPTED,
+                "in_progress",
+                "Validation already in progress",
+            ));
+        }
+        Err(err) => {
+            state.validate_inflight.finish(&id);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, err));
+        }
     }
 
     let pool = state.pool.clone();
@@ -418,6 +436,17 @@ pub async fn validate_task_handler(
             0,
         )
         .await;
+        // Keep the lease after a successful audit write so a racing peer cannot
+        // reclaim mid-flight when mock/LLM finishes faster than the second HTTP
+        // handler reaches try_claim_validate_lease. Release only on failure so
+        // another replica can retry; crash recovery still uses lease TTL.
+        let should_release = match fetch_task_row(&pool, &task_id).await {
+            Some(task) => task.validator_audit.is_none(),
+            None => true,
+        };
+        if should_release {
+            release_validate_lease(&pool, &task_id).await;
+        }
         inflight.finish(&task_id);
     });
 
@@ -650,6 +679,50 @@ fn validate_http_response(
             "message": message,
         })),
     )
+}
+
+/// Lease TTL for distributed `/validate` coordination (seconds).
+fn validate_lease_ttl_secs() -> u64 {
+    std::env::var("VALIDATE_LEASE_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(600)
+}
+
+/// Claim a DB lease for `task_id`. Returns `Ok(true)` if this caller acquired it.
+/// Expired leases are reclaimable so a crashed replica cannot block forever.
+async fn try_claim_validate_lease(pool: &DbPool, task_id: &str) -> Result<bool, String> {
+    let ttl = validate_lease_ttl_secs();
+
+    // Drop expired lease first so crash recovery can reclaim without UPDATE races.
+    sqlx::query("DELETE FROM validate_leases WHERE task_id = ? AND expires_at < UTC_TIMESTAMP()")
+        .bind(task_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("validate lease expire cleanup failed: {e}"))?;
+
+    // INSERT IGNORE is atomic under the unique PK: exactly one concurrent caller gets rows=1.
+    let result = sqlx::query(
+        "INSERT IGNORE INTO validate_leases (task_id, expires_at)
+         VALUES (?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND))",
+    )
+    .bind(task_id)
+    .bind(ttl as i64)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("validate lease claim failed: {e}"))?;
+
+    Ok(result.rows_affected() == 1)
+}
+
+async fn release_validate_lease(pool: &DbPool, task_id: &str) {
+    if let Err(err) = sqlx::query("DELETE FROM validate_leases WHERE task_id = ?")
+        .bind(task_id)
+        .execute(pool)
+        .await
+    {
+        tracing::warn!(task_id = %task_id, error = %err, "Failed to release validate lease");
+    }
 }
 
 async fn fetch_task_row(pool: &DbPool, task_id: &str) -> Option<Task> {
@@ -986,6 +1059,10 @@ mod validation_tests {
     }
 
     async fn cleanup_e2_fixtures(pool: &DbPool, task_id: &str) {
+        let _ = sqlx::query("DELETE FROM validate_leases WHERE task_id = ?")
+            .bind(task_id)
+            .execute(pool)
+            .await;
         let _ = sqlx::query("DELETE FROM exam_assignments WHERE task_id = ?")
             .bind(task_id)
             .execute(pool)
@@ -1831,6 +1908,7 @@ mod validation_tests {
     }
 
     /// Gap 3 substitute: proves backend reaches submit-path attempt when `EXAM_SKIP_ONCHAIN` is unset.
+    /// Self-contained: unsets EXAM_SKIP_ONCHAIN even if the outer suite exported `=1`.
     #[tokio::test]
     #[ignore = "requires MySQL: prod-path gap sanity; cargo test prod_path_branch_sanity -- --ignored --test-threads=1"]
     async fn prod_path_branch_sanity_reaches_submit_attempt() {
@@ -1842,38 +1920,44 @@ mod validation_tests {
             .with_test_writer()
             .try_init();
 
-        assert!(
-            !should_skip_onchain_submit(),
-            "EXAM_SKIP_ONCHAIN must be unset for prod-path sanity check"
-        );
-
         let task_id = "e2-prod-path-sanity";
         let output = "ANSWER: 2845678901.25 cspr";
         let pool = connect_test_pool().await;
         cleanup_e2_fixtures(&pool, task_id).await;
         seed_exam_task_fixture(&pool, task_id, true).await;
 
-        temp_env::async_with_vars([("VALIDATOR_MOCK_LLM", Some("1"))], async {
-            let config = sample_config();
+        temp_env::async_with_vars(
+            [
+                ("VALIDATOR_MOCK_LLM", Some("1")),
+                ("EXAM_SKIP_ONCHAIN", None::<&str>),
+            ],
+            async {
+                assert!(
+                    !should_skip_onchain_submit(),
+                    "EXAM_SKIP_ONCHAIN must be unset for prod-path sanity check"
+                );
 
-            validate_and_complete(
-                &pool,
-                &config,
-                task_id,
-                "defi_analysis",
-                "Compute stake",
-                5_000_000_000,
-                output,
-                4000,
-            )
-            .await;
+                let config = sample_config();
 
-            let task = fetch_task_row(&pool, task_id).await;
-            assert!(
-                task.validator_audit.is_some(),
-                "validation must persist audit before submit attempt"
-            );
-        })
+                validate_and_complete(
+                    &pool,
+                    &config,
+                    task_id,
+                    "defi_analysis",
+                    "Compute stake",
+                    5_000_000_000,
+                    output,
+                    4000,
+                )
+                .await;
+
+                let task = fetch_task_row(&pool, task_id).await;
+                assert!(
+                    task.validator_audit.is_some(),
+                    "validation must persist audit before submit attempt"
+                );
+            },
+        )
         .await;
 
         cleanup_e2_fixtures(&pool, task_id).await;

@@ -71,5 +71,6 @@ pub fn map_base_config(config: &Config) -> LlmConfig {
         judge_timeout_ms,
         judge_self_consistency,
         exam_llm_equality: config.exam_llm_equality,
+        judge_raw_fixture: env("VALIDATOR_JUDGE_RAW_FIXTURE"),
     }
 }

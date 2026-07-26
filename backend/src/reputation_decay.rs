@@ -34,6 +34,71 @@ use tokio::time::{self, MissedTickBehavior};
 
 type StopSender = mpsc::Sender<()>;
 
+/// Timeout for a single decay CLI invocation (seconds). Override with `DECAY_CLI_TIMEOUT_SECS`.
+fn decay_cli_timeout() -> Duration {
+    std::env::var("DECAY_CLI_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(120))
+}
+
+fn resolve_decay_bin() -> String {
+    if let Ok(p) = std::env::var("DECAY_CLI_BIN").map(|v| v.trim().to_string())
+        && !p.is_empty()
+    {
+        return p;
+    }
+    if std::path::Path::new("/usr/local/bin/agent_network_decay_reputation").exists() {
+        "/usr/local/bin/agent_network_decay_reputation".to_string()
+    } else {
+        "cargo".to_string()
+    }
+}
+
+/// Run one CLI invocation with a hard timeout so a hanging binary cannot block the runtime forever.
+fn run_decay_cli_with_timeout(
+    mut cmd: Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn decay CLI: {}", e))?;
+
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut out) = child.stdout.take() {
+                    let _ = out.read_to_end(&mut stdout);
+                }
+                if let Some(mut err) = child.stderr.take() {
+                    let _ = err.read_to_end(&mut stderr);
+                }
+                return Ok(std::process::Output {
+                    status: _status,
+                    stdout,
+                    stderr,
+                });
+            }
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("decay CLI timed out after {}s", timeout.as_secs()));
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(format!("Failed to wait for decay CLI: {}", e)),
+        }
+    }
+}
+
 pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), String> {
     tracing::debug!("reputation decay loop tick");
 
@@ -44,17 +109,14 @@ pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), 
             .await
             .map_err(|e| format!("DB query failed: {}", e))?;
 
+    let timeout = decay_cli_timeout();
+
     for (agent_pk, skill) in reps {
         tracing::info!(agent = %agent_pk, skill = %skill, "Running decay check");
 
-        let bin_path =
-            if std::path::Path::new("/usr/local/bin/agent_network_decay_reputation").exists() {
-                "/usr/local/bin/agent_network_decay_reputation"
-            } else {
-                "cargo"
-            };
+        let bin_path = resolve_decay_bin();
 
-        let mut cmd = Command::new(bin_path);
+        let mut cmd = Command::new(&bin_path);
         if bin_path == "cargo" {
             cmd.args([
                 "run",
@@ -84,22 +146,29 @@ pub async fn run_decay_iteration(pool: &DbPool, _config: &Config) -> Result<(), 
             cmd.env("ODRA_CASPER_LIVENET_SECRET_KEY_PATH", key_path);
         }
 
-        let output = cmd.output();
-        match output {
+        // Blocking CLI runs on a worker thread so the async runtime stays responsive.
+        let agent_pk_log = agent_pk.clone();
+        let skill_log = skill.clone();
+        let cli_result =
+            tokio::task::spawn_blocking(move || run_decay_cli_with_timeout(cmd, timeout))
+                .await
+                .map_err(|e| format!("decay CLI join error: {}", e))?;
+
+        match cli_result {
             Ok(out) if out.status.success() => {
-                tracing::info!(agent = %agent_pk, skill = %skill, "Reputation decay processed successfully");
+                tracing::info!(agent = %agent_pk_log, skill = %skill_log, "Reputation decay processed successfully");
             }
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 tracing::warn!(
-                    agent = %agent_pk,
-                    skill = %skill,
+                    agent = %agent_pk_log,
+                    skill = %skill_log,
                     stderr = %stderr,
                     "Reputation decay CLI completed with non-zero status"
                 );
             }
             Err(e) => {
-                tracing::error!(agent = %agent_pk, skill = %skill, error = %e, "Failed to run decay CLI");
+                tracing::error!(agent = %agent_pk_log, skill = %skill_log, error = %e, "Failed to run decay CLI");
             }
         }
     }
@@ -173,6 +242,20 @@ mod tests {
     }
 
     #[test]
+    fn test_decay_past_time_returns_same() {
+        let (ws, tw) = calculate_decay(1000, 10, 100, 50); // now_ms < last_update_ms
+        assert_eq!(ws, 1000);
+        assert_eq!(tw, 10);
+    }
+
+    #[test]
+    fn test_decay_zero_weight_returns_same() {
+        let (ws, tw) = calculate_decay(1000, 0, 100, 200); // total_weight == 0
+        assert_eq!(ws, 1000);
+        assert_eq!(tw, 0);
+    }
+
+    #[test]
     fn test_half_life_decay_halves_values() {
         let now = 100 + HALF_LIFE_MS;
         let (ws, tw) = calculate_decay(1000, 10, 100, now);
@@ -199,5 +282,178 @@ mod tests {
             assert!(spawn_decay_loop_if_enabled(pool, config).is_none());
         })
         .await;
+    }
+
+    async fn connect_test_pool() -> Option<DbPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        if url.is_empty() {
+            return None;
+        }
+        sqlx::MySqlPool::connect(&url).await.ok()
+    }
+
+    /// Wave 4 scenario 14: empty reputations → Ok, no CLI needed.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_decay_empty_db_is_ok() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => {
+                println!("skip: DATABASE_URL unset");
+                return;
+            }
+        };
+        // Isolate: only check that empty query path returns Ok.
+        // Delete only our fixture keys if any; empty table is ideal but may share DB.
+        let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key LIKE 'w4-decay-%'")
+            .execute(&pool)
+            .await;
+        let config = crate::config::Config::from_env();
+        // Point CLI at a failing stub so any unexpected invocation would error loudly in logs,
+        // but empty set means CLI is never called.
+        temp_env::async_with_vars(
+            [
+                ("DECAY_CLI_BIN", Some("/bin/false")),
+                ("DECAY_CLI_TIMEOUT_SECS", Some("2")),
+            ],
+            async {
+                let res = run_decay_iteration(&pool, &config).await;
+                assert!(res.is_ok(), "empty decay tick must be Ok: {:?}", res);
+                println!("[PASS] scenario 14: empty reputations tick is Ok");
+            },
+        )
+        .await;
+    }
+
+    /// Wave 4 scenario 15: missing binary / missing key → warn path, iteration still Ok.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_decay_missing_binary_survives() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let agent = "w4-decay-agent-missing-bin";
+        let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query(
+            "INSERT INTO agents (public_key, name, status) VALUES (?, 'W4 Decay', 'active')
+             ON DUPLICATE KEY UPDATE status='active'",
+        )
+        .bind(agent)
+        .execute(&pool)
+        .await;
+        sqlx::query(
+            "INSERT INTO reputations (id, agent_public_key, skill, score)
+             VALUES ('w4-decay-rep-1', ?, 'defi_analysis', 50)
+             ON DUPLICATE KEY UPDATE score=50",
+        )
+        .bind(agent)
+        .execute(&pool)
+        .await
+        .expect("seed rep");
+
+        let config = crate::config::Config::from_env();
+        temp_env::async_with_vars(
+            [
+                (
+                    "DECAY_CLI_BIN",
+                    Some("/nonexistent/agent_network_decay_reputation"),
+                ),
+                ("DECAY_CLI_TIMEOUT_SECS", Some("2")),
+                ("ADMIN_SECRET_KEY_PATH", None::<&str>),
+            ],
+            async {
+                let res = run_decay_iteration(&pool, &config).await;
+                assert!(
+                    res.is_ok(),
+                    "missing binary must not kill the iteration: {:?}",
+                    res
+                );
+                println!("[PASS] scenario 15: missing decay binary → Ok with error log");
+            },
+        )
+        .await;
+
+        let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agents WHERE public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
+    }
+
+    /// Wave 4 scenario 16: hanging CLI is killed by timeout; iteration returns Ok.
+    #[tokio::test]
+    #[ignore]
+    async fn test_w4_decay_hanging_cli_times_out() {
+        let pool = match connect_test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let agent = "w4-decay-agent-hang";
+        let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query(
+            "INSERT INTO agents (public_key, name, status) VALUES (?, 'W4 Hang', 'active')
+             ON DUPLICATE KEY UPDATE status='active'",
+        )
+        .bind(agent)
+        .execute(&pool)
+        .await;
+        sqlx::query(
+            "INSERT INTO reputations (id, agent_public_key, skill, score)
+             VALUES ('w4-decay-rep-hang', ?, 'defi_analysis', 40)
+             ON DUPLICATE KEY UPDATE score=40",
+        )
+        .bind(agent)
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let hang_script = std::env::temp_dir().join("w4_decay_hang.sh");
+        std::fs::write(&hang_script, "#!/bin/sh\nexec sleep 60\n").expect("write hang script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&hang_script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&hang_script, perms).unwrap();
+        }
+        let hang_path = hang_script.to_string_lossy().to_string();
+
+        let config = crate::config::Config::from_env();
+        let start = std::time::Instant::now();
+        temp_env::async_with_vars(
+            [
+                ("DECAY_CLI_BIN", Some(hang_path.as_str())),
+                ("DECAY_CLI_TIMEOUT_SECS", Some("1")),
+            ],
+            async {
+                let res = run_decay_iteration(&pool, &config).await;
+                assert!(res.is_ok(), "timeout path must return Ok: {:?}", res);
+                assert!(
+                    start.elapsed() < std::time::Duration::from_secs(10),
+                    "must not block forever"
+                );
+                println!("[PASS] scenario 16: hanging CLI timed out; runtime not blocked forever");
+            },
+        )
+        .await;
+
+        let _ = sqlx::query("DELETE FROM reputations WHERE agent_public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agents WHERE public_key = ?")
+            .bind(agent)
+            .execute(&pool)
+            .await;
     }
 }

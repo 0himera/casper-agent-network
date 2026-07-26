@@ -73,6 +73,35 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    // Ensure columns exist on already created tables
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN model VARCHAR(255) NULL")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN deadline BIGINT UNSIGNED NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result_signature TEXT NULL")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN result TEXT NULL")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN skill_id VARCHAR(100) NULL")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN validator_audit JSON NULL")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN delegated_signer VARCHAR(128) NULL")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN parent_task_id VARCHAR(128) NULL")
+        .execute(&pool)
+        .await;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS reputations (
             id VARCHAR(255) PRIMARY KEY,
@@ -181,6 +210,17 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
             FOREIGN KEY (validator_public_key) REFERENCES validators(public_key) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Cross-instance /validate lease: TTL recovery if a backend replica crashes mid-flight.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS validate_leases (
+            task_id VARCHAR(128) PRIMARY KEY,
+            expires_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
         )",
     )
     .execute(&pool)

@@ -2,7 +2,7 @@
 
 How to run the live validator, which flags to set, which LLM providers are used, and how the stage pipeline scores answers.
 
-> **Note:** Extended design docs (`implementation.md`, `roadmap.md`, phase plans, etc.) live in `backend/validator/documentation/`. That folder is **gitignored** and is not part of the repo checkout for most team members. This guide is self-contained.
+> **Note:** Extended design docs (`implementation.md`, `roadmap.md`, phase plans, etc.) live in `docs-internal/`. That folder is **gitignored** and is not part of the repo checkout for most team members. This guide is self-contained.
 
 ## Live `/execute` path
 
@@ -173,7 +173,7 @@ Inspect via `GET /api/tasks/:id` after execute completes.
 
 ```bash
 # Validator crate — mock regression
-cd backend/validator
+cd validator-engine
 VALIDATOR_MOCK_LLM=1 cargo test
 
 # Stage S0–S3 manual smoke (real LLM if mock off)

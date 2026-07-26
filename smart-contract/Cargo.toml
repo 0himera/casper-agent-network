@@ -92,6 +92,18 @@ path = "bin/register_validator.rs"
 required-features = ["livenet"]
 test = false
 
+[[bin]]
+name = "agent_network_stake_agent"
+path = "bin/stake_agent.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "agent_network_stake_validator"
+path = "bin/stake_validator.rs"
+required-features = ["livenet"]
+test = false
+
 [profile.release]
 codegen-units = 16
 lto = "thin"

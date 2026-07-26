@@ -41,7 +41,7 @@ fi
 
 echo "Stage pipeline manual smoke (real LLM)"
 echo "  VALIDATOR_PROVIDER=${VALIDATOR_PROVIDER:-<auto>}"
-echo "  VALIDATOR_LLM_MODEL=${VALIDATOR_LLM_MODEL:-${OPENAI_MODEL:-<provider default>}}}"
+echo "  VALIDATOR_LLM_MODEL=${VALIDATOR_LLM_MODEL:-${OPENAI_MODEL:-<provider default>}}"
 echo "  OPENAI_BASE_URL=${OPENAI_BASE_URL:-<default>}"
 
 cargo run --bin stage_pipeline_manual_smoke

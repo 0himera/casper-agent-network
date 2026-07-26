@@ -302,6 +302,14 @@ pub fn load_stage_golden_cases() -> Result<Vec<StageGoldenCase>, String> {
     load_stage_golden_cases_from_path(&path)
 }
 
+/// Real-LLM stage smoke cases (Wave 5 B4/B5). Same schema as golden cases.
+pub fn load_stage_llm_real_smoke_cases() -> Result<Vec<StageGoldenCase>, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("stage_llm_real_smoke_cases.json");
+    load_stage_golden_cases_from_path(&path)
+}
+
 fn check_stage_expectation(
     case: &StageGoldenCase,
     output: &StagePipelineOutput,
@@ -685,8 +693,18 @@ mod tests {
         let cases =
             load_exam_equality_real_smoke_cases().expect("exam equality real smoke manifest");
         assert!(
-            cases.len() >= 3,
-            "expected >= 3 real smoke cases, got {}",
+            cases.len() >= 5,
+            "expected >= 5 real smoke cases, got {}",
+            cases.len()
+        );
+    }
+
+    #[test]
+    fn load_stage_llm_real_smoke_cases_has_entries() {
+        let cases = load_stage_llm_real_smoke_cases().expect("stage llm real smoke manifest");
+        assert!(
+            cases.len() >= 5,
+            "expected >= 5 stage real smoke cases, got {}",
             cases.len()
         );
     }

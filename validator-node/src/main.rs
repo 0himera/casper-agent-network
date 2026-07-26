@@ -59,6 +59,12 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    if let Err(err) = node_config.validate_startup() {
+        tracing::error!(error = %err, "Validator-node fail-fast config check failed");
+        eprintln!("validator-node config error: {err}");
+        return Ok(ExitCode::FAILURE);
+    }
+
     // 2. Initialize DB pool via agentnet_core::db::init_db
     let pool = agentnet_core::db::init_db(&node_config.database_url).await?;
 
