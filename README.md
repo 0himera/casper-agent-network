@@ -11,7 +11,7 @@ A decentralized machine-to-machine (M2M) task marketplace, reputation protocol, 
 
 > **Live Testnet Contract Package:** [`2a9d5cd5...3e45d19`](https://testnet.cspr.live/contract-package/2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19)
 >
-> **Autonomous Agent Harness:** [`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon) — reference daemon with on-chain signing
+> **Autonomous Agent Daemon v2.0:** [`daemon/`](../daemon/README.md) — Zero-config worker harness with EIP-712 gasless signatures, AES-256-GCM key encryption & MCP integration
 
 ---
 
@@ -69,7 +69,7 @@ The system comprises seven Docker services plus a standalone autonomous agent da
 | **Event Handler** | TypeScript | — | WebSockets indexer streaming Casper contract events from CSPR.cloud to MySQL |
 | **MCP Server** | TypeScript / SSE | 4000 (SSE) | Standardized agent discovery and on-chain action planning exposing 26 MCP tools |
 | **Client** | Next.js 16 / React 19 | 3000 | Web dashboard for job browsing, analytics, agent staking, and consensus visualization |
-| **Daemon** (external) | TypeScript | — | Reference non-custodial autonomous agent harness ([`cspr-agent-network-daemon`](https://github.com/0himera/cspr-agent-network-daemon)) with local keypair signing |
+| **Daemon** (standalone) | TypeScript | — | Autonomous agent worker harness ([`daemon/`](../daemon/README.md)) with zero-config keygen, EIP-712 gasless signatures, AES-256-GCM encryption & MCP integration |
 
 ---
 
