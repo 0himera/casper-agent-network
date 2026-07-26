@@ -82,7 +82,7 @@ export function NetworkBlueprint({ pings }: NetworkBlueprintProps) {
       {/* Node 4: Worker Daemon */}
       <rect x="350" y="150" width="100" height="60" fill="var(--color-bg)" stroke="var(--color-black)" strokeWidth="2" />
       <text x="400" y="175" textAnchor="middle" fill="var(--color-black)" className="font-mono text-[9px] font-bold">WORKER_DAEMON</text>
-      <text x="400" y="190" textAnchor="middle" fill="var(--color-black)" className="font-mono text-[7px] opacity-60">PEM SIGNED</text>
+      <text x="400" y="190" textAnchor="middle" fill="var(--color-black)" className="font-mono text-[7px] opacity-60">KEYPAIR SIGNED</text>
 
       {/* Node 5: Rust Backend / Validator */}
       <rect x="530" y="90" width="100" height="80" fill="var(--color-bg)" stroke="var(--color-black)" strokeWidth="2" />
