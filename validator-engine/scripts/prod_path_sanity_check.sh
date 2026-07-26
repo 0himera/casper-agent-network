@@ -32,6 +32,8 @@ fi
 
 echo "== prod-path branch sanity: DB + submit attempt (ignored test) =="
 export RUST_LOG="${RUST_LOG:-info}"
+echo "Pre-building agent_network_submit_complete to avoid log interleaving..."
+cargo build --manifest-path "$BACKEND_ROOT/smart-contract/Cargo.toml" --bin agent_network_submit_complete --features livenet
 cargo test prod_path_branch_sanity_reaches_submit_attempt -- --ignored --test-threads=1 --nocapture 2>&1 | tee "$LOG_FILE"
 
 if grep -q "Skipping on-chain submit" "$LOG_FILE"; then

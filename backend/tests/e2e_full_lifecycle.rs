@@ -17,7 +17,7 @@ use tower::ServiceExt;
 
 const INTERNAL_SERVICE_KEY: &str = "test-internal-key";
 const TASK_ID: &str = "e2e-task-123";
-const AGENT_PK: &str = "01d0a514d79d989f67a2176b66d6c97a7372b05ffe40cdcd9e473d4a2176be600";
+const AGENT_PK: &str = "01b7ad14b2f667aa9cf5d73a1faae685ed2fd7df6f71896946d54fac926fbac20d";
 const CREATOR_PK: &str = "01a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
 
 fn database_url() -> String {

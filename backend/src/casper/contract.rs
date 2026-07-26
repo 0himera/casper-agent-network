@@ -203,39 +203,116 @@ impl CasperClient {
             .await
             .map_err(|e| format!("Failed to parse deploy details: {}", e))?;
 
-        let status = body
-            .get("data")
-            .and_then(|d| d.get("status"))
+        let data = body.get("data").unwrap_or(&body);
+        let status = data
+            .get("status")
             .and_then(|s| s.as_str())
             .unwrap_or_default();
 
-        if status != "executed" && status != "success" {
+        // CSPR.cloud testnet currently reports successful native transfers as "processed".
+        let status_ok = matches!(status, "executed" | "success" | "processed");
+        let has_error = data
+            .get("error_message")
+            .map(|e| !e.is_null() && e.as_str().map(|s| !s.is_empty()).unwrap_or(true))
+            .unwrap_or(false);
+        if !status_ok || has_error {
             return Ok(false);
         }
 
-        let transfers = body
-            .get("data")
-            .and_then(|d| d.get("transfers"))
-            .and_then(|t| t.as_array());
+        let merchant_account_hash = agentnet_core::casper_utils::public_key_to_account_hash(
+            merchant_pubkey,
+        )
+        .to_lowercase();
+        let merchant_hash_bare = merchant_account_hash
+            .trim_start_matches("account-hash-")
+            .to_string();
+        let merchant_pk = merchant_pubkey.to_lowercase();
 
-        if let Some(transfers_list) = transfers {
+        let recipient_matches = |to: &str| -> bool {
+            let to_l = to.to_lowercase();
+            let to_bare = to_l.trim_start_matches("account-hash-");
+            to_l == merchant_pk
+                || to_l == merchant_account_hash
+                || to_bare == merchant_hash_bare
+        };
+
+        let parse_amount = |v: &serde_json::Value| -> u64 {
+            if let Some(s) = v.as_str() {
+                return s.parse().unwrap_or(0);
+            }
+            if let Some(n) = v.as_u64() {
+                return n;
+            }
+            0
+        };
+
+        // Legacy / mock shape: data.transfers[{amount,to}]
+        if let Some(transfers_list) = data.get("transfers").and_then(|t| t.as_array()) {
             for transfer in transfers_list {
-                let amount_str = transfer
+                let amount = transfer
                     .get("amount")
-                    .and_then(|a| a.as_str())
-                    .unwrap_or("0");
+                    .map(parse_amount)
+                    .unwrap_or(0);
                 let to = transfer
                     .get("to")
+                    .or_else(|| transfer.get("to_account_hash"))
                     .and_then(|t| t.as_str())
                     .unwrap_or_default();
 
-                let amount: u64 = amount_str.parse().unwrap_or(0);
-
-                if amount >= expected_amount_motes
-                    && to.to_lowercase() == merchant_pubkey.to_lowercase()
-                {
+                if amount >= expected_amount_motes && recipient_matches(to) {
                     return Ok(true);
                 }
+            }
+        }
+
+        // Current CSPR.cloud: GET /deploys/{hash}/transfers → data[{amount,to_account_hash}]
+        let transfers_url = format!("{}/deploys/{}/transfers", self.api_url, deploy_hash);
+        let transfers_resp = self
+            .client
+            .get(&transfers_url)
+            .header("Authorization", &self.access_key)
+            .send()
+            .await
+            .map_err(|e| format!("CSPR.cloud transfers request failed: {}", e))?;
+
+        if transfers_resp.status().is_success() {
+            let transfers_body: serde_json::Value = transfers_resp
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse transfer details: {}", e))?;
+            if let Some(transfers_list) = transfers_body.get("data").and_then(|t| t.as_array()) {
+                for transfer in transfers_list {
+                    let amount = transfer
+                        .get("amount")
+                        .map(parse_amount)
+                        .unwrap_or(0);
+                    let to = transfer
+                        .get("to_account_hash")
+                        .or_else(|| transfer.get("to"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or_default();
+
+                    if amount >= expected_amount_motes && recipient_matches(to) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        // Fallback for native Transfer deploys: inspect session args.
+        if let Some(args) = data.get("args") {
+            let amount = args
+                .get("amount")
+                .and_then(|a| a.get("parsed"))
+                .map(parse_amount)
+                .unwrap_or(0);
+            let target = args
+                .get("target")
+                .and_then(|t| t.get("parsed"))
+                .and_then(|t| t.as_str())
+                .unwrap_or_default();
+            if amount >= expected_amount_motes && recipient_matches(target) {
+                return Ok(true);
             }
         }
 

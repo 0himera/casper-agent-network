@@ -57,3 +57,10 @@ daemonlogs.txt
 mysql/
 mysql
 
+
+# Wave5 run evidence (logs may contain secrets)
+docs-internal/mad_analysis/raw/wave5_evidence/*
+!docs-internal/mad_analysis/raw/wave5_evidence/README.md
+
+# Wave5 live runners (local orchestration only)
+scripts/wave5/

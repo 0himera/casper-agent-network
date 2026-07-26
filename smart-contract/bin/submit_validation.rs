@@ -96,8 +96,12 @@ fn main() {
                     break;
                 }
             } else {
-                eprintln!("❌ Task not found on-chain!");
-                std::process::exit(1);
+                eprintln!(
+                    "⚠️ Task not found on-chain yet (attempt {}). Waiting 10s...",
+                    attempt
+                );
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                continue;
             }
         }
 

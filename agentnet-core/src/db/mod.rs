@@ -96,6 +96,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, sqlx::Error> {
     let _ = sqlx::query("ALTER TABLE agents ADD COLUMN is_available TINYINT NOT NULL DEFAULT 1")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE agents ADD COLUMN delegated_signer VARCHAR(128) NULL")
+        .execute(&pool)
+        .await;
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN parent_task_id VARCHAR(128) NULL")
         .execute(&pool)
         .await;

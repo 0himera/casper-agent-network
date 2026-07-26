@@ -24,5 +24,23 @@
     "candidate_answer": "about five hundred twenty-three million four hundred fifty-six thousand seven hundred eighty-nine dollars and twelve cents",
     "answer_verification_mode": "exact_then_llm",
     "label": "pass"
+  },
+  {
+    "id": "w5_b6_borderline_paraphrase_pass",
+    "task_prompt": "DeFi desk snapshot: What was the TVL of Curve 3pool on Ethereum mainnet at block 19,000,000?\nReturn strictly: ANSWER: <number> usd",
+    "expected_answer": "523456789.12 usd",
+    "candidate_answer": "TVL sat at 523,456,789.12 USD for that block height.",
+    "answer_verification_mode": "exact_then_llm",
+    "verification_reason": "Wave5 B6 borderline paraphrase of the same numeric TVL",
+    "label": "pass"
+  },
+  {
+    "id": "w5_b6_borderline_wrong_fail",
+    "task_prompt": "DeFi desk snapshot: What was the TVL of Curve 3pool on Ethereum mainnet at block 19,000,000?\nReturn strictly: ANSWER: <number> usd",
+    "expected_answer": "523456789.12 usd",
+    "candidate_answer": "TVL was roughly five hundred million dollars at that block.",
+    "answer_verification_mode": "exact_then_llm",
+    "verification_reason": "Wave5 B6 near-miss must remain fail-closed (Type H)",
+    "label": "fail"
   }
 ]

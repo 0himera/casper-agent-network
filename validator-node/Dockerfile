@@ -1,7 +1,7 @@
 # Build stage using bookworm to match runtime stage glibc
 FROM rust:1.96-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     pkg-config \
     libssl-dev \
     mold \
@@ -19,6 +19,7 @@ COPY Cargo.toml ./Cargo.toml
 COPY agentnet-core/Cargo.toml ./agentnet-core/Cargo.toml
 COPY validator-engine/Cargo.toml ./validator-engine/Cargo.toml
 COPY validator-node/Cargo.toml ./validator-node/Cargo.toml
+COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY smart-contract/Cargo.toml smart-contract/Cargo.lock* ./smart-contract/
 
 # Create stub source files for dependency pre-build
@@ -51,6 +52,7 @@ RUN cargo build --release -p validator-node
 # Copy real source code
 COPY agentnet-core/src ./agentnet-core/src
 COPY validator-engine/src ./validator-engine/src
+COPY validator-engine/prompts ./validator-engine/prompts
 COPY validator-node/src ./validator-node/src
 COPY smart-contract/src ./smart-contract/src
 COPY smart-contract/bin ./smart-contract/bin
@@ -68,7 +70,7 @@ RUN cargo build --release --bin agent_network_submit_validation --bin agent_netw
 
 # Final runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y \
+RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*

@@ -4,6 +4,7 @@ import { pool } from "./db";
 import { CSPRCloudAPIClient } from "./cspr-cloud/api-client";
 import { formatDate } from "./utils";
 import { RowDataPacket } from 'mysql2';
+import { catchUpFromRecentDeploys } from "./event-catchup";
 import { 
   ContractEvent, 
   AgentRegisteredPayload, 
@@ -30,7 +31,8 @@ import {
   ValidatorUnstakedPayload,
   TreasuryDistributedPayload,
   TreasuryBurnedPayload,
-  DelegatedSignerUpdatedPayload
+  DelegatedSignerUpdatedPayload,
+  ValidationSubmittedPayload
 } from "./events";
 
 async function fetchWithRetry(taskId: string, action: 'execute' | 'validate', options: RequestInit, retries = 3) {
@@ -98,6 +100,17 @@ async function main() {
 
   ws.on('open', () => {
     console.log(`Connected to streaming API: ${config.csprCloudStreamingUrl}`);
+    // Backfill create/assign transitions missed while the process was down.
+    catchUpFromRecentDeploys({
+      pool,
+      apiUrl: config.csprCloudApiUrl,
+      accessKey: config.csprCloudAccessKey,
+      contractPackageHash: config.contractPackageHash,
+      log: (msg) => console.log(msg),
+      limit: 40,
+    }).catch((err) => {
+      console.log('catch-up failed:', err?.message || err);
+    });
   });
 
   let lastPingTimestamp = new Date();
@@ -252,17 +265,43 @@ async function main() {
           );
         }
 
-        await pool.execute(
-          'UPDATE tasks SET assigned_agent_public_key = ?, status = "InProgress" WHERE id = ?',
-          [finalAgentKey, payload.task_id]
+        // TaskAssigned can arrive before TaskCreated is persisted (stream reorder / lag).
+        // Upsert so a late TaskCreated UPDATE cannot leave the row stuck at Open/unassigned.
+        const [taskRows] = await pool.query<RowDataPacket[]>(
+          'SELECT id FROM tasks WHERE id = ?',
+          [payload.task_id]
         );
+        if (taskRows.length === 0) {
+          await pool.execute(
+            'INSERT INTO tasks (id, creator_public_key, budget_motes, status, transaction_hash, domain, prompt, deadline, timestamp, assigned_agent_public_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              payload.task_id,
+              'pending_creator',
+              0,
+              'InProgress',
+              deployHash,
+              'defi_analysis',
+              '',
+              '0',
+              new Date(timestamp),
+              finalAgentKey,
+            ]
+          );
+          console.log(
+            `Task ${payload.task_id} assigned before create indexed; inserted InProgress stub for ${finalAgentKey}`
+          );
+        } else {
+          await pool.execute(
+            'UPDATE tasks SET assigned_agent_public_key = ?, status = "InProgress" WHERE id = ?',
+            [finalAgentKey, payload.task_id]
+          );
+          console.log(`Task ${payload.task_id} assigned to agent ${finalAgentKey}`);
+        }
 
         await pool.execute(
           'UPDATE agents SET active_jobs = active_jobs + 1 WHERE public_key = ?',
           [finalAgentKey]
         );
-
-        console.log(`Task ${payload.task_id} assigned to agent ${finalAgentKey}`);
 
         if (!agent) {
           const [agentRows] = await pool.query<RowDataPacket[]>('SELECT * FROM agents WHERE public_key = ?', [finalAgentKey]);
@@ -573,8 +612,47 @@ async function main() {
         console.log(`Treasury Burned: ${payload.burned_amount}`);
 
       } else if (eventName === 'ValidationSubmitted') {
-        // ValidationSubmitted is an event, but the backend handles it immediately via the node. We can just log it here.
-        console.log(`Validation Submitted by validator for a task`);
+        const payload = event.data.data as ValidationSubmittedPayload;
+        let validatorKey = payload.validator;
+        try {
+          const account = await csprCloudClient.getAccount(payload.validator);
+          validatorKey = account.data.public_key || payload.validator;
+        } catch (e) {}
+
+        const score = typeof payload.score === 'string' ? parseInt(payload.score, 10) : Number(payload.score);
+        if (!Number.isFinite(score)) {
+          throw new Error(`Invalid validation score for task ${payload.task_id}: ${payload.score}`);
+        }
+
+        // Ensure FK parent row exists (CLI/on-chain path may outpace ValidatorRegistered indexing).
+        const [validatorRows] = await pool.query<RowDataPacket[]>(
+          'SELECT public_key FROM validators WHERE public_key = ?',
+          [validatorKey]
+        );
+        if (!validatorRows[0]) {
+          await pool.execute(
+            'INSERT INTO validators (public_key, stake_motes, is_active, total_validations, timestamp) VALUES (?, 0, 1, 0, ?)',
+            [validatorKey, new Date(timestamp)]
+          );
+        }
+
+        const [existing] = await pool.query<RowDataPacket[]>(
+          'SELECT id FROM validations WHERE task_id = ? AND validator_public_key = ? LIMIT 1',
+          [payload.task_id, validatorKey]
+        );
+        if (!existing[0]) {
+          await pool.execute(
+            'INSERT INTO validations (task_id, validator_public_key, score, timestamp) VALUES (?, ?, ?, ?)',
+            [payload.task_id, validatorKey, score, new Date(timestamp)]
+          );
+          await pool.execute(
+            'UPDATE validators SET total_validations = total_validations + 1 WHERE public_key = ?',
+            [validatorKey]
+          );
+          console.log(`Validation indexed for task ${payload.task_id}: validator=${validatorKey} score=${score}`);
+        } else {
+          console.log(`Validation already indexed for task ${payload.task_id}: validator=${validatorKey}`);
+        }
       }
 
     } catch (err) {

@@ -1,7 +1,7 @@
 # Build stage using bookworm to match runtime stage glibc
 FROM rust:1.96-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     pkg-config \
     libssl-dev \
     mold \
@@ -70,7 +70,7 @@ RUN cargo build --release --bin agent_network_submit_complete --bin agent_networ
 
 # Final runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y \
+RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     ca-certificates \
     libssl3 \
     curl \

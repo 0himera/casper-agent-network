@@ -7,6 +7,59 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::sync::OnceLock;
+use sha2::{Sha256, Digest};
+use rand::RngCore;
+
+static X402_SECRET: OnceLock<Vec<u8>> = OnceLock::new();
+
+fn get_x402_secret() -> &'static [u8] {
+    X402_SECRET.get_or_init(|| {
+        std::env::var("X402_SECRET")
+            .map(|s| s.into_bytes())
+            .unwrap_or_else(|_| {
+                let mut bytes = vec![0u8; 32];
+                rand::thread_rng().fill_bytes(&mut bytes);
+                bytes
+            })
+    })
+}
+
+pub fn generate_challenge_token(valid_until: u64, price_motes: u64, resource: &str) -> String {
+    let secret = get_x402_secret();
+    let mut hasher = Sha256::new();
+    hasher.update(secret);
+    hasher.update(valid_until.to_be_bytes());
+    hasher.update(price_motes.to_be_bytes());
+    hasher.update(resource.as_bytes());
+    let sig = hex::encode(hasher.finalize());
+    format!("{}.{}", valid_until, sig)
+}
+
+pub fn verify_challenge_token(token: &str, price_motes: u64, resource: &str) -> Result<(), String> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 2 {
+        return Err("Invalid challenge token format".to_string());
+    }
+    let valid_until_str = parts[0];
+    let sig = parts[1];
+    
+    let valid_until: u64 = valid_until_str.parse().map_err(|_| "Invalid validUntil timestamp".to_string())?;
+    
+    let now = chrono::Utc::now().timestamp() as u64;
+    if now > valid_until {
+        return Err("Challenge token expired".to_string());
+    }
+    
+    let expected_token = generate_challenge_token(valid_until, price_motes, resource);
+    let expected_sig = expected_token.split('.').nth(1).unwrap_or("");
+    
+    if sig != expected_sig {
+        return Err("Challenge token signature mismatch".to_string());
+    }
+    
+    Ok(())
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct XPaymentHeader {
@@ -24,6 +77,8 @@ pub struct XPaymentPayload {
     pub signature: Option<String>,
     #[serde(rename = "paymentType", default)]
     pub payment_type: Option<String>,
+    #[serde(rename = "challengeToken", default)]
+    pub challenge_token: Option<String>,
 }
 
 /// Decodes X-Payment header using autodetect (direct JSON, Base64, or Hex).
@@ -60,6 +115,9 @@ pub fn make_402_challenge_response(
     resource: &str,
     description: &str,
 ) -> Response {
+    let valid_until = (chrono::Utc::now().timestamp() + 300) as u64; // 5 minutes validity
+    let token = generate_challenge_token(valid_until, price_motes, resource);
+
     let body = json!({
         "x402Version": 1,
         "scheme": "exact",
@@ -70,7 +128,9 @@ pub fn make_402_challenge_response(
         "description": description,
         "mimeType": "application/json",
         "payTo": merchant_pubkey,
-        "outputSchema": null
+        "outputSchema": null,
+        "validUntil": valid_until,
+        "challengeToken": token
     });
 
     (
@@ -89,6 +149,10 @@ pub fn make_402_challenge(
     price_motes: u64,
     merchant_pubkey: &str,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let valid_until = (chrono::Utc::now().timestamp() + 300) as u64; // 5 minutes validity
+    let resource = "https://api.can.dev";
+    let token = generate_challenge_token(valid_until, price_motes, resource);
+
     (
         StatusCode::PAYMENT_REQUIRED,
         Json(json!({
@@ -98,10 +162,12 @@ pub fn make_402_challenge(
             "asset": "CSPR",
             "maxAmountRequired": price_motes.to_string(),
             "payTo": merchant_pubkey,
-            "resource": "https://api.can.dev",
+            "resource": resource,
             "description": "Casper Agent Network x402 protected resource",
             "mimeType": "application/json",
-            "outputSchema": null
+            "outputSchema": null,
+            "validUntil": valid_until,
+            "challengeToken": token
         })),
     )
 }
@@ -145,6 +211,25 @@ pub async fn verify_payment(
             return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": err }))));
         }
     };
+
+    // Verify challenge token
+    let challenge_token = match x_payment.payload.challenge_token {
+        Some(ref token) => token,
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Missing challengeToken in X-Payment payload" })),
+            ));
+        }
+    };
+
+    let resource = "https://api.can.dev"; // default resource
+    if let Err(err_msg) = verify_challenge_token(challenge_token, expected_amount_motes, resource) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid challenge token: {}", err_msg) })),
+        ));
+    }
 
     let deploy_hash = &x_payment.payload.txid;
 
@@ -350,11 +435,17 @@ mod tests {
         let (base, handle) = spawn_mock_cspr_cloud(merchant, amount, "executed").await;
         let client = CasperClient::new(base, "test-key".into(), "pkg".into());
 
+        let valid_until = (chrono::Utc::now().timestamp() + 300) as u64;
+        let token = generate_challenge_token(valid_until, amount, "https://api.can.dev");
+
         let header_json = json!({
             "x402Version": 1,
             "scheme": "exact",
             "network": "casper-testnet",
-            "payload": { "txid": deploy }
+            "payload": {
+                "txid": deploy,
+                "challengeToken": token
+            }
         })
         .to_string();
 
@@ -408,11 +499,18 @@ mod tests {
         let (base, handle) = spawn_mock_cspr_cloud(merchant, amount, "pending").await;
         let client = CasperClient::new(base, "test-key".into(), "pkg".into());
 
+        let valid_until = (chrono::Utc::now().timestamp() + 300) as u64;
+        let token = generate_challenge_token(valid_until, amount, "https://api.can.dev");
+
         let header_json = json!({
             "x402Version": 1,
             "scheme": "exact",
             "network": "casper-testnet",
-            "payload": { "txid": deploy, "signature": "deadbeef" }
+            "payload": {
+                "txid": deploy,
+                "signature": "deadbeef",
+                "challengeToken": token
+            }
         })
         .to_string();
         let mut headers = HeaderMap::new();
@@ -465,5 +563,27 @@ mod tests {
             );
         }
         println!("[PASS] scenario 22: mass invalid X-Payment — typed errors, no secrets");
+    }
+
+    #[test]
+    fn test_challenge_token_valid_and_expired() {
+        let price = 100_000_000;
+        let resource = "https://api.can.dev";
+        
+        // 1. Valid token
+        let valid_until = (chrono::Utc::now().timestamp() + 10) as u64;
+        let token = generate_challenge_token(valid_until, price, resource);
+        assert!(verify_challenge_token(&token, price, resource).is_ok());
+        
+        // 2. Expired token
+        let expired_until = (chrono::Utc::now().timestamp() - 10) as u64;
+        let expired_token = generate_challenge_token(expired_until, price, resource);
+        let err = verify_challenge_token(&expired_token, price, resource).unwrap_err();
+        assert!(err.contains("expired"));
+        
+        // 3. Tampered token
+        let tampered_token = format!("{}.invalid_sig", valid_until);
+        let err2 = verify_challenge_token(&tampered_token, price, resource).unwrap_err();
+        assert!(err2.contains("signature mismatch"));
     }
 }

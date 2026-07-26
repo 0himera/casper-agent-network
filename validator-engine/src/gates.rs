@@ -81,10 +81,7 @@ mod tests {
         assert_eq!(s19.len(), 19);
         assert_eq!(s20.len(), 20);
         assert_eq!(s21.len(), 21);
-        assert_eq!(
-            check_input_fixture_free(&s19),
-            Err(GateFailure::MinLength)
-        );
+        assert_eq!(check_input_fixture_free(&s19), Err(GateFailure::MinLength));
         assert!(check_input_fixture_free(&s20).is_ok());
         assert!(check_input_fixture_free(&s21).is_ok());
     }

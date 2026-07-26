@@ -81,7 +81,7 @@ fn main() {
     println!("Task ID:          {}", task_id);
     println!("Skill:            {}", skill);
 
-    env.set_gas(15_000_000_000u64);
+    env.set_gas(35_000_000_000u64);
 
     let contract = AgentNetwork::load(&env, address);
 
@@ -96,8 +96,12 @@ fn main() {
                     break;
                 }
             } else {
-                eprintln!("❌ Task not found on-chain!");
-                std::process::exit(1);
+                eprintln!(
+                    "⚠️ Task not found on-chain yet (attempt {}). Waiting 10s...",
+                    attempt
+                );
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                continue;
             }
         }
 

@@ -8,7 +8,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-deagentnet}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     security_opt:
@@ -170,7 +170,7 @@ services:
       VALIDATOR_ENABLED: "true"
       VALIDATOR_NODE_ID: "validator-1"
       VALIDATOR_SECRET_KEY_PATH: "/keys/validator_a_secret_key.pem"
-      VALIDATOR_PUBLIC_KEY: "01a74a93e16ccf32fa9d91d387c9fb84521e23fdae8ce57263d173beafab5fc1b8"
+      VALIDATOR_PUBLIC_KEY: "019a993514325f80ffc51f52f1443257356e207c6112973d6e424157ddcd0affb5"
       VALIDATOR_MIN_VALIDATIONS: "3"
       VALIDATOR_WINDOW_SECS: "300"
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-fireworks}
@@ -214,7 +214,7 @@ services:
       VALIDATOR_ENABLED: "true"
       VALIDATOR_NODE_ID: "validator-2"
       VALIDATOR_SECRET_KEY_PATH: "/keys/validator_b_secret_key.pem"
-      VALIDATOR_PUBLIC_KEY: "01bad4de01164b7a4c90eb19bec1b218092ce000bb3bbbf09cc15b0f94da56ac75"
+      VALIDATOR_PUBLIC_KEY: "0162a3ae0808a88dd6747f580fe1b7e90350b7d0cc6d53c61bad39c41c8797b01b"
       VALIDATOR_MIN_VALIDATIONS: "3"
       VALIDATOR_WINDOW_SECS: "300"
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-google}
@@ -258,7 +258,7 @@ services:
       VALIDATOR_ENABLED: "true"
       VALIDATOR_NODE_ID: "validator-3"
       VALIDATOR_SECRET_KEY_PATH: "/keys/validator_c_secret_key.pem"
-      VALIDATOR_PUBLIC_KEY: "01bae700f4024cff103b68d66f86a0227ccd3b2c7b8f0d1d880a803808a53a8ff1"
+      VALIDATOR_PUBLIC_KEY: "01db06a2dbb18d6b17e5870d5677da578fabd4761db613267339697e4885cbfffe"
       VALIDATOR_MIN_VALIDATIONS: "3"
       VALIDATOR_WINDOW_SECS: "300"
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-openrouter}
