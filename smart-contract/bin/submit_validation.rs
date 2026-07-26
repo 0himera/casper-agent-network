@@ -86,8 +86,9 @@ fn main() {
     let contract = AgentNetwork::load(&env, address);
 
     let mut step_done = false;
-    for attempt in 1..=5 {
+    for attempt in 1..=2 {
         println!("Checking task status (attempt {})...", attempt);
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         if let Some(task_opt) = get_task_safe(&contract, &creator, &task_id) {
             if let Some(t) = task_opt {
                 if matches!(t.status, TaskStatus::Completed) {
@@ -106,17 +107,22 @@ fn main() {
         }
 
         println!("Submitting validation score...");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut contract_mut = AgentNetwork::load(&env, address);
             contract_mut.submit_validation(creator, task_id.clone(), score);
         }));
 
-        if result.is_err() {
-            println!("⚠️ Transaction call panicked. Waiting 10s...");
-            std::thread::sleep(std::time::Duration::from_secs(10));
+        if let Err(e) = result {
+            eprintln!("⚠️ Transaction call panicked on attempt {}: {:?}", attempt, e);
+            let _ = std::io::Write::flush(&mut std::io::stderr());
+            if attempt < 2 {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
         } else {
-            println!("✅ Transaction call succeeded. Waiting 3s...");
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            println!("✅ Transaction call succeeded. Waiting 2s...");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            std::thread::sleep(std::time::Duration::from_secs(2));
             step_done = true;
             break;
         }
@@ -124,6 +130,7 @@ fn main() {
 
     if !step_done {
         eprintln!("❌ Failed to submit validation score after retries.");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
         std::process::exit(1);
     }
 }

@@ -75,13 +75,46 @@ impl LlmConfig {
             .ok()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
-        let mut custom_url = env("VALIDATOR_LLM_URL");
-        let custom_api_key = env("VALIDATOR_LLM_API_KEY").or(env("FIREWORKS_API_KEY"));
-        let custom_model = env("VALIDATOR_LLM_MODEL").or(env("FIREWORKS_MODEL"));
+        let provider = env("VALIDATOR_LLM_PROVIDER").or(env("VALIDATOR_PROVIDER"));
 
-        if custom_url.is_none() && custom_api_key.is_some() {
-            custom_url = Some("https://api.fireworks.ai/inference/v1".to_string());
-        }
+        // Universal API Key lookup
+        let custom_api_key = env("VALIDATOR_LLM_API_KEY")
+            .or_else(|| env("VALIDATOR_API_KEY"))
+            .or_else(|| env("FIREWORKS_API_KEY"))
+            .or_else(|| env("GEMINI_API_KEY"))
+            .or_else(|| env("OPENROUTER_API_KEY"))
+            .or_else(|| env("GROQ_API_KEY"))
+            .or_else(|| env("TOGETHER_API_KEY"));
+
+        let custom_model = env("VALIDATOR_LLM_MODEL")
+            .or_else(|| env("VALIDATOR_MODEL"))
+            .or_else(|| env("FIREWORKS_MODEL"));
+
+        // Resolve base URL: explicitly specified > inferred from provider name > default
+        let custom_url = env("VALIDATOR_LLM_URL")
+            .or_else(|| env("VALIDATOR_LLM_BASE_URL"))
+            .or_else(|| {
+                provider
+                    .as_ref()
+                    .and_then(|p| match p.to_ascii_lowercase().as_str() {
+                        "google" | "gemini" => Some(
+                            "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+                        ),
+                        "openrouter" => Some("https://openrouter.ai/api/v1".to_string()),
+                        "fireworks" => Some("https://api.fireworks.ai/inference/v1".to_string()),
+                        "groq" => Some("https://api.groq.com/openai/v1".to_string()),
+                        "together" => Some("https://api.together.xyz/v1".to_string()),
+                        "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
+                        _ => None,
+                    })
+            })
+            .or_else(|| {
+                if custom_api_key.is_some() {
+                    Some("https://api.fireworks.ai/inference/v1".to_string())
+                } else {
+                    None
+                }
+            });
 
         let judge_cascade = env("VALIDATOR_JUDGE_CASCADE").and_then(|v| match v.as_str() {
             "local_first" => Some(JudgeCascadeMode::LocalFirst),
@@ -108,7 +141,7 @@ impl LlmConfig {
             custom_url,
             custom_api_key,
             custom_model,
-            provider: env("VALIDATOR_PROVIDER"),
+            provider,
             mock,
             factuality_enabled,
             serpapi_api_key: env("SERPAPI_API_KEY"),

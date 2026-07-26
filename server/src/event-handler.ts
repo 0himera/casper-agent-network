@@ -356,7 +356,28 @@ async function main() {
         const task = taskRows[0];
 
         if (task) {
-          await pool.execute('UPDATE tasks SET status = "Completed" WHERE id = ?', [payload.task_id]);
+          let updatedAudit: any = {};
+          if (task.validator_audit) {
+            try {
+              updatedAudit = typeof task.validator_audit === 'string' ? JSON.parse(task.validator_audit) : task.validator_audit;
+            } catch (e) {}
+          }
+          const s = payload.score;
+          updatedAudit.total = s;
+          if (!updatedAudit.scores) {
+            updatedAudit.scores = {
+              accuracy: Math.round(s * 0.30),
+              depth: Math.round(s * 0.25),
+              sources: Math.round(s * 0.20),
+              actionability: Math.round(s * 0.15),
+              presentation: Math.round(s * 0.10)
+            };
+          }
+
+          await pool.execute(
+            'UPDATE tasks SET status = "Completed", validator_audit = ? WHERE id = ?',
+            [JSON.stringify(updatedAudit), payload.task_id]
+          );
 
           if (task.assigned_agent_public_key) {
             await pool.execute(

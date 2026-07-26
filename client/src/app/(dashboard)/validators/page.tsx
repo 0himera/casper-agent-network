@@ -21,7 +21,7 @@ export default function ValidatorsPage() {
   useEffect(() => {
     const fetchValidators = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+        const baseUrl = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080");
         const res = await fetch(`${baseUrl}/api/validators`);
         if (res.ok) {
           const data = await res.json();

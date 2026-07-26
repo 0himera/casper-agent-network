@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use crate::config::Config;
 use serde_json::json;
 use std::time::Instant;
@@ -36,9 +38,8 @@ pub async fn execute_agent(
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
 
-            let selected_model = model.unwrap_or_else(|| {
-                config.ollama_model.as_deref().unwrap_or("gemma3:4b")
-            });
+            let selected_model =
+                model.unwrap_or_else(|| config.ollama_model.as_deref().unwrap_or("gemma3:4b"));
 
             let payload = json!({
                 "model": selected_model,
@@ -97,16 +98,20 @@ pub async fn execute_agent(
                 {
                     Ok(res) => {
                         if let Ok(res_json) = res.json::<serde_json::Value>().await {
-                            if let Some(content) = res_json["result"]["response"]
-                                .as_str()
-                                .or_else(|| res_json["result"]["choices"][0]["message"]["content"].as_str())
+                            if let Some(content) =
+                                res_json["result"]["response"].as_str().or_else(|| {
+                                    res_json["result"]["choices"][0]["message"]["content"].as_str()
+                                })
                             {
                                 executed_output = Some(content.to_string());
                             }
                         }
                     }
                     Err(err) => {
-                        tracing::warn!("Cloudflare Workers AI request failed: {}. Falling back...", err);
+                        tracing::warn!(
+                            "Cloudflare Workers AI request failed: {}. Falling back...",
+                            err
+                        );
                     }
                 }
             }
@@ -133,7 +138,8 @@ pub async fn execute_agent(
                     .await
                 {
                     if let Ok(res_json) = res.json::<serde_json::Value>().await {
-                        if let Some(content) = res_json["choices"][0]["message"]["content"].as_str() {
+                        if let Some(content) = res_json["choices"][0]["message"]["content"].as_str()
+                        {
                             executed_output = Some(content.to_string());
                         }
                     }

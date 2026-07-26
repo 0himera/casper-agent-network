@@ -8,14 +8,13 @@ RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false upd
     clang \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_BUILD_JOBS=4
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 ENV RUSTC_BOOTSTRAP=1
 
 WORKDIR /usr/src/app
 
-# Copy Cargo manifests for workspace dependency caching
-COPY Cargo.toml ./Cargo.toml
+# Copy Cargo manifests and lockfile for workspace dependency caching
+COPY Cargo.toml Cargo.lock ./
 COPY agentnet-core/Cargo.toml ./agentnet-core/Cargo.toml
 COPY validator-engine/Cargo.toml ./validator-engine/Cargo.toml
 COPY validator-node/Cargo.toml ./validator-node/Cargo.toml
@@ -43,11 +42,11 @@ RUN mkdir -p agentnet-core/src validator-engine/src validator-node/src backend/s
 
 # Pre-build smart contract CLI dependencies
 WORKDIR /usr/src/app/smart-contract
-RUN cargo build --release --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
+RUN cargo build --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
 
 # Pre-build backend dependencies
 WORKDIR /usr/src/app
-RUN cargo build --release -p backend
+RUN cargo build -p backend
 
 # Copy real source code
 COPY agentnet-core/src ./agentnet-core/src
@@ -62,11 +61,11 @@ RUN touch agentnet-core/src/lib.rs validator-engine/src/lib.rs backend/src/main.
 
 # Build actual backend binary
 WORKDIR /usr/src/app
-RUN cargo build --release -p backend
+RUN cargo build -p backend
 
 # Build actual smart contract CLI binaries
 WORKDIR /usr/src/app/smart-contract
-RUN cargo build --release --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
+RUN cargo build --bin agent_network_submit_complete --bin agent_network_submit_result --bin agent_network_submit_validation --bin agent_network_finalize_task --bin agent_network_decay_reputation --features livenet
 
 # Final runtime stage
 FROM debian:bookworm-slim
@@ -81,12 +80,12 @@ RUN groupadd -g 10001 appuser && \
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/target/release/backend /usr/local/bin/backend
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_result /usr/local/bin/agent_network_submit_result
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_finalize_task /usr/local/bin/agent_network_finalize_task
-COPY --from=builder /usr/src/app/smart-contract/target/release/agent_network_decay_reputation /usr/local/bin/agent_network_decay_reputation
+COPY --from=builder /usr/src/app/target/debug/backend /usr/local/bin/backend
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_submit_complete /usr/local/bin/agent_network_submit_complete
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_submit_result /usr/local/bin/agent_network_submit_result
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_submit_validation /usr/local/bin/agent_network_submit_validation
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_finalize_task /usr/local/bin/agent_network_finalize_task
+COPY --from=builder /usr/src/app/smart-contract/target/debug/agent_network_decay_reputation /usr/local/bin/agent_network_decay_reputation
 
 RUN chmod +x /usr/local/bin/*
 

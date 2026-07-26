@@ -161,6 +161,7 @@ services:
     restart: unless-stopped
 
   validator-1:
+    image: agent-network-validator:dev
     build:
       context: .
       dockerfile: validator-node/Dockerfile
@@ -176,7 +177,10 @@ services:
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_1_LLM_PROVIDER:-fireworks}
       VALIDATOR_LLM_MODEL: ${VALIDATOR_1_LLM_MODEL:-accounts/fireworks/models/deepseek-v4-flash}
       FIREWORKS_API_KEY: ${FIREWORKS_API_KEY}
-      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19}
+      ODRA_CASPER_LIVENET_NODE_ADDRESS: ${ODRA_CASPER_LIVENET_NODE_ADDRESS:-https://node.testnet.casper.network/rpc}
+      ODRA_CASPER_LIVENET_CHAIN_NAME: ${ODRA_CASPER_LIVENET_CHAIN_NAME:-casper-test}
+      ODRA_CASPER_LIVENET_EVENTS_URL: ${ODRA_CASPER_LIVENET_EVENTS_URL:-http://65.109.89.88:9999/events}
       HEALTH_PORT: "9090"
       HOME: /tmp
     volumes:
@@ -205,9 +209,7 @@ services:
     restart: unless-stopped
 
   validator-2:
-    build:
-      context: .
-      dockerfile: validator-node/Dockerfile
+    image: agent-network-validator:dev
     container_name: agent-network-validator-2
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
@@ -220,7 +222,10 @@ services:
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_2_LLM_PROVIDER:-google}
       VALIDATOR_LLM_MODEL: ${VALIDATOR_2_LLM_MODEL:-gemini-3.1-flash-lite}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19}
+      ODRA_CASPER_LIVENET_NODE_ADDRESS: ${ODRA_CASPER_LIVENET_NODE_ADDRESS:-https://node.testnet.casper.network/rpc}
+      ODRA_CASPER_LIVENET_CHAIN_NAME: ${ODRA_CASPER_LIVENET_CHAIN_NAME:-casper-test}
+      ODRA_CASPER_LIVENET_EVENTS_URL: ${ODRA_CASPER_LIVENET_EVENTS_URL:-http://65.109.89.88:9999/events}
       HEALTH_PORT: "9090"
       HOME: /tmp
     volumes:
@@ -249,9 +254,7 @@ services:
     restart: unless-stopped
 
   validator-3:
-    build:
-      context: .
-      dockerfile: validator-node/Dockerfile
+    image: agent-network-validator:dev
     container_name: agent-network-validator-3
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-deagentnet}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-deagentnet}
@@ -264,7 +267,10 @@ services:
       VALIDATOR_LLM_PROVIDER: ${VALIDATOR_3_LLM_PROVIDER:-openrouter}
       VALIDATOR_LLM_MODEL: ${VALIDATOR_3_LLM_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-}
+      CONTRACT_PACKAGE_HASH: ${CONTRACT_PACKAGE_HASH:-2a9d5cd5515245d2a50168c5d48e25e7dcc2b61bd7ca511e7b421ba623e45d19}
+      ODRA_CASPER_LIVENET_NODE_ADDRESS: ${ODRA_CASPER_LIVENET_NODE_ADDRESS:-https://node.testnet.casper.network/rpc}
+      ODRA_CASPER_LIVENET_CHAIN_NAME: ${ODRA_CASPER_LIVENET_CHAIN_NAME:-casper-test}
+      ODRA_CASPER_LIVENET_EVENTS_URL: ${ODRA_CASPER_LIVENET_EVENTS_URL:-http://65.109.89.88:9999/events}
       HEALTH_PORT: "9090"
       HOME: /tmp
     volumes:
