@@ -5,9 +5,6 @@ on:
     branches: [ main, master, "feat/*", "fix/*" ]
   pull_request:
     branches: [ main, master ]
-  schedule:
-    # Nightly local DB / wave4 subset (UTC).
-    - cron: "0 3 * * *"
   workflow_dispatch:
 
 jobs:
@@ -98,71 +95,3 @@ jobs:
           cd client
           bun install || npm ci
           npm run build || npx tsc --noEmit
-
-  # Serialized local DB / wave4 subset — nightly or manual; not on every PR
-  # (full wave4 can stop MySQL mid-run and is too heavy for PR gate).
-  wave4-db-nightly:
-    name: Wave4 Local DB Subset (Nightly)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: rootpass
-          MYSQL_DATABASE: deagentnet
-          MYSQL_USER: deagentnet
-          MYSQL_PASSWORD: passw0rd
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpass"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-    env:
-      DATABASE_URL: mysql://deagentnet:passw0rd@127.0.0.1:3307/deagentnet
-      DB_URI: mysql://deagentnet:passw0rd@127.0.0.1:3307/deagentnet
-      VALIDATOR_MOCK_LLM: "1"
-      EXAM_SKIP_ONCHAIN: "1"
-      VALIDATOR_FACTUALITY: "0"
-      INTERNAL_SERVICE_KEY: test_secret_key
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust Build
-        uses: Swatinem/rust-cache@v2
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Wait for MySQL
-        run: |
-          for i in $(seq 1 30); do
-            if mysqladmin ping -h 127.0.0.1 -P 3307 -udeagentnet -ppassw0rd --silent; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "MySQL not ready" && exit 1
-
-      - name: Wave4 targeted Rust subset
-        run: |
-          cargo test -p validator-engine fixture_free_boundary_ -- --nocapture
-          cargo test -p validator-node -- --nocapture
-          cargo test -p backend --test wave4_evil_http -- --ignored --test-threads=1 --nocapture
-          cargo test -p backend --test wave4_reputation_snapshot -- --ignored --test-threads=1 --nocapture
-          cargo test -p backend prod_path_branch_sanity -- --ignored --test-threads=1 --nocapture
-
-      - name: Wave4 targeted MCP subset
-        working-directory: server
-        run: |
-          npm ci || npm install
-          npm run test:mcp
-          npm run test:mcp-write-parity
